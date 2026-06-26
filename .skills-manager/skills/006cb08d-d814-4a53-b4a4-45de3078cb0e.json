@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "skill_id": "006cb08d-d814-4a53-b4a4-45de3078cb0e",
+  "path": "creating-skill-pro",
+  "path_key": "creating-skill-pro",
+  "enabled": true,
+  "tags": [],
+  "source": {
+    "type": "import",
+    "ref": null,
+    "subpath": null,
+    "branch": null
+  }
+}

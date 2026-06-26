@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "skill_id": "1cdef954-c4fb-4664-baa4-2327ea5927b2",
+  "path": "feishu-to-wechat",
+  "path_key": "feishu-to-wechat",
+  "enabled": true,
+  "tags": [],
+  "source": {
+    "type": "import",
+    "ref": null,
+    "subpath": null,
+    "branch": null
+  }
+}

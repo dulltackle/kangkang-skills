@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "skill_id": "80703f43-8b39-4df3-b755-ca59b8a22569",
+  "path": "imagemon",
+  "path_key": "imagemon",
+  "enabled": true,
+  "tags": [],
+  "source": {
+    "type": "local",
+    "ref": null,
+    "subpath": null,
+    "branch": null
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "skill_id": "887c9e6e-a333-44db-b8cb-ac0ef122195f",
+  "path": "lark-skill-maker",
+  "path_key": "lark-skill-maker",
+  "enabled": true,
+  "tags": [],
+  "source": {
+    "type": "import",
+    "ref": null,
+    "subpath": null,
+    "branch": null
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "skill_id": "5f0f6b7f-5f39-470a-b282-d07401c3ad5a",
+  "path": "lark-note",
+  "path_key": "lark-note",
+  "enabled": true,
+  "tags": [],
+  "source": {
+    "type": "import",
+    "ref": null,
+    "subpath": null,
+    "branch": null
+  }
+}
