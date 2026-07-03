@@ -51,7 +51,10 @@
             image_strategy_visual: "Visual",
             image_strategy_color: "Color",
             image_strategy_mood: "Mood",
-            image_usage_custom_required: "Describe the custom image plan before confirming.",
+            image_usage_notes: "Additional image requirements",
+            image_usage_notes_placeholder: "e.g. realistic handwashing scenes; avoid cartoon germs; keep product photos untouched.",
+            image_usage_required: "Select at least one image usage option.",
+            image_usage_none_exclusive: "No images cannot be combined with other image options.",
             font_heading: "Heading",
             font_body: "Body",
             font_body_size: "Body baseline size",
@@ -77,8 +80,10 @@
             role_body_text: "body text",
             cjk: "CJK",
             latin: "Latin",
-            sample_cjk: "数字化转型战略",
-            sample_latin: "Digital Transformation",
+            sample_heading_cjk: "主题方案标题",
+            sample_heading_latin: "Presentation Title",
+            sample_body_cjk: "关键信息摘要",
+            sample_body_latin: "Key message summary",
             style_preview_label: "Overall impression (color + typography)",
             style_preview_body: "· rough feel only, not the actual slide layout",
             mode_continuous_desc: "Generate the whole deck in one pass.",
@@ -131,7 +136,10 @@
             image_strategy_visual: "视觉",
             image_strategy_color: "色彩",
             image_strategy_mood: "情绪",
-            image_usage_custom_required: "请先写清楚自定义图片方案。",
+            image_usage_notes: "图片补充要求",
+            image_usage_notes_placeholder: "例如：优先真实洗手场景；不要卡通病菌；产品照片保持原样。",
+            image_usage_required: "请至少选择一种图片使用方式。",
+            image_usage_none_exclusive: "「不使用图片」不能和其它图片选项同时选择。",
             font_heading: "标题",
             font_body: "正文",
             font_body_size: "正文基准字号",
@@ -157,8 +165,10 @@
             role_body_text: "正文文字",
             cjk: "中文",
             latin: "西文",
-            sample_cjk: "数字化转型战略",
-            sample_latin: "Digital Transformation",
+            sample_heading_cjk: "主题方案标题",
+            sample_heading_latin: "Presentation Title",
+            sample_body_cjk: "关键信息摘要",
+            sample_body_latin: "Key message summary",
             style_preview_label: "整体形象（配色 + 字体）",
             style_preview_body: "· 仅大致形象，非实际版式",
             mode_continuous_desc: "一次性连续生成整份演示文稿。",
@@ -277,9 +287,19 @@
     }
 
     function normalizeRecId(field, value) {
+        if (Array.isArray(value)) return normalizeRecId(field, value[0]);
         if (value == null || value === "") return value;
         var aliases = REC_ALIASES[field] || {};
         return aliases[value] || value;
+    }
+
+    function normalizeRecIds(field, value) {
+        if (Array.isArray(value)) {
+            return value.map(function (item) { return normalizeRecId(field, item); })
+                .filter(function (item, idx, arr) { return item && arr.indexOf(item) === idx; });
+        }
+        var normalized = normalizeRecId(field, value);
+        return normalized ? [normalized] : [];
     }
 
     function legacyRecId(field) {
@@ -298,6 +318,10 @@
         var value = (REC && REC.recommend && REC.recommend[field]) || legacyRecId(field);
         return normalizeRecId(field, value || null);
     }
+
+    function recValue(field) {
+        return (REC && REC.recommend && REC.recommend[field]) || legacyRecId(field);
+    }
     // Guaranteed recommendation: the AI's pick, or the first catalog option as a
     // fallback so an enumerable field ALWAYS shows a badged recommendation.
     function recOrFirst(field, list) {
@@ -305,10 +329,9 @@
         if (r != null && r !== "") return r;
         return firstId(list);
     }
-
     // Render an enumerable field: ALL options from the catalog, recommended one
     // badged, current selection from STATE, plus a trailing Custom box.
-    // `list` is either a flat array of {id,label,desc,dim} or a grouped array
+    // `list` is either a flat array of {id,label,desc,dim,viewbox} or a grouped array
     // of {group, items:[...]}.
     function enumField(parent, list, recommendedId, getVal, setVal, opts2) {
         list = list || [];
@@ -346,12 +369,16 @@
         function deselect() { allChips.forEach(function (c) { c.classList.remove("selected"); }); }
         function makeChip(o) {
             var label = optionLabel(o);
-            if (o.dim) label += " · " + o.dim;
             var desc = optionDesc(o);
-            if (desc) label += (LANG === "zh" ? "：" : " — ") + desc;
             var spec = specById[o.id];
-            if (spec && spec.note) label += " · " + spec.note;
             var chip = el("div", "chip");
+            if (o.viewbox) {
+                label = label + (o.dim ? " · " + o.dim : "");
+            } else {
+                if (o.dim) label += " · " + o.dim;
+                if (desc) label += (LANG === "zh" ? "：" : " — ") + desc;
+                if (spec && spec.note) label += " · " + spec.note;
+            }
             chip.appendChild(el("span", "chip-text", label));
             if (spec) {
                 // spectrum pick: badge shows its temperament tag, not the generic ★
@@ -453,7 +480,17 @@
     function normTypography(c) {
         c = c || {};
         if (c.heading && typeof c.heading === "object" && c.body && typeof c.body === "object") {
-            return Object.assign({}, c, { body_size: typographyBodySize(c) });
+            return Object.assign({}, c, {
+                body_size: typographyBodySize(c),
+                heading: Object.assign({}, c.heading, {
+                    sample_cjk: c.heading.sample_cjk || c.sample_heading || "",
+                    sample_latin: c.heading.sample_latin || c.sample_heading_latin || ""
+                }),
+                body: Object.assign({}, c.body, {
+                    sample_cjk: c.body.sample_cjk || c.sample_body || "",
+                    sample_latin: c.body.sample_latin || c.sample_body_latin || ""
+                })
+            });
         }
         return {
             name: c.name || "",
@@ -500,6 +537,7 @@
 
     function usesCustomImagePlanValue(value) {
         var ids = (CAT.image_usage || []).map(function (item) { return item.id; });
+        if (Array.isArray(value)) return false;
         return value && ids.indexOf(value) === -1;
     }
 
@@ -508,7 +546,28 @@
     }
 
     function needsGeneratedImagesForUsage(value) {
+        if (Array.isArray(value)) return value.indexOf("ai") >= 0;
         return value === "ai" || (usesCustomImagePlanValue(value) && customImagePlanHasAiSignal());
+    }
+
+    function selectedImageUsageIds(value) {
+        var validIds = (CAT.image_usage || []).map(function (item) { return item.id; });
+        return normalizeRecIds("image_usage", value).filter(function (id) {
+            return validIds.indexOf(id) >= 0;
+        });
+    }
+
+    function imageUsageNotesRecommendation(rawUsage) {
+        var notes = (REC && REC.image_notes && REC.image_notes.value) ||
+            (REC && REC.image_notes) ||
+            (REC && REC.images && REC.images.notes) ||
+            "";
+        if (!notes && usesCustomImagePlanValue(rawUsage)) notes = rawUsage;
+        return typeof notes === "string" ? notes : "";
+    }
+
+    function defaultImageUsageId() {
+        return firstId(CAT.image_usage);
     }
 
     function imageStrategySelectedIndex() {
@@ -841,10 +900,35 @@
         return primary + ", " + fallback;
     }
 
-    function fontSample(box, slot, css) {
+    function sampleCandidate(role, script) {
+        var sample = (REC && REC.sample_text) || (REC && REC.samples) || {};
+        var isHeading = role === "heading";
+        var isLatin = script === "latin";
+        var keys = isHeading
+            ? (isLatin ? ["heading_latin", "sample_heading_latin", "title_latin", "title_en"] : ["heading_cjk", "sample_heading", "sample_heading_cjk", "title_zh", "title"])
+            : (isLatin ? ["body_latin", "sample_body_latin", "summary_latin", "summary_en"] : ["body_cjk", "sample_body", "sample_body_cjk", "summary_zh", "summary"]);
+        for (var i = 0; i < keys.length; i += 1) {
+            if (sample[keys[i]]) return sample[keys[i]];
+            if (REC && REC[keys[i]]) {
+                if (typeof REC[keys[i]] === "object" && REC[keys[i]].value) return REC[keys[i]].value;
+                if (typeof REC[keys[i]] === "string") return REC[keys[i]];
+            }
+        }
+        return "";
+    }
+
+    function sampleText(role, script, explicit) {
+        if (explicit) return explicit;
+        var fromRec = sampleCandidate(role, script);
+        if (fromRec) return fromRec;
+        if (role === "heading") return t(script === "latin" ? "sample_heading_latin" : "sample_heading_cjk");
+        return t(script === "latin" ? "sample_body_latin" : "sample_body_cjk");
+    }
+
+    function fontSample(box, slot, css, role) {
         var line = el("div", "font-sample-line");
-        var cjk = el("span", "fs-cjk", slot.sample_cjk || t("sample_cjk"));
-        var lat = el("span", "fs-latin", slot.sample_latin || t("sample_latin"));
+        var cjk = el("span", "fs-cjk", sampleText(role, "cjk", slot.sample_cjk));
+        var lat = el("span", "fs-latin", sampleText(role, "latin", slot.sample_latin));
         var cjkStack = previewFontStack(slot.cjk, css);
         var latinStack = previewFontStack(slot.latin, css);
         if (cjkStack) cjk.style.fontFamily = cjkStack;
@@ -910,8 +994,8 @@
             if (c.body_size) meta += "  ·  " + t("font_body_size") + ":" + c.body_size + "px";
             top.appendChild(el("span", "font-card-meta", meta));
             card.appendChild(top);
-            var hbox = el("div", "font-sample-heading-box"); fontSample(hbox, head, head.css); card.appendChild(hbox);
-            var bbox = el("div", "font-sample-body-box"); fontSample(bbox, body, body.css); card.appendChild(bbox);
+            var hbox = el("div", "font-sample-heading-box"); fontSample(hbox, head, head.css, "heading"); card.appendChild(hbox);
+            var bbox = el("div", "font-sample-body-box"); fontSample(bbox, body, body.css, "body"); card.appendChild(bbox);
             if (localized(c, "note")) card.appendChild(el("div", "color-note", localized(c, "note")));
             card.addEventListener("click", function () { selectFont(idx); });
             grid.appendChild(card);
@@ -1106,16 +1190,16 @@
             var bodyLatStack = previewFontStack(body.latin, body.css);
 
             card.style.background = bg;
-            titleCjk.textContent = head.sample_cjk || t("sample_cjk");
-            titleLat.textContent = head.sample_latin || t("sample_latin");
+            titleCjk.textContent = sampleText("heading", "cjk", head.sample_cjk);
+            titleLat.textContent = sampleText("heading", "latin", head.sample_latin);
             title.style.color = pri;
             title.style.fontSize = Math.round(bodyPx * 1.7) + "px";
             titleCjk.style.fontFamily = headStack || "";
             titleLat.style.fontFamily = headLatStack || "";
             // CJK and Latin previewed with their own stacks (mirrors the title
             // and the per-card font samples) so each script's font is visible.
-            bodyCjk.textContent = body.sample_cjk || t("sample_cjk");
-            bodyLat.textContent = body.sample_latin || t("sample_latin");
+            bodyCjk.textContent = sampleText("body", "cjk", body.sample_cjk);
+            bodyLat.textContent = sampleText("body", "latin", body.sample_latin);
             bodyWrap.style.color = txt;
             bodyWrap.style.fontSize = bodyPx + "px";
             bodyCjk.style.fontFamily = bodyStack || "";
@@ -1132,15 +1216,20 @@
 
     function renderImages(host) {
         var sec = section(8, "sec_images");
+        var usageChips = el("div", "chips");
+        var usageNote = el("div", "subfield");
+        usageNote.appendChild(el("div", "subfield-label", t("image_usage_notes")));
+        var usageNoteInput = el("textarea", "text-input image-usage-notes-input");
+        usageNoteInput.placeholder = t("image_usage_notes_placeholder");
+        usageNoteInput.value = STATE.image_notes || "";
+        usageNoteInput.addEventListener("input", function () { STATE.image_notes = usageNoteInput.value; });
+        usageNote.appendChild(usageNoteInput);
         var sub = el("div", "subfield");
         sub.appendChild(el("div", "subfield-label", t("image_ai_path")));
         var strategySub = el("div", "subfield image-strategy-subfield");
         strategySub.appendChild(el("div", "subfield-label", t("image_strategy")));
         var strategyGrid = el("div", "font-grid");
         var strategyCands = imageStrategyCandidates();
-        function usesCustomImagePlan() {
-            return usesCustomImagePlanValue(STATE.image_usage);
-        }
         function needsGeneratedImages() {
             return needsGeneratedImagesForUsage(STATE.image_usage);
         }
@@ -1182,27 +1271,51 @@
         });
         if (!strategyCands.length) strategyGrid.appendChild(el("div", "toggle-desc", t("image_strategy_empty")));
         strategySub.appendChild(strategyGrid);
-        enumField(sec, CAT.image_usage, recOrFirst("image_usage", CAT.image_usage),
-            function () { return STATE.image_usage; },
-            function (v) {
-                STATE.image_usage = v;
-                refreshAiControls();
-            },
-            {
-                allowCustom: true,
-                customSentinel: "custom",
-                customInvalidValues: ["custom"],
-                inputClass: "image-usage-custom-input",
-                placeholder: LANG === "zh"
-                    ? "例如：封面用 AI 生成，产品页用用户素材，行业页用网络来源"
-                    : "e.g. AI cover + user product assets + web industry images"
+        var recommendedIds = selectedImageUsageIds(recValue("image_usage"));
+        if (!recommendedIds.length) recommendedIds = [defaultImageUsageId()];
+        var usageChipById = {};
+        function refreshUsageChips() {
+            Object.keys(usageChipById).forEach(function (id) {
+                usageChipById[id].classList.toggle("selected", STATE.image_usage.indexOf(id) >= 0);
             });
+            var noImages = STATE.image_usage.indexOf("none") >= 0;
+            usageNote.style.display = noImages ? "none" : "block";
+            refreshAiControls();
+        }
+        function toggleImageUsage(id) {
+            var cur = STATE.image_usage.slice();
+            if (id === "none") {
+                cur = cur.indexOf("none") >= 0 ? [] : ["none"];
+            } else {
+                cur = cur.filter(function (item) { return item !== "none"; });
+                if (cur.indexOf(id) >= 0) cur = cur.filter(function (item) { return item !== id; });
+                else cur.push(id);
+            }
+            STATE.image_usage = cur;
+            refreshUsageChips();
+        }
+        (CAT.image_usage || []).forEach(function (o) {
+            var label = optionLabel(o);
+            var desc = optionDesc(o);
+            if (desc) label += (LANG === "zh" ? "：" : " — ") + desc;
+            var chip = el("div", "chip");
+            chip.appendChild(el("span", "chip-text", label));
+            if (recommendedIds.indexOf(o.id) >= 0) {
+                chip.classList.add("recommended");
+                chip.appendChild(el("span", "rec-badge", "★ " + t("recommended")));
+            }
+            chip.addEventListener("click", function () { toggleImageUsage(o.id); });
+            usageChipById[o.id] = chip;
+            usageChips.appendChild(chip);
+        });
+        sec.appendChild(usageChips);
+        sec.appendChild(usageNote);
         enumField(sub, CAT.image_ai_path, recOrFirst("image_ai_path", CAT.image_ai_path),
             function () { return STATE.image_ai_path; }, function (v) { STATE.image_ai_path = v; });
         sec.appendChild(sub);
         sec.appendChild(strategySub);
         if (strategyCands.length) selectImageStrategy(imageStrategySelectedIndex());
-        refreshAiControls();
+        refreshUsageChips();
         host.appendChild(sec);
     }
 
@@ -1331,7 +1444,12 @@
         };
         STATE.formula_policy = pick("formula_policy", CAT.formula_policy);
 
-        STATE.image_usage = pick("image_usage", CAT.image_usage);
+        var rawImageUsage = recValue("image_usage");
+        STATE.image_usage = selectedImageUsageIds(rawImageUsage);
+        if (!STATE.image_usage.length) {
+            STATE.image_usage = [defaultImageUsageId()];
+        }
+        STATE.image_notes = imageUsageNotesRecommendation(rawImageUsage);
         STATE.image_ai_path = pick("image_ai_path", CAT.image_ai_path);
 
         STATE.generation_mode = pick("generation_mode", CAT.generation_mode);
@@ -1429,14 +1547,16 @@
         var payload = JSON.parse(JSON.stringify(STATE));
         normalizeTypographyForSubmit(payload);
         payload.stage = "final";
-        var customImagePlan = usesCustomImagePlanValue(payload.image_usage);
-        if (payload.image_usage === "custom" || (customImagePlan && !String(payload.image_usage).trim())) {
-            document.getElementById("confirm-status").textContent = t("image_usage_custom_required");
-            var customImageInput = document.querySelector(".image-usage-custom-input");
-            if (customImageInput) customImageInput.focus();
+        payload.image_usage = selectedImageUsageIds(payload.image_usage);
+        if (!payload.image_usage.length) {
+            document.getElementById("confirm-status").textContent = t("image_usage_required");
             return;
         }
-        if (customImagePlan) payload.image_usage = String(payload.image_usage).trim();
+        if (payload.image_usage.indexOf("none") >= 0 && payload.image_usage.length > 1) {
+            document.getElementById("confirm-status").textContent = t("image_usage_none_exclusive");
+            return;
+        }
+        if (!String(payload.image_notes || "").trim()) delete payload.image_notes;
         if (!needsGeneratedImagesForUsage(payload.image_usage)) {
             delete payload.image_ai_path;
             delete payload.image_strategy;

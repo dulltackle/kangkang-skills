@@ -6,7 +6,14 @@
   "tools": {
     "claude_code": false,
     "codex": false,
+    "command_code": true,
+    "cursor": true,
+    "droid": true,
+    "gemini_cli": true,
     "github_copilot": true,
-    "kimi": true
+    "grok": true,
+    "hermes": true,
+    "kimi": true,
+    "omp_agent": true
   }
 }

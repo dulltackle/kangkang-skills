@@ -9,6 +9,14 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+_SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from console_encoding import configure_utf8_stdio  # noqa: E402
+
+configure_utf8_stdio()
+
 if __package__ in {None, ''}:
     import types
 
@@ -81,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f'''
 Examples:
-    %(prog)s examples/ppt169_demo -s final               # Default: native pptx -> exports/, svg_output -> backup/<ts>/
+    %(prog)s examples/ppt169_demo                         # Default: native pptx -> exports/, svg_output -> backup/<ts>/
     %(prog)s examples/ppt169_demo --svg-snapshot         # Also emit SVG-rendered snapshot pptx alongside native in exports/
     %(prog)s examples/ppt169_demo --only legacy          # Only SVG image version (skips native)
     %(prog)s examples/ppt169_demo -o out.pptx            # Explicit path (no backup/)
@@ -91,9 +99,10 @@ Examples:
     %(prog)s examples/ppt169_demo -t push --transition-duration 1.0
 
 SVG source directory (-s):
-    output   - svg_output (original version)
-    final    - svg_final (post-processed, recommended)
+    output   - svg_output (hand-authored source; native default)
+    final    - svg_final (post-processed; legacy SVG-image path source)
     <any>    - Specify a subdirectory name directly
+    Omit -s to use the default: native reads svg_output, legacy reads svg_final.
 
 Transition effects (-t/--transition):
     {', '.join(transition_choices)}
@@ -128,7 +137,7 @@ Speaker notes (enabled by default):
     - Use --no-notes to disable
 
 Recorded narration:
-    %(prog)s examples/ppt169_demo -s final --recorded-narration audio
+    %(prog)s examples/ppt169_demo --recorded-narration audio
     - Keeps speaker notes when enabled
     - Prepares PowerPoint recorded timings and narrations
     - Requires one m4a/mp3/wav file per slide
@@ -181,6 +190,16 @@ Recorded narration:
                              'canonical output; live preview already provides the SVG visual reference. '
                              'Note: the svg_output/ source snapshot is always written to backup/<ts>/ '
                              'regardless of this flag.')
+    parser.add_argument('--no-image-optimize', action='store_true',
+                        help='Disable native PPTX raster image optimization; embeds original image bytes.')
+    parser.add_argument('--image-max-dimension', type=int, default=2560,
+                        help='Maximum optimized raster image dimension in pixels (default: 2560).')
+    parser.add_argument('--image-sizing', choices=['cap', 'display'], default='cap',
+                        help='Raster sizing mode: cap only limits source dimensions; display sizes from the SVG rendered box (default: cap).')
+    parser.add_argument('--image-scale', type=float, default=2.0,
+                        help='Target optimized image pixels per SVG display pixel when --image-sizing=display (default: 2.0).')
+    parser.add_argument('--image-quality', type=int, default=85,
+                        help='JPEG quality for optimized opaque raster images, 1-100 (default: 85).')
 
     def non_negative_float(value: str) -> float:
         try:
@@ -253,6 +272,15 @@ Recorded narration:
     project_path = Path(args.project_path)
     if not project_path.exists():
         print(f"Error: Path does not exist: {project_path}")
+        return 1
+    if args.image_max_dimension < 1:
+        print("Error: --image-max-dimension must be >= 1", file=sys.stderr)
+        return 1
+    if args.image_scale < 1:
+        print("Error: --image-scale must be >= 1", file=sys.stderr)
+        return 1
+    if not 1 <= args.image_quality <= 100:
+        print("Error: --image-quality must be between 1 and 100", file=sys.stderr)
         return 1
 
     try:
@@ -559,6 +587,11 @@ Recorded narration:
         cache_dir=cache_dir,
         workers=args.workers,
         merge_paragraphs=args.merge_paragraphs,
+        image_optimize=not args.no_image_optimize,
+        image_max_dimension=args.image_max_dimension,
+        image_sizing=args.image_sizing,
+        image_scale=args.image_scale,
+        image_quality=args.image_quality,
     )
 
     success = True
