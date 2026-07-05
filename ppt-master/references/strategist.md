@@ -8,7 +8,7 @@ As a top-tier AI presentation strategist, receive source documents, perform cont
 
 | Previous Step | Current | Next Step |
 |--------------|---------|-----------|
-| Project creation + Template option confirmed | **Strategist**: Eight Confirmations + Design Spec | Image_Generator or Executor |
+| Project creation + Template option confirmed | **Strategist**: Strategist confirmation stage + Design Spec | Image_Generator or Executor |
 
 ---
 
@@ -18,20 +18,21 @@ As a top-tier AI presentation strategist, receive source documents, perform cont
 
 ---
 
-## 1. Eight Confirmations Process
+## 1. Strategist Confirmation Stage
 
 🚧 **GATE — Mandatory read first**: `read_file templates/design_spec_reference.md` before any analysis or writing. The design_spec.md output MUST follow that template's 11-section structure exactly. After writing, self-check each section is present: I Project Info → II Canvas → III Visual Theme → IV Typography → V Layout → VI Icon → VII Visualization → VIII Image → IX Outline → X Speaker Notes → XI Tech Constraints.
 
-⛔ **BLOCKING**: After the read, present professional recommendations for the eight items below and wait for explicit user confirmation.
+⛔ **BLOCKING**: After the read, present professional recommendations for the confirmation fields below and wait for explicit user confirmation.
 
-**Two-tier confirmation (the default Confirm UI flow; chat mirrors it).** The eight items split into a dependency order, confirmed in two passes:
+**Three-stage confirmation (the default Confirm UI flow; chat mirrors it).** The confirmation fields split into a dependency order, confirmed in three passes:
 
-| Tier | Items | Role |
+| Stage | Items | Role |
 |---|---|---|
-| **1 — anchors** | `a` canvas · `c` key info — audience + `content_divergence` + **delivery purpose** *(PPT only)* (promoted out of `g`) · `d` mode + visual_style | confirmed first |
-| **2 — realization** (re-derived from the user's *actual* Tier 1) | `b` page count · `e` color · `f` icon · `g` typography (font + size) · `h` image | derived from Tier 1 |
+| **1 — direction anchors** | `a` canvas · `c` key info — audience + `content_divergence` + **delivery purpose** *(PPT only)* (promoted out of `g`) · `d` mode + visual_style | confirmed first |
+| **2 — design system** (re-derived from the user's *actual* Stage 1) | `b` page count · `e` color · `f` icon · `g` typography (font + size, formula policy) | derived from Stage 1 |
+| **3 — images / execution** (re-derived from the user's *actual* Stage 1 + Stage 2) | `h` image source + generated-image style · generation mode · refine-spec toggle | derived from confirmed direction + design system |
 
-The realization items are anchored by Tier 1 — `visual_style` governs `e` / `f` / `g` / `h` (§d Layer 2), and delivery purpose sets the §g body size (one fixed value per purpose), page density, **and** the `b` page-count recommendation. So author Tier 2 *after* Tier 1 is confirmed, against the user's real choices. **Page count is derived, not an anchor** — it follows content volume × delivery purpose, which is why it is Tier 2. The launch / re-derive / wait mechanics live in [SKILL.md Step 4](../SKILL.md); the item specs below keep their `a`–`h` letters.
+The design-system items are anchored by Stage 1 — `visual_style` governs `e` / `f` / `g` (§d Layer 2), and delivery purpose sets the §g body size (one fixed value per purpose), page density, **and** the `b` page-count recommendation. So author Stage 2 *after* Stage 1 is confirmed, against the user's real choices. Image strategy is anchored by both Stage 1 and Stage 2: h.5 rendering follows the locked visual direction, while h.5 palette is color behavior only and must follow the confirmed §e colors. So author Stage 3 *after* Stage 2 is confirmed. **Page count is derived, not an anchor** — it follows content volume × delivery purpose, which is why it is Stage 2. The launch / re-derive / wait mechanics live in [SKILL.md Step 4](../SKILL.md); the item specs below keep their `a`–`h` letters.
 
 > **Execution discipline**: This is the last BLOCKING checkpoint in the pipeline. After confirmation, complete the Design Spec and proceed to image generation / SVG / post-processing without further pauses.
 >
@@ -45,13 +46,13 @@ Recommend format based on scenario (see [`canvas-formats.md`](canvas-formats.md)
 
 ### b. Page Count Confirmation
 
-**Tier-2 (derived).** Page count is not an anchor — recommend it only after the Tier-1 delivery purpose is confirmed, since the same source yields a different count by purpose. Provide a specific page count recommendation based on source document content volume **and the confirmed delivery purpose** (`text` packs denser → the same source fits in fewer pages; `presentation` is one-idea-per-page → the same source may need more) — see §6.1 Content Planning Strategy. The user's confirmed count still wins; delivery purpose governs density and per-page treatment within it.
+**Stage-2 (derived).** Page count is not an anchor — recommend it only after the Stage-1 delivery purpose is confirmed, since the same source yields a different count by purpose. Provide a specific page count recommendation based on source document content volume **and the confirmed delivery purpose** (`text` packs denser → the same source fits in fewer pages; `presentation` is one-idea-per-page → the same source may need more) — see §6.1 Content Planning Strategy. The user's confirmed count still wins; delivery purpose governs density and per-page treatment within it.
 
 ### c. Key Information Confirmation
 
 Confirm target audience, usage occasion, and core message; provide initial assessment based on document nature.
 
-**Delivery purpose** (PPT only) is confirmed here, beside audience, as part of the key information — the deck's consumption mode: `text` (read-close) / `balanced` (business, default) / `presentation`. It is a Tier-1 anchor: it sets the §g body size to one fixed value per purpose, plus the type character, page density, and the §b page-count recommendation (the size and page count re-derived in Tier 2). Recommend one (`recommend.delivery_purpose`, default `balanced`) and let the user confirm. The fixed body value per purpose lives in §g; the density / treatment side lives in §6.1 — here it is surfaced as a key-information choice, not a separate typography step.
+**Delivery purpose** (PPT only) is confirmed here, beside audience, as part of the key information — the deck's consumption mode: `text` (read-close) / `balanced` (business, default) / `presentation`. It is a Stage-1 anchor: it sets the §g body size to one fixed value per purpose, plus the type character, page density, and the §b page-count recommendation (the size and page count re-derived in Stage 2). Recommend one (`recommend.delivery_purpose`, default `balanced`) and let the user confirm. The fixed body value per purpose lives in §g; the density / treatment side lives in §6.1 — here it is surfaced as a key-information choice, not a separate typography step.
 
 **Material divergence** — a **free-text** intent the user states beside audience (same content-strategy cluster): in their own words, how closely the deck should follow the source vs how freely it may reshape it. This is the user's own call — a free prose field (`content_divergence`), **not** a fixed set of options and **not** something you recommend from analyzing the source. Surface the question (in the confirm UI it is a text box under audience; in chat, ask it plainly); leave it for the user to fill. Blank = a balanced default.
 
@@ -85,11 +86,11 @@ Write the locked value to `spec_lock.md` `- mode:` and record the rationale in `
 
 🚧 **GATE**: read [`visual-styles/_index.md`](./visual-styles/_index.md) before recommending.
 
-The deck's **visual aesthetic** — shape language, decoration density, whitespace rhythm, typographic character, texture. Anchors the downstream confirmations e (Color), f (Icon), g (Typography), h (Image). Lock one preset from the catalog, or `custom`.
+The deck's **visual aesthetic** — shape language, decoration density, whitespace rhythm, typographic character, texture. Anchors downstream fields e (Color), f (Icon), g (Typography), h (Image). Lock one preset from the catalog, or `custom`.
 
 **Source**:
 - User named a style (chat / template / beautify) → it is truth: map to the closest preset (or `custom` with a `visual_style_behavior` paragraph) and lock directly. **Skip the spectrum below** — do not re-offer choice they already made.
-- No user description → **present a personality spectrum, not one safe pick** (this is the lever against "every deck looks the same" — the visual style is what most determines a deck's character, so it gets real choice, same hard rule and thinking as h.5). Author **≥3 distinct styles** from the index's auto-selection table spanning *safe* (the industry-norm recommendation) → *shifted* (an alternate one tick more expressive) → *bold* (a characterful style that challenges the default — `brutalist` / `zine` / `memphis` / `ink-wash` / `vintage-poster` etc., whenever the content can carry it). Give each a one-line **temperament tag + real-world analogy** (like h.5's "like an Economist feature"). Write the three to `recommendations.json` `visual_style_spectrum` (each `{id, tag_zh/en, note_zh/en}`) **and present the same three in chat** as the always-valid fallback; set `recommend.visual_style` to the *safe* pick as the pre-selected default. The user may pick any of the three, a style outside them, or Custom. Honest-shortfall exception (mirrors h.5): if the content genuinely supports fewer than 3 non-gimmicky directions, present the smaller set and say why — never pad with a style that fights the content.
+- No user description → **present a personality spectrum, not one safe pick** (this is the lever against "every deck looks the same" — the visual style is what most determines a deck's character, so it gets real choice, same hard rule and thinking as h.5). Author **≥3 distinct styles** from the index's auto-selection table spanning *safe* (the industry-norm recommendation) → *shifted* (an alternate one tick more expressive) → *bold* (a characterful style that challenges the default — `brutalist` / `zine` / `memphis` / `ink-wash` / `vintage-poster` etc., whenever the content can carry it). Give each a one-line **temperament tag + real-world analogy** (like h.5's "like an Economist feature"). Write the three to `recommendations.json` `visual_style_spectrum` (each `{id, tag_zh/en/ja, note_zh/en/ja}` — include the `_ja` variants whenever the page `lang` is `ja`) **and present the same three in chat** as the always-valid fallback; set `recommend.visual_style` to the *safe* pick as the pre-selected default. The user may pick any of the three, a style outside them, or Custom. Honest-shortfall exception (mirrors h.5): if the content genuinely supports fewer than 3 non-gimmicky directions, present the smaller set and say why — never pad with a style that fights the content.
 
 **Forbidden — a non-catalog name as `visual_style`**: the value MUST be an `id` from the visual-styles catalog (or genuine `custom` prose). A name that is **not** in that catalog is not a visual style — most often it is an image-rendering name from the `_index` "Paired rendering" column (`flat`, `vector-illustration`, `digital-dashboard`, `3d-isometric`, `corporate-photo`, …), which names the §h *illustration* family, not the deck's layout aesthetic. Do not borrow it. (Names that are intentionally **both** a style and its paired rendering — `glassmorphism`, `blueprint`, `editorial`, `dark-tech` — are valid styles because they *are* in the catalog.) Generic baseline words — `flat` / flat-design / 扁平 / modern / clean / simple / minimal — are **not** custom-worthy either: the whole system is flat by default (shadows discouraged), so map them to the closest preset (flat + grid → `swiss-minimal`; flat + rounded → `soft-rounded`; flat + dense → `brutalist`). Reserve `custom` for an aesthetic no preset covers.
 
@@ -143,7 +144,7 @@ See [`../templates/icons/README.md`](../templates/icons/README.md) for the curre
 
 > **Mandatory rules when choosing C**:
 >
-> **At the eight-confirmation stage — decide the library only. Do NOT run `ls | grep` yet.**
+> **At the Strategist confirmation stage — decide the library only. Do NOT run `ls | grep` yet.**
 >
 > 1. **Pick exactly one stylistic library** — read the source material, then choose the library whose visual character best serves the deck:
 >    - **`chunk-filled`** — fill, straight-line geometry (M/L/H/V/Z only); sharp right angles; heavy, solid, architectural
@@ -154,7 +155,7 @@ See [`../templates/icons/README.md`](../templates/icons/README.md) for the curre
 >    - **Brand-logo exception**: `simple-icons` is NOT a stylistic library. Add it to the deck's icon inventory **only when** the deck genuinely contains real company / product / service brand marks (customer logos, tech-stack icons, social handles). Never substitute it for a missing generic icon.
 > 2. **Stroke weight lock (stroke-style libraries only)** — for stroke-based libraries (currently `tabler-outline`), pick one deck-wide value from `{1.5, 2, 3}` (default `2`). For heavier presence, switch library instead of going above `3`.
 >
-> **After all eight confirmations are approved — when writing `design_spec.md` §VI / `spec_lock.md`**, then materialize the icon inventory:
+> **After the Strategist confirmation stage is approved — when writing `design_spec.md` §VI / `spec_lock.md`**, then materialize the icon inventory:
 >
 > 3. Enumerate the concepts the deck actually needs (home, chart, users, …) based on the confirmed outline.
 > 4. Search for each concept's filename in the chosen library: `ls skills/ppt-master/templates/icons/<chosen-library>/ | grep <keyword>`
@@ -172,16 +173,16 @@ See [`../templates/icons/README.md`](../templates/icons/README.md) for the curre
 
 #### Font Combinations
 
-> Same-deck fonts must form **contrast** (different family, weight, or proportion) or **concord** (one family throughout). "Similar but not identical" pairings *across roles* are forbidden — see blacklist below. *Within one stack*, pairing a Windows font with a macOS counterpart (e.g. `Microsoft YaHei` + `PingFang SC`) is encouraged as a browser-preview nicety; converter writes only the first into PPTX.
+> Same-deck fonts must form **contrast** (different family, weight, or proportion) or **concord** (one family throughout). "Similar but not identical" pairings *across roles* are forbidden — see blacklist below. *Within one stack*, pairing a Windows font with a macOS counterpart (e.g. `Microsoft YaHei` + `PingFang SC`) is a browser-preview nicety; converter writes resolved Latin / EA typefaces into PPTX, not the CSS fallback tail.
 
-> **⚠️ PPT-safe font discipline (HARD rule).** PPTX has no runtime fallback — missing fonts substitute to Calibri. Every stack MUST end with a pre-installed font:
+> **⚠️ PPT-safe font discipline (HARD rule).** PPTX has no runtime fallback — missing fonts substitute to Calibri. Each stack's exported Latin / EA typefaces MUST resolve to pre-installed fonts:
 > - CJK → `"Microsoft YaHei"` / `SimHei` / `SimSun` / `FangSong` / `KaiTi`
 > - Latin sans → `Arial` / `Calibri` / `Segoe UI` / `Verdana` / `Trebuchet MS`
 > - Latin serif → `"Times New Roman"` / `Georgia` / `Cambria` / `Palatino` / `Garamond`
 > - Mono → `Consolas` / `"Courier New"`
 > - Display → `Impact` / `"Arial Black"`
 >
-> Stacks led by non-pre-installed fonts (Inter / HarmonyOS Sans / Source Han / brand typefaces like McKinsey Bower) are only acceptable when the Design Spec notes "requires install or PPTX embed".
+> Stacks that export non-pre-installed typefaces (Inter / HarmonyOS Sans / Source Han / brand typefaces like McKinsey Bower) are only acceptable when the Design Spec notes "requires install or PPTX embed".
 
 **Forbidden — similar-but-not-identical pairings across roles** (do not split title vs body across these; within one stack as cross-platform fallback they remain encouraged):
 
@@ -221,7 +222,7 @@ See [`../templates/icons/README.md`](../templates/icons/README.md) for the curre
 | Tech / developer | `Arial, "Microsoft YaHei", sans-serif` | same | `Consolas, "Courier New", monospace` |
 | Concord (single family — pick the family by subject + `visual_style`) | `<family by subject>, …, sans-serif / serif` | same | — |
 
-> **Stack length discipline (soft rule).** ≤4 fonts per stack. The **first** CJK and first Latin font MUST be pre-installed — the converter writes only those, and a non-installed lead substitutes to Calibri ([`drawingml_utils.py parse_font_family`](../scripts/svg_to_pptx/drawingml_utils.py)). Choose that lead from the safe set **by the locked style's character**: `Microsoft YaHei` / `Arial` are the *neutral* members — perfect as the tail fallback and as the lead only when the style is plain-sans, but **not the automatic lead for every deck**. For a styled title, lead with `SimHei` / `KaiTi` / `FangSong` / `SimSun` / `Georgia` / `Cambria` / `Impact` / `Consolas` as the character asks. Keep at most **one** macOS-exclusive family (typically `"PingFang SC"`); macOS→Windows fallback is auto-mapped via `FONT_FALLBACK_WIN`.
+> **Stack length discipline (soft rule).** ≤4 fonts per stack. The exported CJK / Latin typefaces MUST be pre-installed after converter resolution ([`drawingml/utils.py parse_font_family`](../scripts/svg_to_pptx/drawingml/utils.py)). Choose those exported faces from the safe set **by the locked style's character**: `Microsoft YaHei` / `Arial` are the *neutral* members — perfect as the tail fallback and as the lead only when the style is plain-sans, but **not the automatic lead for every deck**. For a styled title, lead with `SimHei` / `KaiTi` / `FangSong` / `SimSun` / `Georgia` / `Cambria` / `Impact` / `Consolas` as the character asks. Keep at most **one** macOS-exclusive family (typically `"PingFang SC"`); macOS→Windows fallback is auto-mapped via `FONT_FALLBACK_WIN`.
 
 > **Non-pre-installed directions** (require install or PPTX embed; note the constraint in Design Spec):
 > - **Retro / pixel** — Press Start 2P / VT323 / Silkscreen
@@ -240,7 +241,7 @@ See [`../templates/icons/README.md`](../templates/icons/README.md) for the curre
 
 > **Unit boundary (HARD rule).** The system is **px-only**. `recommendations.json`, the Confirm UI, `result.json`, `design_spec.md`, `spec_lock.md`, and SVG **all carry unitless px** — there is no pt layer anywhere, and no pt→px conversion step. pt exists only as the size PowerPoint happens to show *after export* (`px × 0.75`, rounded to 1 decimal); it is never an input, a confirmation value, or a provenance field (no `body_size_pt` / `sizes_pt`). Never write `pt` / `px` / `em` units; every layer carries bare px numbers. Geometry — margins, gaps, card sizes — is px too. (Beautify reads a source deck's pt at intake but converts to px **before** any recommendation — see [`beautify-pptx.md`](../workflows/beautify-pptx.md); pt never re-enters the contract.)
 
-**Baseline — one fixed value per delivery purpose, not a range.** Delivery purpose is a **Tier-1 anchor confirmed in §c key information** (beside audience, not as a separate typography step — see §1 Two-tier confirmation); it is the primary driver because the same canvas reads very differently when read close vs. projected. It is a **deck-wide** axis — beyond the body baseline it also drives page density / count / rhythm; see §6.1 for that side. Here, with the purpose confirmed, it sets the body baseline to a single value:
+**Baseline — one fixed value per delivery purpose, not a range.** Delivery purpose is a **Stage-1 anchor confirmed in §c key information** (beside audience, not as a separate typography step — see §1 Three-stage confirmation); it is the primary driver because the same canvas reads very differently when read close vs. projected. It is a **deck-wide** axis — beyond the body baseline it also drives page density / count / rhythm; see §6.1 for that side. Here, with the purpose confirmed, it sets the body baseline to a single value:
 
 | Delivery purpose (PPT 16:9) | Body (px) | Reads as |
 |---|---:|---|
@@ -303,7 +304,7 @@ Formula rendering is part of Typography confirmation. Recommend one policy and l
 
 **Forbidden — invented math**: formula assets must faithfully structure source content. Do not create a new equation just to make a slide look more academic.
 
-**Manifest step**: After the Eight Confirmations and before writing `design_spec.md`, if policy is `mixed` or `render-all` and formulas are selected:
+**Manifest step**: After the Strategist confirmation stage and before writing `design_spec.md`, if policy is `mixed` or `render-all` and formulas are selected:
 
 ```bash
 mkdir -p <project_path>/images
@@ -351,6 +352,8 @@ The script renders PNGs into `images/`, trying `codecogs`, `quicklatex`, `mathpa
 > Read `<project_path>/analysis/image_analysis.csv` (size / ratio / category of every in-hand picture). The A–E choice is still your judgment, but it MUST be made with the current inventory in full view — never in ignorance of what is already on hand. `image_analysis.csv` is a regenerated view of the live folder, not a durable fact: re-run this whenever `images/` changes.
 
 > **Recommendation shape.** In `recommendations.json`, write `recommend.image_usage` as source ids, not prose. Use a single id for a single source (`"ai"`) and an array for mixed sources (`["ai", "provided"]`, `["web", "placeholder"]`). Put the strategy explanation in top-level `image_notes.value`: page roles, which supplied assets are authoritative, where AI may fill gaps, what kind of imagery to prefer/avoid, and whether placeholders are acceptable. `none` is exclusive and must not be combined with other ids.
+
+> **Default — human-scale topics lean illustrated (may override when factual assets dominate)**: When the source is about personal finance, family life, daily routines, education, wellness, healing, or children, and there are no supplied assets that already carry the story, recommend `image_usage: "ai"` instead of `none`. Use `image_notes.value` to name a warm illustration motif (for example a home ledger, school-day routine, care scene, or life-planning metaphor). Do not apply this default to regulated investor decks, B2B finance reports, or data-only dashboards; those stay eligible for `none` / `web` / `provided` by judgment.
 
 > **Confirmed value wins.** The `image_usage` in `result.json` (or the chat reply) **overrides the recommendation here**. It may be a legacy single string or a Confirm UI multi-select array. Map every selected value to §VIII `Acquire Via` (`ai`→`ai`, `web`→`web`, `provided`→**`user`**, `placeholder`→`placeholder`, `none`→option A, no image rows). When it does not include `ai` (and no legacy prose plan includes AI), skip h.5 entirely and write no `ai` rows. If `image_notes` is present, honor it as the user's image intent while assigning per-page rows. See SKILL.md Step 4 for the full mapping.
 
@@ -418,6 +421,10 @@ After the candidates, append one line:
 ```
 > Reference images: see references/ai-image-comparison/ for matching PNGs by name.
 ```
+
+**Confirm UI packaging**: when writing `recommendations.json` Stage 3, put **exactly three non-custom** generated-image recommendations in `image_strategy.candidates`. The page appends one built-in **Custom** card after those three recommendations, so do not use a `custom` candidate as a fourth option or as a slot filler in the UI payload.
+
+**Confirmed Custom card prose**: when `result.json.image_strategy.custom` is non-empty, treat it as a confirmed deck-wide image-direction constraint. Write the prose into `design_spec.md §III` image direction notes and carry it into every `Acquire Via: ai` prompt brief / `images/image_prompts.json` prompt guidance that it applies to. It augments the locked `rendering` + `palette` ids; preserve those ids for catalog / comparison-reference behavior, and use the custom prose for subject, composition, texture, avoidance, or other prompt specifics.
 
 **Hard rules for candidate construction**:
 
@@ -670,11 +677,11 @@ The catalog covers **both data charts and structural information designs**. A "m
 The most common Strategist failure mode is missing the structural half — treating "chart" as "numeric chart only" and leaving team / agenda / principles / journey pages as text-only when a template would fit. Read the catalog with both lenses.
 
 > **Reading is mandatory; the catalog is a starting point, not a copy target.**
-> - Fully read `templates/charts/charts_index.json` **before drafting the Eight Confirmations** — the read happens up front, not when you sit down to write Section VII. The file contains `meta` + `charts.<key>.summary` only; each `summary` is a selection rule (`"Pick for … Skip if …"`), not a description. There is **no category, quickLookup, or keyword index** — selection is done by semantically matching each page's content shape against all 71 summaries in one pass.
+> - Fully read `templates/charts/charts_index.json` **before drafting the Strategist confirmation stage** — the read happens up front, not when you sit down to write Section VII. The file contains `meta` + `charts.<key>.summary` only; each `summary` is a selection rule (`"Pick for … Skip if …"`), not a description. There is **no category, quickLookup, or keyword index** — selection is done by semantically matching each page's content shape against all 76 summaries in one pass.
 > - Not every page needs a chart. When a page's information structure matches a catalog entry, **use that template as a structural starting point** — keep the visualization type and core layout logic, then adapt composition, density, color, decoration, and accompanying elements to fit this deck's content and visual tone. Free adjustment is encouraged; what is forbidden is (a) generating without reading the catalog, and (b) blind verbatim mimicry that ignores the page's actual content weight.
 >
 > **Workflow**:
-> 1. Read all 71 summaries; for each page, identify the Pick clause that matches the page's content shape AND does not match any Skip clause.
+> 1. Read all 76 summaries; for each page, identify the Pick clause that matches the page's content shape AND does not match any Skip clause.
 > 2. Prefer specificity (`vertical_list` over generic `numbered_steps`).
 > 3. One primary visualization per page; a supporting layout may accompany it.
 > 4. List selections in Design Spec section VII; section IX only notes the visualization type name per page.
@@ -683,11 +690,11 @@ The most common Strategist failure mode is missing the structural half — treat
 >
 > **Read-audit (mandatory, section VII format)** — single combined table; `summary-quote` column is the anti-fabrication audit, `path` + `usage` serve Executor lookup. Format defined in [`templates/design_spec_reference.md`](../templates/design_spec_reference.md) §VII:
 > ```
-> Catalog read: 71 templates
+> Catalog read: 76 templates
 >
 > | Page | Template      | Path                              | Summary-quote (verbatim) | Usage |
 > | ---- | ------------- | --------------------------------- | ------------------------ | ----- |
-> | P03  | bar_chart     | templates/charts/bar_chart.svg    | "<verbatim first sentence>" | <intent> |
+> | P03  | column_chart     | templates/charts/column_chart.svg    | "<verbatim first sentence>" | <intent> |
 > | P07  | line_chart    | templates/charts/line_chart.svg   | "<verbatim first sentence>" | <intent> |
 > | P11  | pie_chart     | templates/charts/pie_chart.svg    | "<verbatim first sentence>" | <intent> |
 >
@@ -792,7 +799,7 @@ Templates are starting points. The Strategist may adjust based on content and au
 
 Content-outline and speaker-notes strategy follow the deck's locked **mode** — see [`modes/_index.md`](./modes/_index.md) and the locked mode's file. The guidance below applies within any mode:
 
-**Delivery purpose drives the whole plan, not just type size.** `result.json delivery_purpose` — `text` (read-close) / `balanced` (business, default) / `presentation`, confirmed as a Tier-1 anchor (§1) — is a **deck-wide consumption mode**. It seeds the body baseline (§g) **and** governs how content is distributed:
+**Delivery purpose drives the whole plan, not just type size.** `result.json delivery_purpose` — `text` (read-close) / `balanced` (business, default) / `presentation`, confirmed as a Stage-1 anchor (§1) — is a **deck-wide consumption mode**. It seeds the body baseline (§g) **and** governs how content is distributed:
 
 | Delivery purpose | Per-page density & treatment | §IX content per page | page_rhythm lean |
 |---|---|---|---|

@@ -8,7 +8,7 @@ Technical spec and workflow for adding images to SVG files.
 
 ## Image Resource List Format
 
-Defined in the Design Specification & Content Outline; each image carries an `Acquire Via` field plus a status annotation. This file is authoritative for status names and SVG embedding behavior. If image approach includes "B) User-provided": run `analyze_images.py` right after the Eight Confirmations and complete the list before outputting the design spec.
+Defined in the Design Specification & Content Outline; each image carries an `Acquire Via` field plus a status annotation. This file is authoritative for status names and SVG embedding behavior. If image approach includes "B) User-provided": run `analyze_images.py` right after the Strategist confirmation stage and complete the list before outputting the design spec.
 
 ```markdown
 | Filename | Dimensions | Purpose | Type | Acquire Via | Status | Reference |
@@ -135,15 +135,18 @@ python3 scripts/finalize_svg.py <project_path>
 python3 scripts/svg_to_pptx.py <project_path>
 ```
 
-### Standalone: embed_images.py (advanced)
+### Standalone: align_embed_images.py (advanced)
 
 For processing specific SVGs without the full pipeline:
 
 ```bash
-python3 scripts/svg_finalize/embed_images.py <svg_file>                         # Single file
-python3 scripts/svg_finalize/embed_images.py <project_path>/svg_output/*.svg    # Batch
-python3 scripts/svg_finalize/embed_images.py --dry-run <project_path>/svg_output/*.svg  # Preview
+python3 scripts/svg_finalize/align_embed_images.py <svg_file>
+python3 scripts/svg_finalize/align_embed_images.py --dry-run <svg_file>
 ```
+
+Use `finalize_svg.py --only align-images` for project-level batches. The old
+`crop-images`, `fix-aspect`, and `embed-images` step names are compatibility
+aliases only when invoked through `finalize_svg.py --only`.
 
 ---
 

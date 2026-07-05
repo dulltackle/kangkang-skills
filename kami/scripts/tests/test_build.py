@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import builtins
 import importlib.util
+import inspect
 import io
 import json
 import os
@@ -33,16 +34,22 @@ from build import (  # noqa: E402
     _BG_B,
     _BG_G,
     _BG_R,
+    _density_bucket,
     _extract_root_vars,
     _last_content_y,
+    _markdown_residue_issues,
     _off_palette_findings,
+    _orphan_last_line,
     _pair_names,
     _parse_slide_sequence,
     _resume_balance_issues,
+    _rhythm_issues,
     check_all,
     check_cross_template_consistency,
+    check_markdown_residue,
     check_off_palette,
     check_placeholders,
+    main as build_main,
     scan_file,
 )
 from shared import (  # noqa: E402
@@ -54,10 +61,19 @@ from shared import (  # noqa: E402
     TEMPLATES,
     build_targets,
     diagram_targets,
+    load_checks_thresholds,
     screen_targets,
 )
 import highlight as highlight_mod  # noqa: E402
 from highlight import highlight_code_blocks  # noqa: E402
+from site_facts import (  # noqa: E402
+    FULL_PUBLIC_FACT_FILES,
+    REDIRECT_SITE_FILE,
+    check_site_facts,
+    site_fact_issues,
+    site_structure_issues,
+)
+from tokens import _mermaid_theme_drift  # noqa: E402
 from verify import RECOGNIZABLE_FALLBACK_FONT_MARKERS  # noqa: E402
 
 
@@ -91,9 +107,25 @@ def silently(callable_, *args, **kwargs):
         return callable_(*args, **kwargs)
 
 
+def run_build_args(args: list[str]) -> tuple[int, str]:
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink):
+        rc = build_main(["build.py", *args])
+    return rc, sink.getvalue()
+
+
+def site_fact_file_map() -> dict[str, str]:
+    rels = (*FULL_PUBLIC_FACT_FILES, REDIRECT_SITE_FILE)
+    return {
+        rel: (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        for rel in rels
+    }
+
+
 # --------------------------- package archive ---------------------------
 
 PACKAGE_MAX_BYTES = 6_000_000
+PACKAGE_ROOT_NAME = "kami"
 PACKAGE_FORBIDDEN_EXACT = {
     ".claude-plugin/marketplace.json",
     ".gitignore",
@@ -146,6 +178,7 @@ PACKAGE_REQUIRED_ENTRIES = {
     "references/design.md",
     "scripts/build.py",
     "scripts/ensure-fonts.sh",
+    "scripts/site_facts.py",
 }
 
 
@@ -163,22 +196,32 @@ def test_dist_package_contents() -> None:
     with zipfile.ZipFile(archive) as zf:
         names = set(zf.namelist())
 
+    bad_root = sorted(name for name in names if not name.startswith(f"{PACKAGE_ROOT_NAME}/"))
+    check("dist/kami.zip uses a Claude-friendly top-level skill folder",
+          not bad_root,
+          f"entries outside {PACKAGE_ROOT_NAME}/: {', '.join(bad_root)}")
+
+    payload_names = {
+        name.removeprefix(f"{PACKAGE_ROOT_NAME}/")
+        for name in names
+        if name.startswith(f"{PACKAGE_ROOT_NAME}/")
+    }
     forbidden = sorted(
-        name for name in names
+        name for name in payload_names
         if name.startswith(PACKAGE_FORBIDDEN_PREFIXES)
         or name in PACKAGE_FORBIDDEN_EXACT
     )
     check("dist/kami.zip excludes site, CI, tests, demos, generated mirrors, and large bundled fonts",
           not forbidden,
           f"forbidden entries: {', '.join(forbidden)}")
-    missing_required = sorted(PACKAGE_REQUIRED_ENTRIES - names)
+    missing_required = sorted(PACKAGE_REQUIRED_ENTRIES - payload_names)
     check("dist/kami.zip keeps required runtime skill files",
           not missing_required,
           f"missing entries: {', '.join(missing_required)}")
 
 
-def test_codex_plugin_metadata_generated() -> None:
-    """Codex marketplace and plugin mirror must stay generated from source."""
+def test_plugin_metadata_generated() -> None:
+    """Claude Code / Codex marketplaces and plugin mirrors must stay generated."""
     script = REPO_ROOT / "scripts" / "build_metadata.py"
     check("build_metadata.py exists", script.exists(), f"missing {script}")
     if not script.exists():
@@ -191,7 +234,7 @@ def test_codex_plugin_metadata_generated() -> None:
         text=True,
     )
     detail = (result.stdout + result.stderr).strip()
-    check("Codex plugin metadata matches generator", result.returncode == 0, detail)
+    check("plugin metadata matches generator", result.returncode == 0, detail)
 
 
 def test_claude_plugin_marketplace_version_matches_version_file() -> None:
@@ -212,6 +255,37 @@ def test_claude_plugin_marketplace_version_matches_version_file() -> None:
     check("Claude plugin marketplace version matches VERSION",
           kami_plugin.get("version") == version,
           f"marketplace={kami_plugin.get('version')!r}, VERSION={version!r}")
+    check("Claude plugin marketplace installs the lightweight plugin directory",
+          kami_plugin.get("source") == "./plugins/kami",
+          f"source={kami_plugin.get('source')!r}")
+
+    plugin_file = REPO_ROOT / "plugins" / "kami" / ".claude-plugin" / "plugin.json"
+    check("Claude plugin manifest exists in generated plugin tree", plugin_file.exists())
+    if not plugin_file.exists():
+        return
+
+    plugin = json.loads(plugin_file.read_text(encoding="utf-8"))
+    check("Claude plugin manifest version matches VERSION",
+          plugin.get("version") == version,
+          f"plugin={plugin.get('version')!r}, VERSION={version!r}")
+    check("Claude plugin manifest exposes skills directory",
+          plugin.get("skills") == "./skills/",
+          f"skills={plugin.get('skills')!r}")
+
+
+def test_build_metadata_reads_tokens_from_root_argument() -> None:
+    from build_metadata import build_codex_plugin, read_token_value
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "references").mkdir()
+        (root / "references" / "tokens.json").write_text('{"--brand":"#123456"}\n', encoding="utf-8")
+
+        brand_color = read_token_value(root, "brand")
+        plugin = build_codex_plugin("9.9.9", brand_color)
+        check("build_metadata reads brand token from provided root",
+              plugin["interface"]["brandColor"] == "#123456",
+              f"brandColor={plugin['interface']['brandColor']}")
 
 
 # --------------------------- shared registry ---------------------------
@@ -227,13 +301,114 @@ def test_registry_consistency() -> None:
           set(screen_targets()) == set(SCREEN_TARGETS))
     check("HTML_TARGETS in build.py matches build_targets()",
           dict(HTML_TARGETS) == build_targets())
-    check("DIAGRAM_TARGETS has 17 entries", len(DIAGRAM_TARGETS) == 17,
+    check("DIAGRAM_TARGETS has 18 entries", len(DIAGRAM_TARGETS) == 18,
           f"got {len(DIAGRAM_TARGETS)}")
     check("DIAGRAM_TARGETS in build.py matches shared.diagram_targets()",
           dict(DIAGRAM_TARGETS) == diagram_targets() == dict(DIAGRAM_TEMPLATES))
     check("PPTX_TARGETS has 2 entries", len(PPTX_TARGETS) == 2,
           f"got {len(PPTX_TARGETS)}")
     check("PARCHMENT_RGB is canonical", PARCHMENT_RGB == (0xF5, 0xF4, 0xED))
+
+
+def test_runner_auto_discovers_tests() -> None:
+    names = [name for name, _ in _test_functions()]
+    check("test runner auto-discovers Codex update command test",
+          "test_check_update_uses_codex_plugin_update_command" in names)
+    check("test runner auto-discovers this test",
+          "test_runner_auto_discovers_tests" in names)
+
+
+def test_build_cli_rejects_unexpected_flags() -> None:
+    rc, out = run_build_args(["resume", "--verify"])
+    check("build.py rejects flags after target",
+          rc == 2 and "ERROR: unexpected argument: --verify" in out,
+          out.strip())
+
+    rc, out = run_build_args(["--check-density", "-v"])
+    check("build.py rejects unknown flags for path-based checks",
+          rc == 2 and "ERROR: unexpected argument: -v" in out,
+          out.strip())
+
+    rc, out = run_build_args(["--verify", "-v"])
+    check("build.py rejects unknown --verify flags",
+          rc == 2 and "ERROR: unexpected argument: -v" in out,
+          out.strip())
+
+    rc, out = run_build_args(["--check-markdown", "-v"])
+    check("build.py rejects unknown --check-markdown flags",
+          rc == 2 and "ERROR: unexpected argument: -v" in out,
+          out.strip())
+
+
+def test_long_doc_templates_use_rendered_toc_pages_and_chapter_headers() -> None:
+    """Long-doc TOCs must use WeasyPrint target-counter, and running headers
+    must follow chapter h1 titles instead of getting stuck on the TOC h2.
+    """
+    sources = ("long-doc.html", "long-doc-en.html", "long-doc-ko.html")
+    required_ids = {
+        "#ch-executive-summary",
+        "#ch-background",
+        "#ch-methodology",
+        "#ch-conclusions",
+        "#ch-appendix",
+    }
+    offenders: list[str] = []
+    for source in sources:
+        text = (TEMPLATES / source).read_text(encoding="utf-8")
+        if "target-counter(attr(href), page)" not in text:
+            offenders.append(f"{source}: missing target-counter")
+        if ".toc-page" in text:
+            offenders.append(f"{source}: still has obsolete toc-page wiring")
+        missing_ids = sorted(href for href in required_ids if f'href="{href}"' not in text or f'id="{href[1:]}"' not in text)
+        if missing_ids:
+            offenders.append(f"{source}: missing TOC href/id pairs {missing_ids}")
+        h1_block = re.search(r"(?m)^  h1\s*\{(?P<body>.*?)^  \}", text, re.S)
+        if not h1_block or "string-set: section-title content();" not in h1_block.group("body"):
+            offenders.append(f"{source}: h1 does not set running header")
+        h2_block = re.search(r"(?m)^  h2\s*\{(?P<body>.*?)^  \}", text, re.S)
+        if h2_block and "string-set:" in h2_block.group("body"):
+            offenders.append(f"{source}: h2 still sets running header")
+
+    check("long-doc templates use rendered TOC pages and chapter headers",
+          not offenders,
+          "; ".join(offenders))
+
+
+def test_site_facts_repo_clean() -> None:
+    rc = silently(check_site_facts, False)
+    check("public site facts match shared constants and registries", rc == 0,
+          f"check_site_facts returned {rc}")
+
+
+def test_site_facts_flags_bad_diagram_count() -> None:
+    files = site_fact_file_map()
+    bad = files["index.html"]
+    bad = bad.replace("18 inline SVG diagram types", "17 inline SVG diagram types")
+    bad = bad.replace("Eighteen inline SVG diagram types", "Seventeen inline SVG diagram types")
+    files["index.html"] = bad
+
+    issues = site_fact_issues(files)
+    check("public site facts flag stale diagram counts",
+          any("index.html: missing diagram count 18" in issue for issue in issues),
+          f"issues: {issues}")
+
+
+def test_site_structure_repo_clean() -> None:
+    """Locale pages match index.html's DOM skeleton (redirect script exempt)."""
+    issues = site_structure_issues()
+    check("locale page structure matches index.html", not issues,
+          f"issues: {issues}")
+
+
+def test_site_structure_flags_locale_drift() -> None:
+    files = site_fact_file_map()
+    files["index-zh.html"] = files["index-zh.html"].replace(
+        '<h2 class="section-title">', '<h3 class="section-title">', 1)
+
+    issues = site_structure_issues(files)
+    check("locale structure check flags a drifted heading",
+          any("index-zh.html: DOM skeleton drifted" in issue for issue in issues),
+          f"issues: {issues}")
 
 
 def test_chinese_html_templates_keep_single_serif_stack() -> None:
@@ -524,8 +699,8 @@ def test_check_update_script() -> None:
 
         rc, out = run(str(dp / "c1"), newer.as_uri())
         check("check-update notifies on a newer remote", rc == 0 and "9.9.9" in out, out)
-        check("check-update default command uses skills add subpath",
-              "npx skills add tw93/kami/plugins/kami/skills/kami" in out and "skills update" not in out,
+        check("check-update default command uses plugin bundle path",
+              "npx skills add tw93/kami/plugins/kami -a universal -g -y" in out and "skills update" not in out,
               out)
 
         rc, out = run(str(dp / "c2"), same.as_uri())
@@ -577,6 +752,40 @@ def test_check_update_uses_codex_plugin_update_command() -> None:
             check(f"check-update uses Codex plugin update command ({install_root.parent.parent.parent.name})",
                   result.returncode == 0 and "codex plugin marketplace upgrade kami" in out,
                   out)
+
+
+def test_check_update_uses_claude_plugin_update_command() -> None:
+    """When installed through Claude Code's plugin cache, the update hint should
+    use Claude's plugin updater instead of generic npx skill install.
+    """
+    script = REPO_ROOT / "scripts" / "check-update.sh"
+    check("check-update.sh exists for Claude command test", script.exists())
+    if not script.exists():
+        return
+    if shutil.which("bash") is None or shutil.which("curl") is None:
+        check("check-update Claude command (skipped: bash/curl unavailable)", True)
+        return
+
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        newer = dp / "newer"
+        newer.write_text("9.9.9\n")
+        install_root = dp / ".claude" / "plugins" / "cache" / "kami" / "kami" / "1.9.1" / "skills" / "kami"
+        (install_root / "scripts").mkdir(parents=True)
+        shutil.copy2(script, install_root / "scripts" / "check-update.sh")
+        (install_root / "VERSION").write_text("1.9.1\n")
+
+        env = dict(os.environ, XDG_CACHE_HOME=str(dp / "cache"), KAMI_UPDATE_URL=newer.as_uri())
+        result = subprocess.run(
+            ["bash", str(install_root / "scripts" / "check-update.sh")],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        out = result.stdout.strip()
+        check("check-update uses Claude plugin update command",
+              result.returncode == 0 and "claude plugin update kami" in out and "npx skills" not in out,
+              out)
 
 
 def test_lint_repo_clean() -> None:
@@ -652,6 +861,38 @@ def test_check_placeholders_passes_clean() -> None:
         check("check_placeholders passes clean file", rc == 0, f"rc={rc}")
     finally:
         p.unlink(missing_ok=True)
+
+
+def test_markdown_residue_flags_raw_markers() -> None:
+    issues = _markdown_residue_issues("Intro\n---\nThis has **raw bold** and `raw code`.")
+    check("markdown residue flags thematic breaks",
+          any("thematic break" in issue for issue in issues),
+          f"issues={issues}")
+    check("markdown residue flags raw bold markers",
+          any("bold marker" in issue for issue in issues),
+          f"issues={issues}")
+    check("markdown residue flags raw inline-code markers",
+          any("inline-code marker" in issue for issue in issues),
+          f"issues={issues}")
+
+    check("markdown residue ignores clean text",
+          _markdown_residue_issues("Clean paragraph with converted emphasis.") == [])
+
+
+def test_check_markdown_residue_skips_html_code_blocks() -> None:
+    dirty = write_temp_html("<html><body><p>Visible **raw bold**</p></body></html>", suffix=".html")
+    clean_code = write_temp_html(
+        "<html><body><p>Visible text</p><pre><code>**example** `cmd`</code></pre></body></html>",
+        suffix=".html",
+    )
+    try:
+        rc = silently(check_markdown_residue, [str(dirty)])
+        check("check_markdown_residue fails visible raw markdown", rc == 1, f"rc={rc}")
+        rc = silently(check_markdown_residue, [str(clean_code)])
+        check("check_markdown_residue skips code/pre blocks", rc == 0, f"rc={rc}")
+    finally:
+        dirty.unlink(missing_ok=True)
+        clean_code.unlink(missing_ok=True)
 
 
 # --------------------------- cross-template consistency ---------------------------
@@ -753,31 +994,83 @@ def test_last_content_y_blank_page() -> None:
 
 
 def test_density_threshold_buckets() -> None:
-    """Verify the SPARSE (>50%) / WARN (>25%) / OK categorization that
-    _scan_density applies after computing empty = (h - last_content_y) / h."""
-    w, h, n = 80, 100, 3
+    """Drive the real `_density_bucket` seam so the SPARSE (>50%) / WARN (>25%)
+    / OK categorization is asserted against production logic, not a reimplemented
+    copy. A `>`->`>=` slip or a warn/sparse swap in checks.py fails here."""
+    density_cfg = load_checks_thresholds()["density"]
+    warn_pct = float(density_cfg["warn_pct"])
+    sparse_pct = float(density_cfg["sparse_pct"])
     cases = [
-        (h,    0.0,  "OK"),       # full page
-        (80,   0.20, "OK"),       # 20% trailing
-        (70,   0.30, "WARN"),     # 30% trailing
-        (49,   0.51, "SPARSE"),   # 51% trailing
-        (0,    1.0,  "SPARSE"),   # blank page
+        (0.0,        "OK"),      # full page
+        (warn_pct,   "OK"),      # exactly at warn threshold -> not yet WARN (strict >)
+        (0.30,       "WARN"),    # 30% trailing
+        (sparse_pct, "WARN"),    # exactly at sparse threshold -> still WARN (strict >)
+        (0.51,       "SPARSE"),  # 51% trailing
+        (1.0,        "SPARSE"),  # blank page
     ]
-    for content_rows, expected_empty, expected_bucket in cases:
-        samples = _make_samples(rows_with_content=content_rows, w=w, h=h, n=n)
-        y = _last_content_y(samples, w, h, w * n, n)
-        empty = (h - y) / h if content_rows > 0 else 1.0
-        if empty > 0.50:
-            bucket = "SPARSE"
-        elif empty > 0.25:
-            bucket = "WARN"
-        else:
-            bucket = "OK"
+    for empty, expected_bucket in cases:
+        bucket = _density_bucket(empty, warn_pct, sparse_pct)
         check(
-            f"density threshold rows={content_rows} -> {expected_bucket}",
+            f"_density_bucket empty={empty:.2f} -> {expected_bucket}",
             bucket == expected_bucket,
-            f"empty={empty:.2f} bucket={bucket}",
+            f"got {bucket}",
         )
+
+
+def test_rhythm_issues_rules() -> None:
+    """Drive the three monotony rules in `_rhythm_issues` directly, without
+    rendering a deck. Covers content-run limit, missing divider, and missing
+    density-variation slide, plus the clean case."""
+    max_run, min_deck = 4, 8
+
+    healthy = [
+        "title_slide", "content_slide", "content_slide", "quote_slide",
+        "chapter_slide", "content_slide", "metrics_slide", "closing_slide",
+    ]
+    check("rhythm: balanced deck has no issues",
+          _rhythm_issues(healthy, max_run, min_deck) == [],
+          f"got {_rhythm_issues(healthy, max_run, min_deck)}")
+
+    long_run = ["quote_slide"] + ["content_slide"] * (max_run + 1)
+    issues = _rhythm_issues(long_run, max_run, min_deck)
+    check("rhythm: over-long content run flagged",
+          any("content_slide run" in i for i in issues), f"got {issues}")
+
+    no_divider = ["title_slide"] + ["content_slide", "quote_slide"] * 5
+    issues = _rhythm_issues(no_divider, max_run, min_deck)
+    check("rhythm: large deck without divider flagged",
+          any("no chapter_slide divider" in i for i in issues), f"got {issues}")
+
+    no_variation = ["title_slide", "content_slide", "chapter_slide", "content_slide"]
+    issues = _rhythm_issues(no_variation, max_run, min_deck)
+    check("rhythm: deck without quote/metrics flagged",
+          any("density variation" in i for i in issues), f"got {issues}")
+
+
+def test_orphan_last_line_predicate() -> None:
+    """Drive `_orphan_last_line`: a short trailing line on a multi-line block
+    is an orphan; single-line blocks and long trailing lines are not."""
+    max_words, max_chars = 3, 30
+
+    orphan = "This is a full sentence that wraps\nword"
+    check("orphan: short trailing line detected",
+          _orphan_last_line(orphan, max_words, max_chars) == "word",
+          f"got {_orphan_last_line(orphan, max_words, max_chars)!r}")
+
+    single = "Only one line here"
+    check("orphan: single-line block is not an orphan",
+          _orphan_last_line(single, max_words, max_chars) is None,
+          "single line flagged")
+
+    long_tail = "First line of the block\n" + "x" * (max_chars + 5)
+    check("orphan: long trailing line is not an orphan",
+          _orphan_last_line(long_tail, max_words, max_chars) is None,
+          "long tail flagged")
+
+    many_words = "First line here\none two three four five"
+    check("orphan: wordy trailing line is not an orphan",
+          _orphan_last_line(many_words, max_words, max_chars) is None,
+          "wordy tail flagged")
 
 
 def test_resume_balance_issues() -> None:
@@ -886,6 +1179,37 @@ def test_marp_themes_token_synced() -> None:
     check("marp theme :root tokens match tokens.json",
           checked >= 1 and not drift,
           "; ".join(drift) if drift else f"checked {checked}, no :root block found")
+
+
+def test_mermaid_theme_matches_tokens() -> None:
+    from shared import TOKENS_FILE
+    canonical = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+    issues = _mermaid_theme_drift(canonical)
+    check("mermaid theme colors and role docs match tokens.json",
+          issues == [],
+          f"issues: {issues}")
+
+
+def test_mermaid_theme_drift_flags_token_mismatch() -> None:
+    from shared import TOKENS_FILE
+    canonical = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+    canonical["--brand"] = "#000000"
+    issues = _mermaid_theme_drift(canonical)
+    check("mermaid theme drift flags accent token mismatch",
+          any("accent" in issue and "--brand" in issue for issue in issues),
+          f"issues: {issues}")
+
+
+def test_mermaid_normalize_defaults_match_theme() -> None:
+    import mermaid_normalize as mermaid_mod
+    theme = json.loads((REPO_ROOT / "references" / "mermaid-theme.json").read_text(encoding="utf-8"))
+    expected_colors = {f"--{key}": value for key, value in theme["colors"].items()}
+    check("mermaid normalizer fallback colors mirror mermaid-theme.json",
+          mermaid_mod._DEFAULT_COLORS == expected_colors,
+          f"default={mermaid_mod._DEFAULT_COLORS}, theme={expected_colors}")
+    check("mermaid normalizer fallback font mirrors mermaid-theme.json",
+          mermaid_mod._DEFAULT_FONT_STACK == theme["cssFontStack"],
+          f"default={mermaid_mod._DEFAULT_FONT_STACK}, theme={theme['cssFontStack']}")
 
 
 # --------------------------- mermaid normalize ---------------------------
@@ -1035,53 +1359,28 @@ def test_mermaid_normalize_cli_reports_missing_input() -> None:
               combined.strip())
 
 
+def _test_functions():
+    tests = []
+    for name, func in globals().items():
+        if not name.startswith("test_") or not callable(func):
+            continue
+        if getattr(func, "__module__", None) != __name__:
+            continue
+        code = getattr(func, "__code__", None)
+        if code is None:
+            continue
+        tests.append((code.co_firstlineno, name, func))
+    return [(name, func) for _, name, func in sorted(tests)]
+
+
 def main() -> int:
-    test_dist_package_contents()
-    test_codex_plugin_metadata_generated()
-    test_claude_plugin_marketplace_version_matches_version_file()
-    test_registry_consistency()
-    test_chinese_html_templates_keep_single_serif_stack()
-    test_korean_templates_carry_resolvable_serif_name()
-    test_font_fallback_markers_recognize_pt_serif()
-    test_chinese_slides_mono_has_cjk_fallback()
-    test_scan_file_skip_bug()
-    test_scan_file_arrow_in_en()
-    test_scan_file_clean_template()
-    test_scan_file_line_height_too_loose()
-    test_scan_file_cool_gray()
-    test_off_palette_flags_non_token_hex()
-    test_off_palette_ignores_root_and_svg()
-    test_off_palette_repo_clean()
-    test_lint_repo_clean()
-    test_check_update_script()
-    test_scan_file_ignores_block_comment_rgba()
-    test_scan_file_thin_border_with_radius()
-    test_parse_slide_sequence_empty()
-    test_parse_slide_sequence_basic()
-    test_check_placeholders_flags_unfilled()
-    test_check_placeholders_passes_clean()
-    test_pair_names_includes_known_pairs()
-    test_pair_names_includes_ko_variants_when_present()
-    test_cross_template_consistency_clean()
-    test_marp_themes_token_synced()
-    test_extract_root_vars_picks_up_definitions()
-    test_last_content_y_dense_page()
-    test_last_content_y_sparse_page()
-    test_last_content_y_blank_page()
-    test_density_threshold_buckets()
-    test_resume_balance_issues()
-    test_highlight_with_language()
-    test_highlight_without_language()
-    test_highlight_without_pygments_dependency()
-    test_mermaid_color_mix_srgb_single_pct()
-    test_mermaid_color_mix_both_pct()
-    test_mermaid_normalize_strips_unsafe_features()
-    test_mermaid_lint_flags_unnormalized_svg()
-    test_mermaid_diagram_templates_normalized()
-    test_mermaid_diagrams_match_their_mmd_sources()
-    test_mermaid_normalize_rejects_non_beautiful_mermaid()
-    test_mermaid_normalize_cli_accepts_output_before_input()
-    test_mermaid_normalize_cli_reports_missing_input()
+    for name, func in _test_functions():
+        signature = inspect.signature(func)
+        if signature.parameters:
+            params = ", ".join(signature.parameters)
+            check(f"{name} has no parameters", False, f"parameters: {params}")
+            continue
+        func()
     print()
     print(f"Passed: {_PASS} | Failed: {_FAIL}")
     return 0 if _FAIL == 0 else 1
