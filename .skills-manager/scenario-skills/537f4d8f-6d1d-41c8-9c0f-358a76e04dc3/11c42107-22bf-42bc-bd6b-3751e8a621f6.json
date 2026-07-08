@@ -15,6 +15,7 @@
     "hermes": true,
     "kimi": true,
     "omp_agent": true,
+    "opencode": true,
     "pi": true
   }
 }
