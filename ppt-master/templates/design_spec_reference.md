@@ -81,7 +81,7 @@
   <stop offset="100%" stop-color="#[secondary accent]"/>
 </linearGradient>
 
-<!-- Background decorative gradient (note: rgba forbidden, use stop-opacity) -->
+<!-- Background decorative gradient (explicit stop-opacity keeps the palette reusable) -->
 <radialGradient id="bgDecor" cx="80%" cy="20%" r="50%">
   <stop offset="0%" stop-color="#[primary]" stop-opacity="0.15"/>
   <stop offset="100%" stop-color="#[primary]" stop-opacity="0"/>
@@ -359,7 +359,8 @@ One speaker note file per page, saved to `notes/`:
 1. viewBox: `{canvas_info['viewbox']}`
 2. Background uses `<rect>` elements
 3. Text wrapping uses `<tspan>` (`<foreignObject>` FORBIDDEN)
-4. Transparency uses `fill-opacity` / `stroke-opacity`; `rgba()` FORBIDDEN
+4. Colors may use named, `rgb()` / `rgba()`, `hsl()` / `hsla()`, or
+   3/4/6/8-digit HEX forms; embedded alpha multiplies with explicit opacity
 5. FORBIDDEN: `mask`, `<style>`, `class`, `foreignObject`
 6. FORBIDDEN: `textPath`, `animate*`, `script`
 7. Text characters: write typography & symbols as raw Unicode (em dash `—`, en dash `–`, `©`, `®`, `→`, NBSP, etc.); HTML named entities (`&nbsp;`, `&mdash;`, `&copy;`, `&reg;` …) are FORBIDDEN. XML reserved chars in text MUST be escaped as `&amp;` `&lt;` `&gt;` `&quot;` `&apos;` (e.g. `R&amp;D`, `error &lt; 5%`). See shared-standards.md §1.0
@@ -368,6 +369,6 @@ One speaker note file per page, saved to `notes/`:
 
 ### PPT Compatibility Rules:
 
-- `<g opacity="...">` FORBIDDEN (group opacity); set on each child element individually
-- Image transparency uses overlay mask layer (`<rect fill="bg-color" opacity="0.x"/>`)
+- `<g opacity="0..1">` is allowed as per-descendant alpha; overlapping children may composite differently
+- Image transparency may use `<image opacity="0..1">`; use overlays only for a color wash
 - Inline styles only; external CSS and `@font-face` FORBIDDEN

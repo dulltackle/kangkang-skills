@@ -254,7 +254,7 @@ font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Micr
 
 **命名约定**：使用描述性 `id`（如 `card-1`、`step-discover`、`header`、`footer`）。
 
-> 只有 `<g opacity="...">` 被禁止（见 SS2）。纯结构 `<g>` 是必需的。
+> `<g opacity="0..1">` 可按 SS2 近似转换；纯结构 `<g>` 仍是常规分组方式。
 
 ### 5.2 viewBox
 
@@ -286,35 +286,40 @@ font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Micr
 |---------|---------| 
 | HTML 命名实体（`&nbsp;` `&mdash;` `&copy;` `&ndash;` `&reg;` `&hellip;` `&bull;` …） | 直接写原生 Unicode 字符（`—` `–` `©` `®` `→` NBSP …） |
 | 文本/属性值中裸写 `& < > " '` | 必须写成 XML 实体 `&amp;` `&lt;` `&gt;` `&quot;` `&apos;` |
-| `<style>` / `class` | 内联属性（`id` 在 `<defs>` 内合法） |
+| `<style>` / `class` | 内联属性（`id` 可用于本地引用和语义标记） |
 | `<foreignObject>` | `<text>` + `<tspan>` |
 | `mask` | 叠加遮罩矩形 / gradient overlay |
-| `<symbol>` + `<use>` | 直接写出完整元素 |
 | `textPath` | 手动排列 `<text>` |
 | `@font-face` | 系统字体栈 |
 | `<animate*>` / `<set>` | 无（PPT 侧处理动画） |
 | `<script>` / event 属性 | 无 |
 | `<iframe>` | 无 |
 
-### 6.2 PPT 兼容性替代
+### 6.2 PPT 颜色语法
 
-| 禁止语法 | 正确替代 |
-|---------|----------|
-| `fill="rgba(255,255,255,0.1)"` | `fill="#FFFFFF" fill-opacity="0.1"` |
-| `<g opacity="0.2">...</g>` | 在每个子元素上单独设置 `fill-opacity` / `stroke-opacity` |
-| `<image opacity="0.3"/>` | 在 image 后叠加 `<rect fill="背景色" opacity="0.7"/>` |
+支持常用命名色、`rgb()` / `rgba()`、`hsl()` / `hsla()` 以及 3/4/6/8 位
+HEX。颜色内嵌 alpha 会与 `opacity`、`fill-opacity`、`stroke-opacity`、
+`stop-opacity` 继续相乘；需要复用同一色板时，也可继续采用独立透明度属性。
 
 ### 6.3 条件允许
 
 | 特性 | 条件 | 转换结果 |
 |------|------|----------|
+| `<g opacity="...">` | 数值范围 `0..1`；不包裹 `data-pptx-native` 图表/表格 | 后代对象分别写入 DrawingML alpha；重叠区域为近似 |
+| `<image opacity="...">` | 数值范围 `0..1` | DrawingML `<a:alphaModFix>` |
+| 本文档内静态 `<use href="#id">` / `xlink:href="#id"` | 目标为 `symbol/g/use/rect/circle/ellipse/line/path/polygon/polyline/text/image`；`x/y` 仅 unitless/`px`；`symbol` 还需合法 `viewBox` 与正数 unitless/`px` `width/height` | 导出前递归展开为带独立 ID 的完整元素 |
 | `marker-start` / `marker-end` | `<marker>` 在 `<defs>` 中，`orient="auto"`，形状为三角/菱形/圆 | DrawingML `<a:headEnd>` / `<a:tailEnd>` |
 | `clipPath` on `<image>` | `<clipPath>` 在 `<defs>` 中，单子元素，**仅用于 image** | DrawingML `<a:prstGeom>` / `<a:custGeom>` |
 | `stroke-dasharray` | 使用预设值 `4,4` / `2,2` / `8,4` / `8,4,2,4` | PPTX `<a:prstDash>` |
 | `text-decoration` | `underline` / `line-through` | PPTX 原生文本格式 |
 | `transform="rotate(...)"` | 所有元素类型均支持 | PPTX `<a:xfrm rot="...">` |
 
-> 完整条件约束见 [`shared-standards.md`](../../references/shared-standards.md) SS1.1（marker 约束）和 SS1.2（clipPath 约束）。
+> 本地 `<use>` 只接受精确 `#id` / `url(#id)` 内部片段。外部、缺失、
+> 冲突、循环、重复 ID，`symbol` 的 `slice` / `refX` / `refY`，以及对
+> `data-pptx-layer*` / `data-pptx-native*` / `data-pptx-placeholder*` 结构元数据的
+> 复用均禁止；PPTX 回导不重建 `<use>`。完整条件约束见
+> [`shared-standards.md`](../../references/shared-standards.md) SS1.1（marker）、
+> SS1.2（clipPath）和 SS1.3（本地 use）。
 
 ### 6.4 虚线预设对照
 
@@ -420,8 +425,7 @@ font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Micr
 
 ### 结构
 - [ ] 主要元素有语义化 `<g id="...">`
-- [ ] 无 `<style>`、`class`、`<foreignObject>`、`mask`、`rgba()`
-- [ ] `<g>` 标签无 `opacity` 属性
+- [ ] 无 `<style>`、`class`、`<foreignObject>`、`mask`
 - [ ] 文本字符为原生 Unicode（`—` `©` `→` NBSP 等），无 HTML 命名实体（`&nbsp;` `&mdash;` `&copy;` 等）；裸 `& < >` 已转义为 `&amp; &lt; &gt;`
 
 ### 阴影

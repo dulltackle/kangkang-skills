@@ -190,15 +190,15 @@ primary_color: "#004098"
 1. viewBox: `0 0 1280 720`
 2. Use `<rect>` elements for backgrounds
 3. Text wrapping via `<tspan>` (no `<foreignObject>`)
-4. Opacity via `fill-opacity` / `stroke-opacity`, no `rgba()`
+4. CSS alpha colors and explicit `fill-opacity` / `stroke-opacity` are both supported; values multiply
 5. Forbidden: `mask`, `<style>`, `class`, `foreignObject`. `clipPath` is allowed only on `<image>` under `shared-standards.md` §1.2
 6. Forbidden: `textPath`, `animate*`, `script`
 7. `marker-start` / `marker-end` conditionally allowed (marker in `<defs>`, `orient="auto"`, shape = triangle/diamond/oval) — see shared-standards.md §1.1
 
 ### PPT Compatibility Rules
 
-- No `<g opacity="...">` (group opacity) — set opacity on each child element individually
-- Use overlay layers for image transparency
+- `<g opacity="0..1">` is allowed as per-descendant alpha; overlapping children may composite differently
+- `<image opacity="0..1">` maps to native picture transparency; use overlays only for color washes
 - Inline styles only — no external CSS or `@font-face`
 
 ---

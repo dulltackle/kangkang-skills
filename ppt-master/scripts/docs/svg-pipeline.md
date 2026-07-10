@@ -20,6 +20,7 @@ Unified post-processing entry point. This is the preferred way to run SVG cleanu
 
 It aggregates:
 - `embed_icons.py`
+- static same-document `<use>` expansion from `svg_to_pptx/use_expander.py`
 - `align_embed_images.py` (`crop-images` / `fix-aspect` / `embed-images` aliases route here)
 - `flatten_tspan.py`
 - `svg_rect_to_path.py`
@@ -222,13 +223,45 @@ Replaces `<use data-icon="chunk-filled/name" .../>`, `<use data-icon="tabler-fil
 
 ## PPT Compatibility Rules
 
-Use PowerPoint-safe transparency syntax:
+Supported CSS paint colors include named colors, `rgb()` / `rgba()`, `hsl()` /
+`hsla()`, and 3/4/6/8-digit HEX. Alpha embedded in the color multiplies with
+`opacity`, `fill-opacity`, `stroke-opacity`, `stop-opacity`, or supported
+effect alpha during native export. Explicit opacity attributes remain valid
+when they make palette reuse clearer.
 
-| Avoid | Use instead |
-|------|-------------|
-| `fill=\"rgba(...)\"` | `fill=\"#hex\"` + `fill-opacity` |
-| `<g opacity=\"...\">` | Set opacity on each child |
-| `<image opacity=\"...\">` | Overlay with a mask layer |
+Literal inline geometry is compiled before finalize and native conversion.
+Supported pairs are `rect` (`x/y/width/height/rx/ry`), `circle` (`cx/cy/r`),
+`ellipse` (`cx/cy/rx/ry`), and `image` / `svg` / `use`
+(`x/y/width/height`). A declaration in `style="..."` overrides the same XML
+attribute. Non-zero values must be finite `px` literals; exact zero may omit the
+unit, and sizes/radii cannot be negative. Percentages, `auto`, `calc()`,
+`var()`, `!important`, `inherit`, other units, unsupported element/property
+pairs, stylesheets, selectors, and CSS cascade are rejected. Use XML attributes
+for line endpoints, text positions, path data, and polygon/polyline points. See
+[`shared-standards.md`](../../references/shared-standards.md) §2.
+
+`<g opacity="0..1">` is supported as a per-descendant alpha approximation.
+Nested values multiply; overlapping children may differ from isolated SVG
+group compositing. Transparent native table/chart markers require the default
+SVG fallback rather than `--native-objects`.
+
+`<image opacity="0..1">` is supported directly. Native export writes
+DrawingML `a:alphaModFix`, and PPTX import restores the SVG opacity value.
+
+Static same-document `<use>` is supported as compile-time reuse. Use exact
+`href="#id"` or `xlink:href="#id"` references to `symbol`, `g`, `use`, `rect`,
+`circle`, `ellipse`, `line`, `path`, `polygon`, `polyline`, `text`, or `image`;
+internal subtree references use exact `url(#id)` syntax. `x` / `y` accept only
+finite unitless or `px` values. A symbol needs a valid four-number `viewBox`
+with positive width/height and a positive unitless/`px` instance `width` /
+`height`; aligned `meet` and plain `none` are supported, while `slice`, `refX`,
+and `refY` are rejected. Symbol artwork must stay inside the `viewBox` because
+overflow clipping is not reproduced. External, missing, conflicting, circular,
+and duplicate-ID references fail, as does reuse of `data-pptx-layer*`,
+`data-pptx-native*`, or `data-pptx-placeholder*` metadata. Finalize and native
+export recursively materialize the subtree with rewritten instance-local IDs.
+Reference depth is capped at 64 and expansion at 10,000 instances per SVG;
+PPTX import does not reconstruct `<use>` / `<symbol>`.
 
 PowerPoint also has trouble with unsupported filters and direct SVG features
 not mapped to DrawingML. Connector arrows may use qualified

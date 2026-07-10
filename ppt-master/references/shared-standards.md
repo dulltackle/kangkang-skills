@@ -4,7 +4,7 @@ Common technical constraints for PPT Master, eliminating cross-role file duplica
 
 ---
 
-## 1. SVG Banned Features Blacklist
+## 1. SVG Banned Features and Conditional Allowances
 
 The following are **forbidden** in generated SVGs — PPT export breaks otherwise:
 
@@ -25,10 +25,9 @@ One offending character invalidates the file and aborts export. Numeric refs (`&
 |----------------|-------------|
 | `mask` | Masks |
 | `<style>` | Embedded stylesheets |
-| `class` | CSS selector attributes (`id` inside `<defs>` is a legitimate reference and is NOT banned) |
+| `class` | CSS selector attributes (`id` remains allowed for local references and semantic markers when no `<style>` selector is used) |
 | External CSS | External stylesheet links |
 | `<foreignObject>` | Embedded external content |
-| `<symbol>` + `<use>` | Symbol reference reuse |
 | `textPath` | Text along a path |
 | `@font-face` | Custom font declarations |
 | `<animate*>` / `<set>` | SVG animations |
@@ -38,6 +37,10 @@ One offending character invalidates the file and aborts export. Numeric refs (`&
 > **`marker-start` / `marker-end` is conditionally allowed** — see §1.1 for constraints. The converter maps qualifying markers to native DrawingML `<a:headEnd>` / `<a:tailEnd>`.
 >
 > **`clipPath` on `<image>` is conditionally allowed** — see §1.2 for constraints. The converter maps qualifying clip shapes to native DrawingML picture geometry (`<a:prstGeom>` or `<a:custGeom>`).
+>
+> **Static same-document `<use>` is conditionally allowed** — see §1.3. The
+> pipeline materializes qualifying references before SVG snapshot/native PPTX
+> conversion; PowerPoint does not retain the reference structure.
 >
 > **`<pattern>` fills are conditionally allowed** — see §7 *Pattern Fill* for the required `data-pptx-pattern` annotation and the closed OOXML preset enum. Hand-drawn pattern geometry is NOT honored; the converter emits the named PPTX preset only. Missing or invalid preset values produce diagonal stripes (warning) or schema-failed PPTX (error).
 >
@@ -147,15 +150,107 @@ One offending character invalidates the file and aborts export. Numeric refs (`&
 
 ---
 
-## 2. PPT Compatibility Alternatives
+### 1.3 Static Same-Document `<use>` (Conditionally Allowed)
 
-| Banned Syntax | Correct Alternative |
-|---------------|---------------------|
-| `fill="rgba(255,255,255,0.1)"` | `fill="#FFFFFF" fill-opacity="0.1"` |
-| `<g opacity="0.2">...</g>` | Set `fill-opacity` / `stroke-opacity` on each child element individually |
-| `<image opacity="0.3"/>` | Overlay a `<rect fill="background-color" opacity="0.7"/>` mask layer after the image |
+**Expansion contract**: Static local reuse is compile-time authoring shorthand. `finalize_svg.py` and
+native export replace each qualifying instance with cloned primitive content;
+PPTX-to-SVG import emits the resulting primitives and does **not** reconstruct
+the original `<use>` / `<symbol>` structure.
 
-**Mnemonic**: PPT does not recognize rgba, group opacity, or image opacity.
+| Concern | Required form |
+|---|---|
+| Reference syntax | Exact same-document fragment: `href="#id"` or `xlink:href="#id"`. If both attributes exist, their values MUST match. |
+| Referenced target | One of `<symbol>`, `<g>`, `<use>`, `<rect>`, `<circle>`, `<ellipse>`, `<line>`, `<path>`, `<polygon>`, `<polyline>`, `<text>`, or `<image>`. Nested local `<use>` is recursively expanded. |
+| Instance position | `<use x>` / `<use y>` are finite unitless or `px` values; omitted values default to `0`. |
+| Symbol viewport | A referenced `<symbol>` MUST have a finite four-number `viewBox` with positive width/height. Its `<use>` MUST have positive finite unitless or `px` `width` and `height`. |
+| Aspect ratio | Default/aligned `meet` values and plain `preserveAspectRatio="none"` are supported. `slice`, `refX`, and `refY` are forbidden. |
+| Viewport boundary | Symbol artwork MUST stay inside its `viewBox`; expansion does not reproduce symbol overflow clipping. |
+| Internal references | Reusable subtrees use exact fragment forms: `href="#id"`, `xlink:href="#id"`, and `url(#id)`. The expander rewrites these references together with instance-local cloned IDs. |
+| Structural metadata | Neither the `<use>` instance nor its referenced subtree may carry `data-pptx-layer*`, `data-pptx-native*`, or `data-pptx-placeholder*`. Author those objects directly instead of reusing them. |
+| Safety limits | A reachable reference chain may contain at most 64 instances, and one SVG may expand at most 10,000 local `<use>` instances. |
+
+**Forbidden — unsafe local references**:
+
+- External/file/data URLs, missing targets, conflicting `href` / `xlink:href`,
+  unsupported target elements, and circular reference chains
+- Duplicate IDs on the referenced target, the `<use>` instance, or anywhere in
+  the reused subtree
+- Quoted/whitespace CSS fragment variants such as `url('#id')`; use exact
+  `url(#id)` when an internal paint/filter/clip reference must be rewritten
+
+**Supported example**:
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <symbol id="statusDot" viewBox="0 0 20 20" preserveAspectRatio="xMidYMid meet">
+      <circle cx="10" cy="10" r="8" fill="#16A34A"/>
+    </symbol>
+    <g id="legendRow">
+      <rect width="120" height="32" rx="8" fill="#F1F5F9"/>
+      <text x="42" y="22" font-size="16" fill="#0F172A">Ready</text>
+    </g>
+  </defs>
+  <use href="#statusDot" x="80" y="120" width="32" height="32"/>
+  <use xlink:href="#legendRow" x="120" y="120"/>
+</svg>
+```
+
+---
+
+## 2. PPT Compatibility Mappings
+
+**Allowed — CSS paint colors**: fills, strokes, gradient stops, and supported
+filter flood colors may use common named colors, `rgb()` / `rgba()` (legacy
+comma or modern space/slash syntax), `hsl()` / `hsla()`, `#RGB`, `#RGBA`,
+`#RRGGBB`, or `#RRGGBBAA`. Native export converts the color to DrawingML RGB
+and multiplies any embedded alpha with `opacity`, `fill-opacity`,
+`stroke-opacity`, `stop-opacity`, and supported effect alpha. Explicit opacity
+attributes remain valid when keeping palette and transparency separate is
+clearer. This guarantee applies to the SVG-derived DrawingML route; opt-in
+native table/chart payload styling follows its narrower native-object contract.
+
+**Allowed — literal inline geometry**: the following geometry properties may
+appear in the same element's `style="..."`. The pipeline materializes them as
+XML geometry attributes before SVG post-processing and native PPTX conversion.
+An inline geometry declaration overrides an existing same-name XML attribute.
+
+| Element | Supported properties |
+|---|---|
+| `<rect>` | `x`, `y`, `width`, `height`, `rx`, `ry` |
+| `<circle>` | `cx`, `cy`, `r` |
+| `<ellipse>` | `cx`, `cy`, `rx`, `ry` |
+| `<image>` | `x`, `y`, `width`, `height` |
+| `<svg>` | `x`, `y`, `width`, `height` |
+| `<use>` | `x`, `y`, `width`, `height` |
+
+**Hard rule — inline geometry grammar**: every non-zero value is one finite
+`px` literal, such as `120px` or `-8.5px`; exact zero may be unitless. `width`,
+`height`, `rx`, `ry`, and `r` must be non-negative. Percentages, `auto`,
+`calc()`, `var()`, `!important`, `inherit`, and every other unit are forbidden.
+Do not put geometry on an unsupported element: line endpoints, text positions,
+path data, and polygon/polyline points remain XML attributes.
+
+**Forbidden — CSS geometry cascade**: `<style>`, `class`, selector rules,
+external stylesheets, and imported styles remain forbidden. This allowance is
+only for literal declarations in an element's own `style` attribute; PPT Master
+does not compute CSS cascade or custom properties. Root canvas authority remains
+the `viewBox`, regardless of root `<svg>` compatibility width/height values.
+
+**Allowed — group opacity (approximate)**: `<g opacity="0.3">...</g>` maps the
+group alpha onto each descendant shape, text run, picture, and supported
+shadow/glow effect. Nested group and child opacity values multiply. Overlapping
+children may differ from SVG isolated-group compositing because DrawingML has no
+equivalent group-alpha model. With `--native-objects`, transparent native
+table/chart markers are rejected; omit that flag to export their SVG fallback.
+
+**Allowed — picture opacity**: `<image opacity="0.3"/>` maps to native DrawingML
+`a:alphaModFix` and round-trips back to SVG. Use a numeric value from `0` to
+`1`; use an overlay only when the design needs a color wash rather than simple
+transparency.
+
+**Mnemonic**: color and image alpha are native; group opacity is a per-object approximation.
 
 > Arrows: prefer `marker-end` for connector lines (§1.1) — converter produces native auto-rotating arrow heads. For block/chunky arrows, use standalone closed shapes; see `templates/charts/chevron_process.svg` and `templates/charts/process_flow.svg`.
 
@@ -196,10 +291,14 @@ metadata. See
 - **Background**: Use `<rect>` to define the page background color
 - **`<tspan>`** has two purposes: (1) manual line breaks (use `dy` or explicit `y`); (2) inline run formatting on the same line (color/weight/size). `<foreignObject>` is FORBIDDEN. See "Single logical line" rule below.
 - **Fonts**: every `font-family` stack MUST resolve to pre-installed exported Latin / EA typefaces (Microsoft YaHei / SimSun / Arial / Times New Roman / Consolas …); `@font-face` is FORBIDDEN. Full rule: [`strategist.md §g`](strategist.md).
-- **Styles**: inline only (`fill=""`, `font-size=""`); `<style>`/`class` FORBIDDEN (`id` inside `<defs>` is fine)
-- **Colors**: HEX only; transparency via `fill-opacity`/`stroke-opacity`
-- **Images**: `<image href="../images/xxx.png" preserveAspectRatio="xMidYMid slice"/>`
+- **Styles**: per-element only (`fill=""`, `font-size=""`, or `style="..."`);
+  literal inline geometry is restricted to §2. `<style>`/`class` are FORBIDDEN
+  (`id` inside `<defs>` is fine)
+- **Colors**: common named colors, `rgb()` / `rgba()`, `hsl()` / `hsla()`, or
+  3/4/6/8-digit HEX; embedded and explicit opacity values multiply
+- **Images**: `<image href="../images/xxx.png" preserveAspectRatio="xMidYMid slice"/>`; optional `opacity="0..1"` maps to native picture transparency
 - **Icons**: `<use data-icon="<library>/<name>" x="" y="" width="48" height="48" fill="#HEX"/>` (auto-embedded post-processing). Always include library prefix. One stylistic library per deck (`chunk-filled`/`tabler-filled`/`tabler-outline`/`phosphor-duotone`); `simple-icons` only for real brand marks. See [`../templates/icons/README.md`](../templates/icons/README.md).
+- **Static local reuse**: `<use href="#id" .../>` / `<use xlink:href="#id" .../>` is allowed only under §1.3. This is separate from `data-icon` placeholders and is expanded before export.
 
 ### Inline Text Runs (Single Logical Line = Single `<text>`)
 
@@ -272,7 +371,8 @@ Color: use the deck's primary brand color for emphasis. Reserve green/red for ac
 
 Wrap logically related elements in top-level `<g id="...">` groups. Produces PowerPoint groups in PPTX, making slides easier to select/move/edit and providing stable anchors for optional per-element entrance animation.
 
-> ⚠️ Only `<g opacity="...">` is banned (§2). Plain `<g>` for grouping is required.
+> `<g opacity="0..1">` is supported through the per-descendant alpha
+> approximation in §2. Plain `<g>` remains the normal grouping primitive.
 
 **Animation-ready rule**: direct children of `<svg>` should be semantic groups, not raw drawing atoms. Aim for **3–8 top-level content `<g id>` groups per slide** (the 3–8 budget excludes page chrome — see below); each content group becomes one entrance step under the chosen `--animation-trigger` mode (one click in `on-click`, one cascade slot in `after-previous`, parallel in `with-previous`).
 
@@ -374,7 +474,9 @@ Full reference: [`animations.md`](animations.md).
 
 ## 6. Shadow & Overlay Techniques
 
-> `<mask>` elements and `<image opacity="...">` are banned. Always use stacked `<rect>` or gradient overlays instead (see §2).
+> `<mask>` elements are banned. Use stacked `<rect>` or gradient overlays for
+> color washes; use `<image opacity="0..1">` for uniform picture transparency
+> (see §2).
 
 ### Shadow
 

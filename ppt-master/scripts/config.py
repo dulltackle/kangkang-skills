@@ -522,21 +522,16 @@ SVG_CONSTRAINTS = {
     # <a:headEnd>/<a:tailEnd>.
     'forbidden_attributes': [
         'class',
-        'id',
         'onclick', 'onload', 'onmouseover', 'onmouseout',
         'onfocus', 'onblur', 'onchange',
     ],
     # Forbidden patterns (regex matching)
     'forbidden_patterns': [
         r'@font-face',  # Web fonts
-        r'rgba\s*\(',   # rgba colors (PPT incompatible)
         r'<\?xml-stylesheet\b',  # External CSS
         r'<link[^>]*rel\s*=\s*["\']stylesheet["\']',
         r'@import\s+',  # External CSS
-        r'<g[^>]*\sopacity\s*=',  # Group opacity
-        r'<image[^>]*\sopacity\s*=',  # Image opacity
         r'\bon\w+\s*=',  # Event attributes
-        r'(?s)(?=.*<symbol)(?=.*<use\b)',  # <symbol> + <use> complex usage (order-independent)
     ],
     'recommended_fonts': [
         'system-ui',
