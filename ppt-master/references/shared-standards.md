@@ -925,6 +925,89 @@ steal plot area in PPT. Add `show_legend: true` only when the legend is needed;
 
 **Forbidden — native marker transforms**: Do not rotate, skew, or matrix-transform native table/chart marker groups. Translate / scale is accepted; complex transforms fail export because PowerPoint native table/chart frames do not preserve arbitrary SVG transforms.
 
+### Baseline Layout Family Extraction
+
+Native `baseline` export assigns layout families after every SVG page has been
+converted. This package-only pass does not change SVG authoring or live preview.
+
+| Filename evidence | Output layout |
+|---|---|
+| `cover`, `frontcover`, `封面` | `Cover` |
+| `agenda`, `contents`, `outline`, `toc`, `目录`, `议程` | `Agenda` |
+| `chapter`, `divider`, `section`, `transition`, `章节`, `过渡页` | `Section` |
+| `closing`, `end`, `ending`, `qa`, `thankyou`, `thanks`, `封底`, `结束`, `结尾`, `结语`, `致谢`, `谢谢` | `Closing` |
+| No exact role token | `Content` |
+
+Keep an existing `Cover` assignment when the Master chrome safety pass already
+used it to hide promoted Master shapes from a minority page.
+
+**Hard rule — no visual inference**: Keep every actual title, body, picture,
+chart, table, and page-specific shape on the Slide. Baseline layouts do not
+infer placeholders or promote visually similar content.
+
+**Background rule**: Move a Slide `p:bg` to its family Layout only when every
+slide in that family carries exactly the same explicit background. Otherwise,
+keep each background on its Slide. Preserve whether each family shows or hides
+the parent Master shape tree.
+
+### Theme Font Inheritance (Baseline and Template Export)
+
+New projects derive PowerPoint theme fonts from `spec_lock.md` typography when
+native export uses `baseline` or `template` structure mode:
+
+- `title_family` (falling back to `font_family`) becomes the theme major font.
+- `body_family` (falling back to `font_family`) becomes the theme minor font.
+- SVG text whose resolved exported face matches either locked family emits
+  DrawingML `+mj-*` / `+mn-*` tokens instead of a fixed typeface.
+- When major and minor resolve to the same face, ordinary slide-local text uses
+  the minor role; semantic `title` placeholders are forced to major, while all
+  other semantic placeholders are forced to minor.
+- Local emphasis, code, brand, or other families that do not match the locked
+  title/body faces remain concrete per-run fonts and do not change with the
+  theme.
+
+This substitution is package-only: the SVG stays the live-preview truth, and
+the installed theme resolves the tokens to the same concrete fonts on initial
+open. Changing the PowerPoint theme later can therefore update matching text
+without changing the SVG geometry or the first export's visual design.
+
+`preserve` mode never rewrites source theme fonts, and `flat` remains the
+diagnostic slide-local/fixed-font comparison path. A project without a usable
+`spec_lock.md` typography section keeps the legacy concrete-font behavior.
+
+### Theme Color Inheritance (Baseline and Template Export)
+
+Native `baseline` and `template` export also derive the PowerPoint color scheme
+from `spec_lock.md` colors. The canonical mapping is:
+
+| Lock role | PowerPoint scheme slot |
+|---|---|
+| `bg` / `background` / `master_bg` | `lt1` |
+| `secondary_bg` / `bg_secondary` | `lt2` |
+| `text` / `body_text` | `dk1` |
+| `text_secondary` | `dk2` |
+| `primary` | `accent1` |
+| `accent` | `accent2` |
+| `secondary_accent` | `accent3` |
+| `border` | `accent4` |
+| First two additional non-black/non-white roles | `accent5` / `accent6` |
+
+The converter promotes an exact locked HEX to `a:schemeClr` only when its
+usage is compatible with the role: backgrounds prefer background roles, text
+prefers text/accent roles, strokes prefer `border`, and chart series use only
+the primary/accent family. This prevents the same literal HEX from coupling
+unrelated semantics such as a white page background and fixed white inverse
+text. Gradients, patterns, bullets, native tables, and exact native-chart
+series colors follow the same rule. Shadows, effects, unmatched local colors,
+and additional palette roles remain concrete `a:srgbClr` values.
+
+The initial rendering is unchanged because every scheme slot resolves to the
+same locked HEX. A later PowerPoint theme edit can update only the promoted
+roles; it does not rewrite the SVG or local exceptions. `preserve` never
+rewrites the imported source color scheme, `flat` keeps concrete colors for
+diagnostics, and projects without a usable colors section retain legacy fixed
+colors.
+
 ### Explicit PPTX Master / Layout / Placeholder Metadata (Template Export)
 
 **Trigger**: Set `spec_lock.md` `pptx_structure.mode` to `template`, or pass
@@ -976,9 +1059,22 @@ by this solid-background rule.
 
 | Placeholder value | SVG element | PowerPoint placeholder |
 |---|---|---|
-| `title`, `body`, `footer`, `slide-number` | direct `<text>` | `title`, `body`, `ftr`, `sldNum` |
+| `title`, `subtitle`, `body` | direct `<text>` | `title`, `subTitle`, `body` |
+| `date`, `footer`, `slide-number` | direct `<text>` | `dt`, `ftr`, `sldNum` |
 | `picture` | direct `<image>` or imported crop `<svg>` | `pic` |
 | `chart`, `table` | direct matching `data-pptx-native` marker group | `chart`, `tbl` |
+| `object` | one direct text, image, or basic SVG shape | `obj` |
+| `media` | direct `<image>` or imported crop `<svg>` | `media` |
+
+`title` is normally type-matched without an index in reconstructed layouts; if
+an imported source title explicitly has one, preserve that exact index. Every
+indexed placeholder on one layout uses a unique non-negative index. Template
+export writes the semantic type on both the Layout and Slide placeholder
+(except `obj`, whose OOXML default is already
+`obj`) so PowerPoint and `python-pptx` retain the same identity. A `date`
+placeholder also enables the layout date flag and gets a
+`datetimeFigureOut` field in the reusable Layout definition; the current
+Slide keeps its authored date content.
 
 **Placeholder prototype**: The first slide using a layout key supplies that
 layout's placeholder formatting. `data-pptx-placeholder-bounds` supplies the
@@ -995,7 +1091,10 @@ master or layout background.
 
 **Native object placeholders**: `chart` / `table` placeholders require
 `--native-objects`; fallback groups contain several shapes and cannot map to one
-PowerPoint placeholder.
+PowerPoint placeholder. `object` is the generic PowerPoint content slot and
+must still resolve to one top-level DrawingML object. `media` currently binds
+an authored image/crop to a native `media` placeholder; it does not synthesize
+video or audio media from a decorative SVG group.
 
 ### Preserved Source Master / Layout Contract
 
@@ -1010,7 +1109,7 @@ PowerPoint placeholder.
 
 **Hard rule — source package wins**: Mark source master/layout visuals as direct `data-pptx-layer="master|layout"` preview children. Preserve export removes those generated copies and renders the original source parts. Unmarked content stays slide-local.
 
-**Placeholder identity**: Keep actual content on the slide. Copy the source placeholder index into `data-pptx-placeholder-idx` when present; the exporter restores the source placeholder type/idx pair. Multiple placeholders with the same semantic role require explicit indices.
+**Placeholder identity**: Keep actual content on the slide. Copy the source placeholder index into `data-pptx-placeholder-idx` when present; the exporter restores the source placeholder type/idx pair. Imported `subTitle`, `obj`, `media`, and `dt` placeholders retain distinct `subtitle`, `object`, `media`, and `date` semantic roles instead of collapsing into body/other. Multiple placeholders with the same semantic role require explicit indices.
 
 **Multi-master boundary**: Preserve every source master already present in the package. Do not synthesize a new master merely for cover/section differences; rebuilt templates continue to prefer one master plus semantic layouts.
 

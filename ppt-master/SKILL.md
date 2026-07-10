@@ -695,14 +695,33 @@ python3 ${SKILL_DIR}/scripts/svg_to_pptx.py <project_path>
 > chrome stays slide-local. Minority slides (covers, section pages) keep every
 > shape slide-local and are bound to a generated `Cover` layout with
 > `showMasterSp="0"`, so promoted master chrome never appears on them. Image
-> relationships for promoted chrome are copied to the master. Baseline also
-> prunes base-template slide layouts no generated slide references, so the
-> PowerPoint new-slide picker only offers layouts that belong to the deck, and
+> relationships for promoted chrome are copied to the master. After the SVG
+> pages are complete, baseline assigns conservative filename-backed layout
+> families: explicit cover / agenda / section / closing names become `Cover`,
+> `Agenda`, `Section`, and `Closing`; every other page becomes `Content`. It also
+> preserves an existing safety `Cover` assignment made while hiding promoted
+> Master chrome. It does not inspect visual similarity or infer placeholders,
+> and all actual page content remains slide-local. When every slide in one
+> family carries the exact same explicit background, that background moves to
+> the family layout. This is
+> an export-only package pass: SVG authoring, live preview, and model context are
+> unchanged. Baseline also prunes base-template slide layouts no generated slide
+> references, so the PowerPoint new-slide picker only offers layouts that belong
+> to the deck, and
 > converts `pageNumber` / `slideNumber` chrome whose text exactly equals the
 > slide's display number into an auto-updating PowerPoint slide-number field
-> (other numbering schemes keep their literal text). Add
+> (other numbering schemes keep their literal text). For projects with a
+> `spec_lock.md` typography contract, baseline also installs `title_family` as
+> the PowerPoint theme major font and `body_family` / `font_family` as the minor
+> font; matching SVG runs use theme tokens so later theme edits can cascade
+> without changing initial rendering. Baseline/template export likewise maps
+> the locked background, text, primary/accent, and border roles into the
+> PowerPoint color scheme. Exact matching SVG/native-object colors use
+> context-safe theme tokens; unrelated local colors, inverse white/black, and
+> effects stay concrete, so the first rendering remains the SVG design while
+> later theme edits can cascade selectively. Add
 > `--pptx-structure flat` only for debugging/comparison when all generated
-> backgrounds and chrome must remain slide-local.
+> backgrounds and chrome must remain slide-local and fonts must stay concrete.
 
 > **Preserved source-template export** — a reusable template package created
 > from a structured PPTX may ship `native_structure.json` plus
@@ -722,8 +741,8 @@ python3 ${SKILL_DIR}/scripts/svg_to_pptx.py <project_path>
 > template SVG roster as optional visual/layout references and exports through
 > `baseline`, even when the template directory contains the native pair. Pages
 > without a `page_layouts` row remain free design; the baseline post-pass owns
-> conservative Master/background/chrome extraction exactly as it does without a
-> template.
+> conservative Master/background/chrome extraction plus filename-backed Layout
+> family assignment exactly as it does without a template.
 
 > **Explicit reusable template export** — set `spec_lock.md`
 > `pptx_structure.mode: template` (or pass `--pptx-structure template`
