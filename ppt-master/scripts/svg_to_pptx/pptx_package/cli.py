@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import json
+import math
 import shutil
 import argparse
 from datetime import datetime
@@ -15,6 +16,13 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from console_encoding import configure_utf8_stdio  # noqa: E402
+from pptx_animations import (  # noqa: E402
+    ANIMATIONS,
+    animation_seconds_to_milliseconds,
+    normalize_animation_effect,
+    normalize_animation_trigger,
+)
+from pptx_transitions import validate_seconds  # noqa: E402
 
 configure_utf8_stdio()
 
@@ -30,7 +38,11 @@ from .dimensions import CANVAS_FORMATS, get_project_info, get_viewbox_dimensions
 from .discovery import find_svg_files, find_notes_files
 from .builder import create_pptx_with_native_svg
 from ..drawingml.theme_colors import ThemeColorError, load_theme_color_spec
-from ..drawingml.theme_fonts import ThemeFontError, load_theme_font_spec
+from ..drawingml.theme_fonts import (
+    ThemeFontError,
+    load_master_text_style_spec,
+    load_theme_font_spec,
+)
 from .narration import NARRATION_EXTENSIONS, find_narration_files, probe_audio_duration
 from .slide_xml import TRANSITIONS
 from .template_structure import (
@@ -42,12 +54,12 @@ from .template_structure import (
     parse_template_slides,
     template_lock_errors,
 )
-from ..animation_config import load_animation_config, validate_animation_config
-
-try:
-    from pptx_animations import ANIMATIONS as _ANIMATIONS
-except ImportError:
-    _ANIMATIONS = {}
+from ..animation_config import (
+    load_animation_config,
+    validate_animation_config,
+    validate_animation_config_errors,
+    validate_transition_config,
+)
 
 
 def _as_dict(value: object) -> dict:
@@ -79,6 +91,8 @@ def _recorded_narration_on_click_slides(
     animation_cli_overrides: dict[str, bool],
 ) -> list[str]:
     """Return slides whose effective recorded-video animation trigger is on-click."""
+    if animation_cli_overrides.get('animation') and animation is None:
+        return []
     slides_cfg = _as_dict(_as_dict(animation_config).get('slides'))
     blocked: list[str] = []
     for svg_path in ref_files:
@@ -87,14 +101,20 @@ def _recorded_narration_on_click_slides(
 
         slide_animation = animation
         if not animation_cli_overrides.get('animation') and 'effect' in anim_cfg:
-            cfg_effect = str(anim_cfg.get('effect'))
-            slide_animation = None if cfg_effect == 'none' else cfg_effect
-        if slide_animation is None:
+            slide_animation = normalize_animation_effect(anim_cfg.get('effect'))
+        groups_cfg = _as_dict(slide_cfg.get('groups'))
+        has_explicit_animation = any(
+            isinstance(group_cfg, dict)
+            and 'effect' in group_cfg
+            and normalize_animation_effect(group_cfg.get('effect')) is not None
+            for group_cfg in groups_cfg.values()
+        )
+        if slide_animation is None and not has_explicit_animation:
             continue
 
         slide_trigger = animation_trigger
         if not animation_cli_overrides.get('animation_trigger') and anim_cfg.get('trigger'):
-            slide_trigger = str(anim_cfg.get('trigger'))
+            slide_trigger = normalize_animation_trigger(anim_cfg.get('trigger'))
         if slide_trigger == 'on-click':
             blocked.append(svg_path.stem)
     return blocked
@@ -107,11 +127,7 @@ def main(argv: list[str] | None = None) -> int:
                     else ['fade', 'push', 'wipe', 'split', 'strips', 'cover', 'random'])
     )
 
-    animation_choices = (
-        ['none'] + (list(_ANIMATIONS.keys()) if _ANIMATIONS
-                    else ['fade', 'fly', 'zoom', 'appear'])
-        + ['auto', 'mixed', 'random']
-    )
+    animation_choices = ['none', *ANIMATIONS, 'auto', 'mixed', 'random']
 
     parser = argparse.ArgumentParser(
         description='PPT Master - SVG to native DrawingML PPTX Tool',
@@ -236,12 +252,20 @@ Recorded narration:
             number = float(value)
         except ValueError as exc:
             raise argparse.ArgumentTypeError(f"must be a number: {value}") from exc
+        if not math.isfinite(number):
+            raise argparse.ArgumentTypeError("must be finite")
         if number < 0:
             raise argparse.ArgumentTypeError("must be non-negative")
         return number
 
+    def positive_float(value: str) -> float:
+        number = non_negative_float(value)
+        if number <= 0:
+            raise argparse.ArgumentTypeError("must be greater than zero")
+        return number
+
     parser.add_argument('-t', '--transition', type=str, choices=transition_choices, default=None,
-                        help='Page transition effect (default: fade, use "none" to disable)')
+                        help='Page transition effect (default: fade; "none" removes visual motion)')
     parser.add_argument('--transition-duration', type=non_negative_float, default=None,
                         help='Transition duration in seconds (default: 0.4)')
     parser.add_argument('--auto-advance', type=non_negative_float, default=None,
@@ -256,7 +280,7 @@ Recorded narration:
                              'richer pool for visual variation, fallback cycles fade/'
                              'wipe/fly/zoom), "mixed" (legacy 16-effect pool), or '
                              '"random".')
-    parser.add_argument('--animation-duration', type=non_negative_float, default=None,
+    parser.add_argument('--animation-duration', type=positive_float, default=None,
                         help='Per-element entrance duration in seconds (default: 0.4)')
     parser.add_argument('--animation-trigger', type=str,
                         choices=['on-click', 'with-previous', 'after-previous'],
@@ -283,7 +307,7 @@ Recorded narration:
                         help='Prepare PowerPoint recorded timings and narrations from a complete audio '
                              'directory. Default-flow exports get the _narrated name suffix '
                              '(<project>_<ts>_narrated.pptx) to tell them apart from silent exports.')
-    parser.add_argument('--narration-padding', type=float, default=0.5,
+    parser.add_argument('--narration-padding', type=non_negative_float, default=0.5,
                         help='Seconds to add after each narration before auto-advance (default: 0.5)')
 
     args = parser.parse_args(argv)
@@ -325,10 +349,13 @@ Recorded narration:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
     theme_font_spec = None
+    master_text_style_spec = None
     theme_color_spec = None
     if pptx_structure in {'baseline', 'template'}:
         try:
             theme_font_spec = load_theme_font_spec(project_path)
+            if pptx_structure == 'template':
+                master_text_style_spec = load_master_text_style_spec(project_path)
             theme_color_spec = load_theme_color_spec(project_path)
         except (ThemeFontError, ThemeColorError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
@@ -533,15 +560,41 @@ Recorded narration:
     except Exception as exc:
         print(f"Error: Failed to load animation config: {exc}")
         return 1
+    config_errors: list[str] = []
+    if animation_config:
+        config_errors.extend(validate_transition_config(animation_config))
+        config_errors.extend(validate_animation_config_errors(animation_config))
+    config_errors = list(dict.fromkeys(config_errors))
+    if config_errors:
+        for error in config_errors:
+            print(f"Error: {error}", file=sys.stderr)
+        return 1
+
+    config_warnings: list[str] = []
+    if animation_config:
+        reference_messages = validate_animation_config(project_path, animation_config)
+        config_warnings = [
+            message for message in reference_messages
+            if ' has no id and cannot be customized in animations.json' in message
+        ]
+        reference_errors = [
+            message for message in reference_messages
+            if message not in config_warnings
+        ]
+        if reference_errors:
+            for error in reference_errors:
+                print(f"Error: {error}", file=sys.stderr)
+            return 1
+
     if animation_config and verbose:
         config_label = args.animation_config or str(project_path / 'animations.json')
         print(f"  Animation config: {config_label}")
-        for warning in validate_animation_config(project_path, animation_config):
+        for warning in config_warnings:
             print(f"  [warn] {warning}")
 
     defaults = animation_config.get('defaults', {}) if animation_config else {}
-    transition_defaults = defaults.get('transition', {}) if isinstance(defaults, dict) else {}
-    animation_defaults = defaults.get('animation', {}) if isinstance(defaults, dict) else {}
+    transition_defaults = _as_dict(defaults.get('transition')) if isinstance(defaults, dict) else {}
+    animation_defaults = _as_dict(defaults.get('animation')) if isinstance(defaults, dict) else {}
 
     transition_arg = args.transition
     transition_effect = (
@@ -550,37 +603,77 @@ Recorded narration:
         else transition_defaults.get('effect', 'fade')
     )
     transition = None if transition_effect == 'none' else transition_effect
-    transition_duration = (
-        args.transition_duration
-        if args.transition_duration is not None
-        else float(transition_defaults.get('duration', 0.4))
-    )
+    try:
+        transition_duration = validate_seconds(
+            (
+                args.transition_duration
+                if args.transition_duration is not None
+                else transition_defaults.get('duration', 0.4)
+            ),
+            "transition duration",
+            allow_zero=transition is None,
+        )
+        auto_advance = (
+            args.auto_advance
+            if args.auto_advance is not None
+            else transition_defaults.get('auto_advance')
+        )
+        if auto_advance is not None:
+            auto_advance = validate_seconds(
+                auto_advance,
+                "transition auto_advance",
+                allow_zero=True,
+            )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
-    animation_arg = args.animation
-    animation_effect = (
-        animation_arg
-        if animation_arg is not None
-        # Per-element entrance is opt-in by default: auto-firing element builds
-        # read as the "AI deck" tell and were unsolicited. Page transitions stay
-        # on (see transition default above). Re-enable with -a auto / animations.json.
-        else animation_defaults.get('effect', 'none')
-    )
-    animation = None if animation_effect == 'none' else animation_effect
-    animation_duration = (
-        args.animation_duration
-        if args.animation_duration is not None
-        else float(animation_defaults.get('duration', 0.4))
-    )
-    animation_stagger = (
-        args.animation_stagger
-        if args.animation_stagger is not None
-        else float(animation_defaults.get('stagger', 0.5))
-    )
-    animation_trigger = (
-        args.animation_trigger
-        if args.animation_trigger is not None
-        else animation_defaults.get('trigger', 'after-previous')
-    )
+    try:
+        animation_effect = (
+            args.animation
+            if args.animation is not None
+            # Per-element entrance is opt-in by default: auto-firing element builds
+            # read as the "AI deck" tell and were unsolicited. Page transitions stay
+            # on (see transition default above). Re-enable with -a auto / animations.json.
+            else animation_defaults.get('effect', 'none')
+        )
+        animation = normalize_animation_effect(animation_effect)
+        animation_duration = validate_seconds(
+            (
+                args.animation_duration
+                if args.animation_duration is not None
+                else animation_defaults.get('duration', 0.4)
+            ),
+            "animation duration",
+            allow_zero=False,
+        )
+        animation_seconds_to_milliseconds(
+            animation_duration,
+            "animation duration",
+            allow_zero=False,
+        )
+        animation_stagger = validate_seconds(
+            (
+                args.animation_stagger
+                if args.animation_stagger is not None
+                else animation_defaults.get('stagger', 0.5)
+            ),
+            "animation stagger",
+            allow_zero=True,
+        )
+        animation_seconds_to_milliseconds(
+            animation_stagger,
+            "animation stagger",
+            allow_zero=True,
+        )
+        animation_trigger = normalize_animation_trigger(
+            args.animation_trigger
+            if args.animation_trigger is not None
+            else animation_defaults.get('trigger', 'after-previous')
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
     animation_cli_overrides = {
         'transition': args.transition is not None,
@@ -635,7 +728,7 @@ Recorded narration:
         verbose=verbose,
         transition=transition,
         transition_duration=transition_duration,
-        auto_advance=args.auto_advance,
+        auto_advance=auto_advance,
         notes=notes,
         enable_notes=enable_notes,
         animation=animation,
@@ -657,6 +750,7 @@ Recorded narration:
         pptx_structure=pptx_structure,
         native_structure_contract=native_structure_contract,
         theme_font_spec=theme_font_spec,
+        master_text_style_spec=master_text_style_spec,
         theme_color_spec=theme_color_spec,
     )
 
@@ -679,7 +773,7 @@ Recorded narration:
             ),
             **shared_kwargs,
         )
-    except TemplateStructureError as exc:
+    except (TemplateStructureError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
