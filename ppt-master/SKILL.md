@@ -846,12 +846,29 @@ python3 ${SKILL_DIR}/scripts/svg_to_pptx.py <project_path>
 > stay dormant.
 > Add `--native-objects` only when the user explicitly wants
 > PowerPoint-editable native tables/charts and accepts that those objects may
-> render differently across PowerPoint / Keynote / LibreOffice / WPS. Without
+> render differently across PowerPoint / Keynote / LibreOffice / WPS; marker-local
+> details not represented by native metadata may be omitted. This is a lossy
+> editable-first contract, not a reason to disable an otherwise supported marker. Without
 > the flag, marked groups export through their SVG fallback children like
 > ordinary SVG content. Imported objects that carry
 > `data-pptx-native-status` are fallback-only; the quality checker and
 > `--native-objects` export surface their reason as warnings rather than silently
-> claiming editability.
+> claiming editability. An imported chart with no baked preview is a different
+> case: `data-pptx-visual-status="placeholder"` plus
+> `data-pptx-route-status="reconstruction-only"` records a diagnostic route.
+> Default export keeps that placeholder with a warning; when the same group has
+> a valid active `data-pptx-native="chart"` payload, `--native-objects` may still
+> reconstruct the editable chart. Invalid or contradictory status declarations
+> remain export errors. For supported parsed classic families, the importer
+> instead emits a deterministic visible fallback with
+> `data-pptx-visual-status="normalized"`; this is readable reconstruction, not
+> a claim of Office pixel parity. Active imported table/chart markers also carry
+> `data-pptx-fallback-sha256`. If their fallback, reachable SVG fragment
+> definition, local reference target, or marker transform changes later, default
+> export keeps that SVG, the mandatory quality checker warns, and
+> `--native-objects` fails rather than discard the edit. Legacy markers
+> without a baseline remain native-compatible and only warn that stale detection
+> is unavailable.
 
 **Optional animation flags** (page transitions are on by default; per-element entrance is off by default — turn it on only when the user asks for it):
 - `-t <effect>` — page transition. Default `fade`. Options: `fade` / `push` / `wipe` / `split` / `strips` / `cover` / `random` / `none`. `none` removes only the visual transition; an explicit automatic advance remains valid.

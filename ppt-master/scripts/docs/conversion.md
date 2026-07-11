@@ -192,8 +192,9 @@ python3 scripts/source_to_md/ppt_to_md.py template.ppsx -o notes/template.md
 
 Behavior:
 - extracts slide text in reading order
-- converts PowerPoint tables to Markdown tables
-- transcribes native chart data (type + categories × series values) into a Markdown table, so chart numbers are not lost in conversion
+- converts PowerPoint tables to Markdown tables; cell-internal line breaks become `<br>` so they cannot break the pipe-table row structure
+- transcribes category charts as category × series tables and scatter/bubble charts as typed X/Y[/size] point tables
+- preserves every readable chart dimension or series and emits `[Chart data warning: <reason>]` for missing caches/count mismatches; `[Chart data unavailable: <reason>]` is reserved for charts with no readable points (and unsupported ChartEx), so XY data is never flattened into a misleading category table
 - transcribes SmartArt semantic nodes as hierarchical Markdown; unreadable diagram data emits an explicit placeholder and conversion warning
 - exports embedded pictures to a sibling `_files/` directory
 - appends speaker notes when present
@@ -247,9 +248,49 @@ python3 scripts/pptx_to_svg.py deck.pptx --inheritance-mode flat
 
 Supported unmerged tables and conservative classic-chart caches carry
 `data-pptx-native` metadata beside their SVG fallback. Markers remain dormant
-unless a later export uses `--native-objects`. Unsupported tables keep their
-rendered SVG table; unsupported charts keep a baked preview or explicit
-placeholder. Both carry `data-pptx-native-status`.
+unless a later export uses `--native-objects`. That opt-in is editable-first:
+it may normalize styling or omit marker-local details not represented by the
+payload, and export reports that risk without disabling an otherwise supported
+active marker. Unsupported tables keep their
+rendered SVG table; unsupported charts keep a baked preview when one exists.
+For the currently supported parsed classic families (column/bar/line/area,
+pie/doughnut, scatter, and bubble), a chart without a baked preview receives a
+deterministic readable fallback marked
+`data-pptx-visual-status="normalized"`. Unknown style XML still fails closed;
+common solid/no-fill/line/marker forms and scheme colors are normalized for the
+SVG fallback and core payload colors, while native opt-in may still normalize
+unmodeled alpha, line, marker, or no-fill details. Common General, decimal,
+grouped, percent, and simple currency-prefix data-label formats render
+deterministically; an unknown Excel format program keeps the active payload but
+does not claim a normalized fallback. Active types outside the
+current renderer, including `of_pie`, continue to use an explicit placeholder marked
+`data-pptx-visual-status="placeholder"` and
+`data-pptx-route-status="reconstruction-only"`. Validation and export report
+that route as a warning. Default export keeps the placeholder; when the same
+group has a valid active native-chart payload, `--native-objects` may still
+reconstruct the editable chart. Invalid or contradictory status declarations
+remain errors.
+Fallback-only native capability uses `data-pptx-native-status` and remains a
+warning when the SVG fallback itself is complete.
+
+Active imported markers also carry `data-pptx-fallback-sha256`, computed over
+their canonical fallback plus reachable document-level SVG fragment definitions.
+A later visible edit, reachable definition change, local reference-target
+change, or marker transform makes the native metadata stale. The mandatory
+quality checker reports the mismatch; default export keeps the edited fallback,
+while `--native-objects` fails before replacement so it cannot discard that edit.
+`visibility:hidden` content, marker-local unused definitions, and explicitly
+referenced document-level target roots (even when hidden) are included
+conservatively; marker-local `display:none` subtrees are excluded, and external
+file bytes are not read.
+A legacy marker without the hash remains native-compatible and warns in the
+checker/native route that stale detection is unavailable.
+
+For table style `{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}`, the importer resolves
+the normalized `wholeTbl`, `firstRow`, `band1H`/`band2H`, theme color/font, and
+direct-format override subset. Other built-in/custom style families remain
+outside this guarantee. ChartEx native output consumes valid payload colors in
+its color-style part; other ChartEx style details remain normalized.
 
 Exporter-canonical charts recover canonical solid series/slice colors and exact
 one- or two-paragraph title styling; two paragraphs retain their `title` /

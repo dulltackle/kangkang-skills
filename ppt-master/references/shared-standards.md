@@ -414,12 +414,54 @@ These forms are needed only when the stated PPT behavior matters:
 
 | Desired behavior | Required form |
 |---|---|
-| One editable PPT text frame with mixed inline formatting | Put the logical line in one `<text>` and use non-positional `<tspan>` children. A `tspan` with `x`, `y`, or `dy` starts a new positioned line and is flattened to another text frame. Separate `<text>` elements remain valid when separate frames are intended. |
-| Stable object grouping or object-level animation anchor | Wrap the intended object in `<g id="...">`. Raw top-level primitives and anonymous groups remain valid when neither behavior is needed. |
+| One editable PPT text frame with mixed inline formatting | Put the logical line in one `<text>` with non-positional `<tspan>` children. A `<tspan>` with `x`/`y`/`dy` starts a new positioned line; evenly `dy`-stacked lines that repeat the parent `<text>`'s `x` **merge into one frame as multiple paragraphs** (the default paragraph-merge), while an irregular gap or a mismatched `x` flattens to separate frames. Separate `<text>` elements stay valid when separate frames are intended. |
+| Stable object grouping or object-level animation anchor | Wrap the intended object in `<g id="...">`. Content grouping is **mandatory** per §4.3 — a top-level `<g id>` is also the animation anchor; it is not an optional convenience. |
 | Native PowerPoint background promotion | Use a direct, full-canvas, solid `<rect>` without transform, filter, clip, rounding, or visible stroke. Other SVG backgrounds remain ordinary slide shapes. Template routes add the ownership metadata in §7. |
 | Free-design page family/chrome extraction | Use the semantic markers in §4.1. Marker-free pages retain conservative filename/id fallbacks, but no visual content is inferred. |
 
 **Hard rule — supported shape conversion**: Every PPT editability claim in this specification refers to the project converter reading `svg_output/` and emitting native DrawingML. `svg_final/` is a self-contained visual preview that may be inserted into PowerPoint as an SVG picture. PowerPoint's manual Convert-to-Shape operation is unsupported; do not narrow the authoring contract to its undocumented SVG subset.
+
+### 4.3 Element Grouping (Mandatory)
+
+Wrap logically related elements in top-level `<g id="...">` groups. This is **required on every generated page**, not an optional convenience: it produces real PowerPoint groups in the exported PPTX (easier to select / move / edit) and gives each content unit a stable anchor for optional per-element entrance animation. Plain `<g>` is the normal grouping primitive; `<g opacity="0..1">` additionally maps to the per-descendant alpha approximation in §2.2.
+
+**Semantic-group rule**: direct children of `<svg>` are semantic content groups, **not** raw drawing atoms. Aim for **3–8 top-level content `<g id>` groups per slide** (the budget excludes page chrome — see below); each content group becomes one entrance step under the chosen animation trigger (one click in `on-click`, one cascade slot in `after-previous`, parallel in `with-previous`). Leaving titles, body lines, list items, cards, or decorative clusters as ungrouped top-level `<text>` / `<rect>` / `<path>` is a contract violation, not a style choice.
+
+**Chrome is excluded automatically.** Existing `data-pptx-layer` and `data-pptx-placeholder="slide-number"` semantics are read first; otherwise explicit `data-pptx-role` values (`background`, `decoration`, `header`, `footer`, `chrome`, `watermark`, `page-number`, `logo`) mark static framing (§4.1, [`semantic-svg.md`](semantic-svg.md)). Marker-free legacy SVGs keep id-token fallbacks. Keep the `<g>` wrapper on chrome for editing/grouping even though it does not count against the 3–8 content budget.
+
+**What to group** (one `<g id>` per unit):
+
+| Grouping unit | Contains |
+|---|---|
+| Card / panel | Background rect + optional shadow (only if it floats over a photo/colored panel, §6.4) + icon + title + body text |
+| Process step | Number/marker + icon + label + description |
+| List item | Bullet / number + icon + title + description |
+| Icon-text combo | Icon element + adjacent label |
+| Page header | Title + subtitle + accent decoration |
+| Page footer | Page number + branding |
+| Decorative cluster | Related decorative shapes (rings, dots, orbs) |
+
+An authored native preset fragment (§1.5) is already an atomic `<g id>` and counts as one content group; keep its labels / decorations in a sibling parent `<g>`, never inside the preset group.
+
+**Forbidden**:
+
+- One giant `<g>` around the whole slide (collapses to a single animation step).
+- Many ungrouped top-level `<rect>` / `<text>` / `<path>` — fallback animation caps at 8 primitives, dense pages may skip animation, and selection/editing degrades.
+- One group per icon / text line / mark (too many steps).
+- Anonymous top-level groups — every top-level semantic group needs a descriptive `id`.
+
+**Naming — required.** A descriptive `id` on every top-level content `<g>` (`card-1`, `step-discover`, `header`, `footer`) is mandatory; it is the animation anchor and the group identity in PPTX. Without it, the exporter falls back to at most 8 top-level primitives or skips animation on dense pages.
+
+```xml
+<g id="card-benefits-1">
+  <!-- Shadow only if the card floats over a colored panel; on flat white, omit it. -->
+  <rect x="60" y="115" width="565" height="260" rx="20" fill="#FFFFFF" filter="url(#shadow)"/>
+  <use data-icon="chunk-filled/bolt" x="108" y="163" width="44" height="44" fill="#0071E3"/>
+  <text x="105" y="270" font-size="56" font-weight="bold" fill="#0071E3">10×</text>
+  <text x="250" y="270" font-size="30" font-weight="bold" fill="#1D1D1F">Faster</text>
+  <text x="105" y="310" font-size="18" fill="#6E6E73">Reduce production time from days to hours.</text>
+</g>
+```
 
 ---
 
@@ -574,7 +616,15 @@ color for glow; black reads as diffuse shadow.
 | Raised | Primary CTA, focused card, overlay | 6–10 | 10–16 | 0.12–0.20 |
 | Glow | Short display text, metric, focus accent | 0 offset | 4–8 | 0.35–0.55 |
 
-**Reference — not a constraint**: keep one light direction and at most two
+**Strong default — single light source per page**: every `feOffset` shadow on
+one slide shares the same `dx`/`dy` direction (default `dx="0"`, `dy="4"`–`dy="8"`,
+light from upper front). Contradictory shadow directions read as multiple light
+sources — a clear low-quality tell. The one sanctioned exception is a deliberate
+upward paper-layer light, where every affected layer flips direction together;
+never mix directions on the same plane. This is a strong default, not a
+checker-enforced hard rule.
+
+**Reference — not a constraint**: keep at most two
 non-floor tiers; two or three shadowed objects usually suffice. Do not lift
 every peer card or stack strong shadow, border, gradient, and tint on one
 container. Same-family colored shadow is reserved for a focal accent. On dark
@@ -931,6 +981,8 @@ Native PowerPoint tables and Excel-backed charts activate at export time only. T
 
 **Hard rule — activation is the opt-in, dormant unless exported with `--native-objects`**: A marker only declares that a group is eligible for native export. Normal `svg_to_pptx.py` runs keep the fallback SVG children. Pass `--native-objects` only when editability in PowerPoint matters more than cross-renderer layout fidelity: it emits the PowerPoint object and skips the fallback children to avoid duplicates. Native styling preserves the core palette, text, axis, grid, and background colors where possible, but it is still a PowerPoint chart/table object rather than a pixel-identical SVG drawing.
 
+The native route is deliberately editable-first and may be lossy: marker-local labels, callouts, KPIs, guide lines, custom split/bin semantics, or styling that is absent from the payload may disappear or normalize. Export warns about this route-level risk and any narrower issue it can detect. Loss of visual parity is not grounds to remove an active marker that the emitter can otherwise convert; use the default SVG-fallback export when exact authored artwork matters more than editability.
+
 | Marker | Native output | Required metadata |
 |---|---|---|
 | `<g data-pptx-native="table">` | `<p:graphicFrame>` with `<a:tbl>` | bounds + `columns` or `rows` |
@@ -951,7 +1003,38 @@ to at least one EMU per resolved row and column.
 
 **Validation**: `svg_quality_checker.py` validates native marker kind, JSON
 metadata, bounds/fallback availability, table rows/columns, supported chart
-type, and chart data shape before export.
+type, chart data shape, and any imported fallback baseline before export.
+
+**Hard rule — imported fallback freshness**: active table/chart markers emitted
+by `pptx_to_svg.py` carry `data-pptx-fallback-sha256`, a canonical hash of the
+marker fallback plus reachable document-level SVG fragment definitions. Editing
+geometry/text/paint, switching a local `url(#...)` or `href="#..."` target,
+changing a reachable definition, or changing the marker transform makes the
+native metadata stale. The mandatory quality checker warns and the default route
+keeps the edited SVG; `--native-objects` hard-fails before replacement so it
+cannot discard that edit. Metadata/title/description nodes, `data-pptx-*`
+runtime attributes, marker-local stable ID renames, and marker-local
+`display:none` subtrees are excluded. `visibility:hidden` content,
+marker-local unused definitions, and explicitly referenced document-level
+target roots (even when hidden) remain conservatively hashed. External
+image/font file bytes are not read.
+Hashless legacy markers remain native-compatible and warn in the checker/native
+route that stale detection is unavailable. A stale hash is an integrity mismatch,
+not a visual-parity gate on an unchanged active marker.
+
+**Hard rule — imported visual/route status**: A PPTX chart with a complete baked preview
+may carry `data-pptx-visual-status="source-preview"`. Supported parsed classic
+families without a preview use a deterministic readable fallback marked
+`data-pptx-visual-status="normalized"`; it is explicitly not source-exact.
+When no current renderer exists, the importer emits its typed reconstruction aid with both
+`data-pptx-visual-status="placeholder"` and
+`data-pptx-route-status="reconstruction-only"`. The valid pair is diagnostic:
+quality checking and export warn, default export keeps the placeholder, and
+`--native-objects` may reconstruct an editable chart when the same group has a
+valid active `data-pptx-native="chart"` payload. The allowed values and pair
+remain closed; unknown, whitespace-padded, or contradictory values fail.
+`data-pptx-native` and `data-pptx-native-status` are mutually exclusive on the
+same visible group.
 
 ```xml
 <g id="p03-revenue-chart" data-pptx-native="chart">
@@ -981,8 +1064,11 @@ If present, `header_rows` must be an integer from `0` through the resolved row
 count. Write `strict_grid`, `style.band_row`, and cell `bold` as JSON booleans.
 Cell objects accept `text`, `fill`, `color`,
 `align`, `valign`, `bold`, `font_size`, `padding`, `border_color`, and
-`border_width`; the same `padding`, `border_color`, and `border_width` keys may
-also live under `style` as table defaults. Native table typography mirrors the
+`border_width`, plus optional `lang`; the same `padding`, `border_color`,
+`border_width`, and `lang` keys may also live under `style` as table defaults.
+When `lang` is absent, export derives `zh-CN` for CJK text and `en-US`
+otherwise. `style.band_row: false` disables both `<a:tblPr bandRow>` and
+materialized alternating row fills. Native table typography mirrors the
 visible SVG fallback: put `style.font_family` and `style.font_size` on the
 marker from the table text already drawn, then use `style.header_font_size` or
 per-cell `font_size` only when the fallback visibly differs. If the fallback
@@ -1091,6 +1177,10 @@ such as `white`, `black`, and `gray`; the exporter normalizes them to 6-digit
 OOXML RGB. Bar and column series also disable PowerPoint's negative-value
 inversion so negative bars keep the same series fill instead of turning into
 white/theme fill.
+
+For ChartEx native charts, valid payload `style.colors` (or root `colors`)
+populate the ChartEx color-style part instead of being replaced by a fixed
+accent1–accent6 list. Other ChartEx style semantics remain normalized.
 
 **PowerPoint chartEx schema**: `treemap`, `sunburst`, `histogram`, `pareto`,
 `boxWhisker`, `waterfall`, and `funnel` use Office 2016+ chartEx parts. Use
