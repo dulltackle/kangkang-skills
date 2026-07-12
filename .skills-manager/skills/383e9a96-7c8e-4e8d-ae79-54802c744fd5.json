@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "skill_id": "2ff71e78-8183-43d5-9ce4-bac26210d6b1",
-  "path": "paseo",
-  "path_key": "paseo",
+  "skill_id": "383e9a96-7c8e-4e8d-ae79-54802c744fd5",
+  "path": "playwright",
+  "path_key": "playwright",
   "enabled": true,
   "tags": [],
   "source": {

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "skill_id": "7cccc09c-7777-489e-837c-a7d955db8310",
-  "path": "paseo-loop",
-  "path_key": "paseo-loop",
+  "skill_id": "981da332-b220-41e9-9fa6-17b53b0aa0af",
+  "path": "playwright-interactive",
+  "path_key": "playwright-interactive",
   "enabled": true,
   "tags": [],
   "source": {
