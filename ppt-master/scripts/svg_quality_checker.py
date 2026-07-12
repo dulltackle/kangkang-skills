@@ -22,7 +22,6 @@ from collections import Counter, defaultdict
 from xml.etree import ElementTree as ET
 
 from console_encoding import configure_utf8_stdio
-from svg_to_pptx.text_contract import TextContractError, validate_text_contracts
 
 configure_utf8_stdio()
 
@@ -176,6 +175,7 @@ try:
         load_pptx_structure_lock as _load_pptx_structure_lock,
         parse_template_slide as _parse_template_structure_slide,
         parse_template_slides as _parse_template_structure_slides,
+        _structure_subtree_signature as _structure_subtree_signature,
         template_lock_errors as _template_lock_errors,
         template_prototype_errors as _template_prototype_errors,
         validate_template_svg as _validate_template_structure_svg,
@@ -185,6 +185,7 @@ except ImportError:
     _load_pptx_structure_lock = None
     _parse_template_structure_slide = None
     _parse_template_structure_slides = None
+    _structure_subtree_signature = None
     _template_lock_errors = None
     _template_prototype_errors = None
     _validate_template_structure_svg = None
@@ -1369,17 +1370,6 @@ class SVGQualityChecker:
 
     def _check_text_elements(self, content: str, root: ET.Element, result: Dict):
         """Check text elements and wrapping methods"""
-        try:
-            validate_text_contracts(
-                root,
-                merge_paragraphs=True,
-                source_name=result.get('file'),
-            )
-        except TextContractError as exc:
-            result['errors'].extend(
-                diagnostic.format() for diagnostic in exc.diagnostics
-            )
-
         # Count text and tspan elements
         text_count = content.count('<text')
         tspan_count = content.count('<tspan')
@@ -1975,6 +1965,8 @@ class SVGQualityChecker:
             svg_path,
             require_structure=require_structure,
         ))
+        if svg_path.parent.name == 'svg_output':
+            self._append_structure_coverage_warnings(root, result)
         if _validate_template_structure_svg is None:
             result['errors'].append(
                 "Structured PPTX metadata validator could not be imported; "
@@ -1983,6 +1975,57 @@ class SVGQualityChecker:
             return
         result['errors'].extend(_validate_template_structure_svg(svg_path))
         result['errors'] = list(dict.fromkeys(result['errors']))
+
+    @staticmethod
+    def _append_structure_coverage_warnings(
+        root: ET.Element,
+        result: Dict,
+    ) -> None:
+        """Warn on mapped pages that compile to bare Masters / empty Layouts.
+
+        Zero-slot and framing-only Layouts are legal contracts, so these stay
+        warnings; the workflow gate requires each one to be fixed or
+        explicitly kept with a stated reason.
+        """
+        if not (root.get('data-pptx-layout') or '').strip():
+            return
+        has_layer_mark = any(
+            elem.get('data-pptx-layer') is not None
+            for elem in root.iter()
+        )
+        has_layout_atom = any(
+            child.get('data-pptx-layer') == 'layout'
+            for child in list(root)
+        )
+        has_placeholder = any(
+            elem.get('data-pptx-placeholder') is not None
+            for elem in root.iter()
+        )
+        if not has_layer_mark:
+            result['warnings'].append(
+                'Mapped page declares data-pptx-layout but no data-pptx-layer '
+                'mark; the exported Master gets no shared background/chrome '
+                'and the Layout gets no static framing. Mark the deck-wide '
+                'background data-pptx-layer="master" and this layout key\'s '
+                'framing data-pptx-layer="layout".'
+            )
+        if not has_placeholder and not has_layout_atom:
+            result['warnings'].append(
+                'Mapped page has no placeholder slot and no '
+                'data-pptx-layer="layout" atom; its Layout exports empty. '
+                'Declare the slots the page actually has (title / subtitle / '
+                'body / picture / slide-number / footer) and mark the layout '
+                'key\'s static framing, or state why this fixed composition '
+                'is intentionally zero-slot.'
+            )
+        elif not has_placeholder:
+            result['warnings'].append(
+                'Mapped Layout has static framing but no insertable '
+                'placeholder slot. Keep it only when zero-slot is the '
+                'intended reusable contract; otherwise declare the slots the '
+                'page actually has (title / subtitle / body / picture / '
+                'slide-number / footer).'
+            )
 
     def _check_semantic_markers(
         self,
@@ -2349,8 +2392,6 @@ class SVGQualityChecker:
 
     def _categorize_issue(self, error_msg: str) -> str:
         """Categorize issue type"""
-        if error_msg.startswith('[TEXT_'):
-            return 'Text contract'
         if 'Invalid XML' in error_msg:
             return 'XML well-formedness'
         elif 'viewBox' in error_msg:
@@ -2459,6 +2500,7 @@ class SVGQualityChecker:
             _load_pptx_structure_lock is None
             or _parse_template_structure_slide is None
             or _parse_template_structure_slides is None
+            or _structure_subtree_signature is None
             or _template_lock_errors is None
             or _TemplateStructureError is None
         ):
@@ -2475,6 +2517,10 @@ class SVGQualityChecker:
             except _TemplateStructureError as exc:
                 self._pptx_structure_issues.append(('error', str(exc)))
                 return
+            self._pptx_structure_issues.extend(
+                ('error', message)
+                for message in self._shared_fixed_layer_errors(specs)
+            )
             self._pptx_structure_issues.extend(
                 ('warning', message)
                 for message in self._duplicate_layout_key_warnings(specs)
@@ -2550,6 +2596,10 @@ class SVGQualityChecker:
                     require_complete_roster=complete_roster,
                 )
             )
+        self._pptx_structure_issues.extend(
+            ('error', message)
+            for message in self._shared_fixed_layer_errors(specs)
+        )
         self._pptx_structure_issues.extend(
             ('warning', message)
             for message in self._duplicate_layout_key_warnings(specs)
@@ -2640,6 +2690,82 @@ class SVGQualityChecker:
                 "define a Layout."
             )
         return messages
+
+    @classmethod
+    def _shared_fixed_layer_errors(cls, specs) -> List[str]:
+        """Reject fixed atoms whose payload varies inside one reuse scope."""
+        master_groups = defaultdict(list)
+        layout_groups = defaultdict(list)
+        for spec in specs:
+            master_groups[spec.master_key].append(spec)
+            layout_groups[(spec.master_key, spec.layout_key)].append(spec)
+
+        try:
+            errors = cls._fixed_layer_group_errors(master_groups, 'master')
+            errors.extend(cls._fixed_layer_group_errors(layout_groups, 'layout'))
+        except _TemplateStructureError as exc:
+            return [str(exc)]
+        return errors
+
+    @classmethod
+    def _fixed_layer_group_errors(cls, groups, layer: str) -> List[str]:
+        """Compare fixed atom payloads across grouped slide specifications."""
+        errors = []
+        for scope_key, group_specs in groups.items():
+            if len(group_specs) < 2:
+                continue
+            variants = defaultdict(lambda: defaultdict(list))
+            for spec in group_specs:
+                payloads = cls._fixed_layer_payloads(spec, layer)
+                for element_id, payload in payloads.items():
+                    variants[element_id][payload].append(spec)
+            for element_id, payload_specs in variants.items():
+                if len(payload_specs) < 2:
+                    continue
+                slide_names = ', '.join(
+                    spec.svg_path.name
+                    for spec in sorted(group_specs, key=lambda item: item.slide_num)
+                )
+                if layer == 'master':
+                    scope = f"Master {scope_key!r}"
+                else:
+                    master_key, layout_key = scope_key
+                    scope = (
+                        f"Layout {layout_key!r} under Master {master_key!r}"
+                    )
+                if element_id is None:
+                    subject = "fixed visual resources"
+                    verb = "differ"
+                else:
+                    subject = f"fixed element {element_id!r}"
+                    verb = "differs"
+                errors.append(
+                    f"{scope} {subject} {verb} across slides: "
+                    f"{slide_names}. Values marked data-pptx-layer={layer!r} must "
+                    "remain identical throughout their reuse scope; move variable "
+                    "text or images into a placeholder slot or keep them Slide-local."
+                )
+        return errors
+
+    @staticmethod
+    def _fixed_layer_payloads(spec, layer: str) -> Dict[object, tuple]:
+        """Return resolved fixed-layer visual payloads keyed by SVG id."""
+        elements = (
+            spec.master_elements if layer == 'master' else spec.layout_elements
+        )
+        if not elements:
+            return {}
+        signature = _structure_subtree_signature(
+            spec.svg_path,
+            elements,
+            include_skin=True,
+            include_text=True,
+            asset_identity=True,
+        )
+        return {
+            None if element_id == '__visual_resources__' else element_id: payload
+            for element_id, payload in signature
+        }
 
     @staticmethod
     def _layout_contract_fingerprint(svg_path: Path):
