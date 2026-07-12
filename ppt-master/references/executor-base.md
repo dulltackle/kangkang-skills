@@ -121,6 +121,8 @@ Before generating each page, output which template is used:
 
 **Mandatory — master/layout layer coverage**: On every mapped page, mark the deck-wide background and every-page chrome (footer bar, running logo) `data-pptx-layer="master"`, and mark the static framing that defines this layout key's composition (divider band, header rule, zone panels) `data-pptx-layer="layout"`. A mapped page with zero `data-pptx-layer` marks exports a bare Master and an empty Layout — the layer marks, not the slide content, are what give each Layout its visible design.
 
+**Mandatory — different keys differ in the Layout layer**: Pages locked to different layout keys must not carry identical Layout-layer contracts, or they compile to duplicate Layouts. Materialize each composition's identity as Layout-layer zone framing — the table backing panel and its header band, the column panels or central divider, the hero image frame — while the zone's labels, data, and imagery stay Slide-local. When no framing genuinely distinguishes two keys, the pages are one composition: use one key.
+
 **Placeholder ownership**: Keep actual title/subtitle/body/picture/chart/table/object/media/date/footer/slide-number content on the Slide and add the matching `data-pptx-placeholder`. Do not duplicate placeholder identity with `data-pptx-role`; in particular, `data-pptx-placeholder="slide-number"` already owns page-number field behavior. A reconstructed `title` normally omits `data-pptx-placeholder-idx`; preserve an explicit imported title index when present. Every indexed placeholder on one Layout uses a unique index. Chart/table placeholders require native markers and a later `--native-objects` export; object/media placeholders must each resolve to one top-level DrawingML object.
 
 **Atomic placeholder carrier exception**: A normal title/subtitle/body/date/footer/slide-number placeholder is one direct `<text>`; picture/media is one direct `<image>` or imported crop `<svg>`; object is one direct supported atomic object. These direct carriers are the narrow exception to the mandatory top-level `<g>` rule and do not count against the 3–8 content-group budget. Do not wrap multiple drawing atoms in an arbitrary `<g>` and promise that the composite is one placeholder. The separately specified chart/table native-marker group remains its own specialized contract. Any other complex `<g>` composition stays Slide-local without placeholder metadata.
@@ -212,6 +214,22 @@ Do **not** invent a layout entry, and do **not** assume a template just because 
 - `pptx_structure.mode: baseline` or missing with the whole `pptx_layouts` section absent → legacy compatibility only. Omit explicit PPTX layer/layout/placeholder metadata, keep the root page role and necessary structural hints, and let baseline export use conservative promotion plus page-role-backed Layout families. Filenames and ids are fallbacks only when the corresponding marker is absent.
 - A layout key may repeat across non-adjacent pages. Reuse is based on identical static/placeholder contracts, not page proximity or content wording.
 
+**Page scaffold — author every mapped page in this document order.** One shape resolves the direct-child rule, the paint order, and the grouping exception at first write:
+
+```xml
+<svg viewBox="…" data-pptx-layout="<key>" data-pptx-layout-name="<name>">
+  <rect id="master-bg" data-pptx-layer="master" …/>              <!-- deck background -->
+  <g id="footer-chrome" data-pptx-layer="master" …>…</g>         <!-- every-page chrome -->
+  <g id="zone-framing" data-pptx-layer="layout" …>…</g>          <!-- this key's framing -->
+  <text id="page-title" data-pptx-placeholder="title" …>…</text> <!-- direct child, never inside a <g> -->
+  <text id="page-number" data-pptx-placeholder="slide-number" …>…</text>
+  <g id="content-block-1">…</g>                                  <!-- 3–8 content groups -->
+  <g id="content-block-2">…</g>
+</svg>
+```
+
+Master/layout layers and placeholders are always direct children of the root and precede every content group; a placeholder written inside a content `<g>` fails export.
+
 **Per-page chart reference — `page_charts` section**:
 
 Before drawing each page, look up its entry in `page_charts` to decide which chart structure applies (the SVG itself was loaded in §1.0):
@@ -233,7 +251,7 @@ Before drawing each page, look up its entry in `page_charts` to decide which cha
 - **Default — stage each page with the style's composition geometry (may override when the content genuinely calls for a plain grid)**: an SVG page is a canvas, not a DOM. Before defaulting to stacked rounded-rect cards or uniform equal columns, pick one page-scale move from the locked visual style's §1 `Composition geometry` (a bleed shape, diagonal split, oversized numeral, orbit rings, …) to stage the page's primary zone. Card grids are one option among many, not the house layout.
 - **Reference — image-led promotional pages (not a constraint)**: for travel, venue, product-introduction, hospitality, event, real-estate, and brochure-style decks, let images define the page skeleton before placing text. Consult [`image-layout-patterns.md`](image-layout-patterns.md) §Imported Deck Patterns and prefer patterns such as `#74` TOC image-navigation cards, `#75` asymmetric chapter banners, `#77` photo mosaic with a text cell, `#78` ambient banner + evidence photo + text panel, `#79` ribbon-header image cards, and `#80` side hero image + staggered evidence cards before falling back to plain left/right image-text splits.
 - **Phased batch generation** (recommended):
-  1. **Visual Construction Phase**: generate all SVG pages sequentially for visual consistency. Use layout judgment for chart marks during the draft. **MUST embed plot-area markers** per §3.1 below on every chart page — coordinate calibration is a post-generation step (see [`workflows/verify-charts.md`](../workflows/verify-charts.md)) that depends on these markers — and **native object metadata** per §3.2 on every eligible data-chart page.
+  1. **Visual Construction Phase**: generate all SVG pages sequentially for visual consistency. Use layout judgment for chart marks during the draft. **MUST embed plot-area markers** per §3.1 below on every chart page — coordinate calibration is a post-generation step (see [`workflows/verify-charts.md`](../workflows/verify-charts.md)) that depends on these markers — and **native object metadata** per §3.2 on every eligible data-chart page. **First-page gate (Mandatory)**: after completing the first page, run `python3 scripts/svg_quality_checker.py <project_path>/svg_output/<first_page>.svg` and fix every error before drawing page 2 — structural violations are systematic, and a first-page error repeated deck-wide costs a whole-deck rewrite.
   2. **Quality Check Gate**: run `python3 scripts/svg_quality_checker.py <project_path>` on `svg_output/`. Any `error` (banned features, viewBox mismatch, spec_lock drift, non-PPT-safe font, etc.) MUST be fixed on the offending page before proceeding — regenerate and re-check. Address `warning`s when straightforward. Do NOT defer to after `finalize_svg.py` — finalize rewrites SVG and masks some violations.
   3. **Logic Construction Phase**: after SVGs pass the quality check, batch-generate speaker notes for narrative continuity.
 
