@@ -45,7 +45,7 @@ python3 scripts/update_repo.py
 |------|-----------------|---------------|
 | Conversion | `source_to_md.py`, `source_to_md/pdf_to_md.py`, `source_to_md/doc_to_md.py`, `source_to_md/excel_to_md.py`, `source_to_md/ppt_to_md.py`, `source_to_md/web_to_md.py`, `pptx_intake.py`, `pptx_to_svg.py` | [docs/conversion.md](./docs/conversion.md) |
 | Project management | `project_manager.py`, `batch_validate.py`, `generate_examples_index.py`, `error_helper.py`, `pptx_template_import.py`, `template_fill_pptx.py`, `native_enhance_pptx.py` | [docs/project.md](./docs/project.md) |
-| SVG pipeline | `preset_shape_svg.py`, `finalize_svg.py`, `svg_to_pptx.py`, `total_md_split.py`, `svg_quality_checker.py`, `extract_svg_assets.py`, `animation_config.py`, `notes_to_audio.py` | [docs/svg-pipeline.md](./docs/svg-pipeline.md); [native preset authoring](../references/native-shape-authoring.md) |
+| SVG pipeline | `preset_shape_svg.py`, `svg_authoring_view.py`, `finalize_svg.py`, `svg_to_pptx.py`, `template_preview_pptx.py`, `total_md_split.py`, `svg_quality_checker.py`, `extract_svg_assets.py`, `animation_config.py`, `notes_to_audio.py` | [docs/svg-pipeline.md](./docs/svg-pipeline.md); [native preset authoring](../references/native-shape-authoring.md) |
 | PPTX transitions | `pptx_transitions.py` | [docs/pptx-transitions.md](./docs/pptx-transitions.md) |
 | PPTX animations | `pptx_animations.py`, `animation_config.py` | [docs/pptx-animations.md](./docs/pptx-animations.md) |
 | Spec maintenance | `update_spec.py` | [docs/update_spec.md](./docs/update_spec.md) |
@@ -81,7 +81,23 @@ Template source import:
 python3 scripts/pptx_template_import.py <template.pptx>
 python3 scripts/pptx_template_import.py <template.pptx> --manifest-only
 python3 scripts/pptx_template_import.py <template.pptx> --inheritance-mode both
+python3 scripts/svg_authoring_view.py <imported-svg-or-dir> -o <output-dir>
+python3 scripts/template_preview_pptx.py <template_workspace>
+python3 scripts/template_preview_pptx.py <legacy_template_workspace> --visual-only
 ```
+
+`svg_authoring_view.py` creates a lightweight, non-destructive inspection copy
+of PPTX-imported SVGs. It removes embedded `txbody` / `text-carrier` payloads,
+duplicate hidden geometry carriers, and import-identity attributes from the
+copy while retaining visible fallback geometry, text, images, stable element
+ids, root Master/Layout markers, and supported compact native-shape intent.
+Relative local image references are rewritten so the projected copy still
+renders from its new location. The full imported SVG remains unchanged and is
+the evidence source for mirror restoration; the projection is inspection-only.
+The exporter never reads the import workspace or the projection. A projected
+view is not a final template or release export source.
+
+`template_preview_pptx.py` reads a template workspace, exports every `templates/*.svg` prototype as one structured review slide, and verifies the resulting Master/Layout package. This is an on-demand review action: its default output is `exports/<template_id>_template_preview.pptx`, and that directory need not exist before the command runs. It refuses an existing output unless an intentional re-export passes `--force`. `--visual-only` is an explicit migration aid for legacy SVG rosters: it creates a slide-local visual review deck without validating or claiming a reusable Master/Layout contract. New structured templates use the default mode when a review deck is requested.
 
 Template fill (direct PPTX, no SVG conversion):
 
@@ -132,11 +148,13 @@ python3 scripts/svg_to_pptx.py <project_path>
 
 For SVG-authoring routes, `svg_output/` is the complete visible page-design source: every exported text, image, shape, background, and template-derived layout element is present in the page SVG or explicitly referenced by it. Export may translate represented content into Master/Layout/Slide parts or native objects, but it does not retrieve missing visible content from templates or planning files. Speaker notes, animation, narration, transitions, `template-fill-pptx`, and `native-enhance-pptx` remain separately owned capabilities.
 
-Native `svg_to_pptx.py` defaults to `baseline`. Free-design/brand-only projects initially omit `pptx_layouts`, keep all actual content Slide-local, and use the compatibility pass: exact z-order-safe shared background/chrome promotion plus coarse root `data-pptx-page-role` families, with filename/id fallbacks. If the user later selects completed pages for reuse, [`distill-layouts`](../workflows/distill-layouts.md) writes one complete mapping: selected pages use explicit `distilled` Layout contracts and unselected pages share an empty `utility` Layout. The exporter compiles only those declarations, validates the finished package, and performs no visual-similarity inference. Baseline also prunes unused layouts and maps locked typography/colors into the PowerPoint theme. Use `--pptx-structure flat` for slide-local diagnostics.
+Native `svg_to_pptx.py` release export uses the project's `structured` lock. Every project supplies a complete Master roster and page-to-Master/Layout mapping before SVG generation. Every SVG root repeats that identity; fixed Master/Layout visuals are direct atomic children, and reusable slots are top-level groups with positive design-zone bounds plus one compatible carrier. Composite `object` regions use explicit proxy binding, and zero-slot Layouts are valid.
 
-Post-design distilled baseline and distillation-capable deck/layout template routes use the same explicit Layout compiler. A distillation-capable template project selects complete input prototypes in `page_layouts` and defers `pptx_layouts` until every visible SVG page exists. Deferred strict output must match prototype key/name, Master/Layout structure, and placeholder bounds; adaptive must keep Master ids/topology/geometry and may finalize an evolved Layout or author new design-zone bounds for a legacy prototype. Adaptive can reuse the prototype key/name only when that Layout contract is unchanged; evolution receives a new identity. A bounds-missing strict legacy selection instead keeps the complete kindless immediate-template mapping and skips post-design distillation. Non-mirror skin remains project-controlled, while mirror reuses literal visual styling and permits only visible text replacement under an unchanged identity. Every distilled placeholder supplies explicit design-zone bounds independent of current Slide geometry. Atomic carriers retain matching Slide bindings; a final distilled composite object region stays ordinary and receives a hidden transparent binding proxy. The exporter validates prototype and cross-slide contracts, creates one reusable Layout per key, removes repeated inherited copies, and reads the finished package back to verify static/carrier rosters, backgrounds, placeholder identities, proxies, and default bounds.
+The exporter compiles only this declared structure, maps locked typography/colors into PowerPoint defaults, creates the named Master/Layout parts, and reads the package back before publication. It never clusters pages, promotes repeated chrome heuristically, or invents placeholders. Use `--pptx-structure flat` only for diagnostics.
 
-Current `create-template` output always rebuilds explicit SVG structure and does not package `native_structure.json` or `source_template.pptx`. `preserve` remains available only for existing projects that already carry the legacy pair.
+Template `page_layouts` records input provenance. Strict preserves its Master/Layout/slot contract; adaptive retains its Master and may use a new Layout key only when fixed Layout atoms or slot topology/bounds change. `standard` / `fidelity` author new SVGs and a new Master/Layout/slot contract. `mirror` restores the source identities and parentage without semantic synthesis, while mechanically expanding fixed-layer group wrappers into the direct atoms required by the structured contract.
+
+Legacy `baseline`, `template`, `preserve`, `layout_strategy`, `data-pptx-layout-kind`, `distilled`/`utility`, direct atomic placeholders, and missing root Master identity must run [`restore-pptx-structure`](../workflows/restore-pptx-structure.md) before release export.
 
 `pptx_to_svg.py` annotates verified text-grid tables and conservative chart data with `data-pptx-native` metadata. Table import covers exact physical row/grid topology, canonical rectangular merges, safe solid/no-fill per-side borders, plain multi-paragraph cells, and a closed run-rich paragraph schema. Each rich run requires `text` and may use only `bold`, `italic`, `underline`, `strike`, `color`, `font_size`, one `font_family`, `lang`, and `alt_lang`. A merge must use the exact `rowSpan` / `gridSpan` / `hMerge` / `vMerge` physical topology with empty merge slaves. Presentation-only source run XML normalizes, while relationship-bearing text, extensions, line breaks, fields, tabs, bullets, broken text topology, unsafe border XML, non-solid fills, and other merge encodings remain fallback-only. For table style `{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}`, the normalized SVG fallback resolves `wholeTbl`, `firstRow`, horizontal banding, theme colors/fonts, and direct cell/run overrides; other built-in/custom style families are not implied.
 

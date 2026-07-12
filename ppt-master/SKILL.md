@@ -11,7 +11,7 @@ description: >
 
 > AI-driven multi-format SVG content generation system. Converts source documents into high-quality SVG pages through multi-role collaboration and exports to PPTX.
 
-**Core Pipeline**: `Source Document → Create Project → [Template] → Strategist → [Image_Generator] → Executor Live Preview → Quality Check → [Layout Distillation] → Post-processing → Export`
+**Core Pipeline**: `Source Document → Create Project → [Template] → Strategist Structured Plan → [Image_Generator] → Executor Live Preview → Quality Check → Post-processing → Export`
 
 ### SVG Page-Design Boundary
 
@@ -38,7 +38,7 @@ description: >
 > 5. **NO SPECULATIVE EXECUTION** — "Pre-preparing" content for subsequent Steps is FORBIDDEN (e.g., writing SVG code during the Strategist phase)
 > 6. **NO SUB-AGENT SVG GENERATION** — Executor Step 6 SVG generation is context-dependent and MUST be completed by the current main agent end-to-end. Delegating page SVG generation to sub-agents is FORBIDDEN
 > 7. **SEQUENTIAL PAGE GENERATION ONLY** — In Executor Step 6, after the global design context is confirmed, SVG pages MUST be generated sequentially page by page in one continuous pass. Grouped page batches (for example, 5 pages at a time) are FORBIDDEN
-> 8. **SPEC_LOCK RE-READ PER PAGE** — Before generating each SVG page, Executor MUST `read_file <project_path>/spec_lock.md`. All colors / fonts / icons / images MUST come from this file — no values from memory or invented on the fly. Executor MUST also look up `pptx_structure.template_adherence` when present, the current page's `page_rhythm` (`anchor` / `dense` / `breathing`), `page_layouts` (the input template SVG), `page_charts`, and `pptx_layouts` only after it has been finalized. New baseline and template-distillation routes intentionally omit the output mapping during visual generation; [`distill-layouts`](workflows/distill-layouts.md) writes it only from complete SVG pages. Legacy immediate-template and preserve locks retain pre-authored mappings. This rule exists to resist context-compression drift on long decks and to break the uniform "every page is a card grid" default
+> 8. **SPEC_LOCK RE-READ PER PAGE** — Before generating each SVG page, Executor MUST `read_file <project_path>/spec_lock.md`. All colors / fonts / icons / images MUST come from this file — no values from memory or invented on the fly. Executor MUST also look up the complete `pptx_masters` / `pptx_layouts` structure, `pptx_structure.template_adherence` when present, the current page's `page_rhythm` (`anchor` / `dense` / `breathing`), `page_layouts` (the input template SVG), and `page_charts`. Master/Layout structure exists before drawing; export never infers it later. This rule exists to resist context-compression drift on long decks and to break the uniform "every page is a card grid" default
 > 9. **SVG MUST BE HAND-WRITTEN, NOT SCRIPT-GENERATED** — Every SVG page is written by the main agent directly, one page at a time (see rules 6 and 7). Writing or running a Python / Node / shell script that produces the SVG files in batch — looping over pages, templating from data, or emitting them via a generator — is FORBIDDEN, including under "save tokens", "quick draft", or "user is in a hurry" pretexts. The script-generation path was tried on a feature branch and abandoned: cross-page visual consistency depends on per-page authoring with full upstream context, which a generator script cannot reproduce. **Narrow exception**: `preset_shape_svg.py` may print one deterministic stock-shape fragment to stdout after the main agent has selected its semantic role, frame, and paint. It cannot write `svg_output/`, choose layout, batch shapes, or generate a page; the main agent reads the fragment and inserts it through the normal hand-authored page edit
 > 10. **FOLLOW DETERMINISTIC ROUTING RULES** — Do not add blocking routing questions when this skill defines a route. If the user request violates a route precondition, state the required prerequisite and stop that route instead of asking the user to choose around the rule. Ordinary finite options, stylistic preferences, and recoverable details are surfaced with a recommended value plus alternatives at the next existing confirmation gate.
 
@@ -90,6 +90,7 @@ description: >
 | `${SKILL_DIR}/scripts/latex_render.py` | LaTeX formula rendering (manifest-driven PNG assets) |
 | `${SKILL_DIR}/scripts/image_gen.py` | AI image generation (multi-provider) |
 | `${SKILL_DIR}/scripts/slice_images.py` | Slice one AI illustration sheet into individual spot-illustration elements |
+| `${SKILL_DIR}/scripts/svg_authoring_view.py` | Create a lightweight non-destructive inspection projection of PPTX-imported SVGs; never a release source |
 | `${SKILL_DIR}/scripts/svg_quality_checker.py` | SVG quality check |
 | `${SKILL_DIR}/scripts/preset_shape_svg.py` | Print one registry-backed native PowerPoint preset fragment to stdout for hand-authored SVG insertion |
 | `${SKILL_DIR}/scripts/total_md_split.py` | Speaker notes splitting |
@@ -125,12 +126,30 @@ For complete tool documentation, see `${SKILL_DIR}/scripts/README.md`.
 | Raw PPTX template plus new material/topic, generate a PPTX | [`template-fill-pptx`](workflows/template-fill-pptx.md) |
 | Existing PPTX, preserve page count/order and slide wording 1:1, improve layout | [`beautify-pptx`](workflows/beautify-pptx.md) |
 | Existing PPTX as source material, rethink outline or change page count/order | Main pipeline via `source_to_md.py` plus PPTX intake |
-| Build a reusable template package from a PPTX/design reference | [`create-template`](workflows/create-template.md), then return with the generated template directory path |
+| Build a reusable template package from a PPTX/design reference | [`create-template`](workflows/create-template.md), then return with the generated template workspace path |
 | Finished PPTX, keep content/layout stable and add notes/audio/timing/transitions | [`native-enhance-pptx`](workflows/native-enhance-pptx.md) |
 
-**MUST**: Raw `.pptx` template plus "generate PPTX" routes to `template-fill-pptx` by default. The SVG generation route consumes only an explicit template directory path that already contains a valid template `design_spec.md`.
+**MUST**: Raw `.pptx` template plus "generate PPTX" routes to `template-fill-pptx` by default. The SVG generation route consumes only an explicit template workspace path with a valid `templates/design_spec.md`, or a supported direct/legacy package root with `design_spec.md`.
 
 **MUST**: Beautify is strictly 1:1. Any split, merge, drop, reorder, or page-count change routes to the main pipeline.
+
+**MUST — reusable template mode boundary**: `create-template` has two distinct
+contracts. `standard` and `fidelity` author new SVG prototypes and their own
+Master/Layout/slot system; source visuals and assets are references, and source
+Master/Layout topology is neither preserved nor distilled. `mirror` is a
+restoration path: preserve the source slide roster/order, visual appearance,
+Master/Layout parentage and identities, placeholder type/index/bounds, native
+object ownership, and supported native-shape metadata. The lossless import is
+the restoration authority; the lightweight authoring projection exists only to
+keep model context small. Mechanical normalization may express the source facts
+in the current explicit SVG contract and expand fixed-layer group wrappers into
+direct atoms, but it MUST NOT merge, split, promote, demote, rename, or
+re-parent source structure. Export compiles the selected contract and never
+infers a different one. Because the current structured roster materializes only
+identities referenced by emitted page prototypes, `mirror` is available only
+when every source Layout is used by a source Slide and every source Master is
+reachable through those Layouts. Otherwise stop and report the exact
+unreachable identities; never drop them or invent a carrier page.
 
 **FALLBACK**: Ambiguous requests such as "make this PPT more professional" require exactly one discriminator question: preserve original page count/order and slide wording, or treat the deck as source material and restructure it?
 
@@ -219,19 +238,21 @@ Multi-deck: several PPTX files may be imported into one main-pipeline project �
 
 **Default — free design.** Proceed directly to Step 4. Do NOT query any `*_index.json` unless triggered. Do NOT ask the user. Do NOT proactively suggest, hint at, or fuzzy-match any template based on content, slug-like words, or vague style descriptions.
 
-**Hard boundary — raw PPTX template references are not Step 3 templates.** PPTX-as-source remains valid in Step 1 / Step 2, and raw PPTX template + generated PPTX routes to `template-fill`. But if the user wants the SVG/template-based generation route from that PPTX, stop before Step 3. The user must first run [`workflows/create-template.md`](workflows/create-template.md), then return with the generated template directory path. Step 3 only consumes an explicit template directory that already contains `design_spec.md` with `kind: brand` / `kind: layout` / `kind: deck`.
+**Hard boundary — raw PPTX template references are not Step 3 templates.** PPTX-as-source remains valid in Step 1 / Step 2, and raw PPTX template + generated PPTX routes to `template-fill`. But if the user wants the SVG/template-based generation route from that PPTX, stop before Step 3. The user must first run [`workflows/create-template.md`](workflows/create-template.md), then return with the generated template workspace path. Step 3 consumes an explicit workspace whose `templates/design_spec.md` declares `kind: brand` / `kind: layout` / `kind: deck`, or a compatible legacy-flat package whose root `design_spec.md` declares one of those kinds.
 
 Do **not** reinterpret this boundary as 1:1 redesign or free SVG generation. Use `template-fill` for raw PPTX template + generated PPTX requests; use `beautify` only when the source deck's page count, order, and wording are preserved.
 
-**Template flow triggers ONLY on explicit directory paths** supplied by the user in their initial message, plus one narrow workflow handoff: a project-scoped `create-template` run in the current conversation may pass its exact validated `<project>/templates/` output directly into this Step. The trigger rule is mechanical, not interpretive:
+**Template flow triggers ONLY on explicit directory paths** supplied by the user in their initial message, plus one narrow workflow handoff: a project-scoped `create-template` run in the current conversation may pass its exact validated project workspace root directly into this Step. The trigger rule is mechanical, not interpretive:
 
 | User input contains | Step 3 action |
 |---|---|
-| One or more explicit template directory paths (each resolves to a directory containing `design_spec.md` with `kind: brand` / `kind: layout` / `kind: deck` in its YAML frontmatter) | Read each spec's `kind`, dispatch per the kind matrix below, fuse if multiple |
-| Current `create-template` workflow just completed project scope and validated its exact `<project>/templates/` output | Consume that single directory in place; it cannot join multi-path fusion |
+| One or more explicit template workspace paths (each resolves to `templates/design_spec.md`, or to a compatible legacy-flat root `design_spec.md`, with `kind: brand` / `kind: layout` / `kind: deck` in YAML frontmatter) | Normalize each source directory, read its `kind`, dispatch per the kind matrix below, fuse if multiple |
+| Current `create-template` workflow just completed project scope and validated its exact `<project>/` workspace | Consume that single workspace in place; it cannot join multi-path fusion |
 | Anything else — bare template names ("用 academic_defense"), style descriptions ("麦肯锡风格"), brand mentions ("招商银行风格"), vague intent ("想用个模板"), or silence | Skip Step 3, free design |
 
 There is no slug matching, no name lookup, no fuzzy resolution. A name without a path does not trigger — the user must give a path the AI can `cd` into.
+
+**Structured-template preflight (before copy)**: For every deck/layout workspace, inspect all SVG roots and slots under its normalized template source. Every page must declare root Master/Layout key and picker names; Master/Layout visuals must be direct atoms rather than `<g>`; every slot must be a top-level `<g>` with positive bounds and exactly one compatible carrier, or an explicit composite `object` proxy. A zero-slot Layout is valid. If the SVG package uses a legacy semantic contract, run [`restore-pptx-structure`](workflows/restore-pptx-structure.md) first and return to Step 3 with the migrated workspace. A legacy flat directory shape alone is read compatibility and does not trigger restoration.
 
 > Style descriptions ("麦肯锡风格" / "Keynote 风" / "极简风" / etc.) never trigger Step 3. They flow into the Strategist confirmation stage as a style brief (color / typography / tone in fields e–g).
 
@@ -247,9 +268,9 @@ The architecture has three independent reference bundles. Full schema in [`docs/
 
 | Kind | Physical dir | Contains | Frontmatter |
 |---|---|---|---|
-| **brand** | `templates/brands/<id>/` | identity-only segment: color / typography / logo / voice / icon style | `kind: brand` |
-| **layout** | `templates/layouts/<id>/` | structure-only segment: canvas / page structure / page types / SVG roster | `kind: layout` |
-| **deck** | `templates/decks/<id>/` | full replica: identity + structure + middle (template overview) segments | `kind: deck` |
+| **brand** | `templates/brands/<id>/templates/` inside a complete workspace | identity-only segment: color / typography / logo / voice / icon style | `kind: brand` |
+| **layout** | `templates/layouts/<id>/templates/` inside a complete workspace | structure-only segment: canvas / page structure / page types / SVG roster | `kind: layout` |
+| **deck** | `templates/decks/<id>/templates/` inside a complete workspace | full identity + structure reference with the middle (template overview) segment | `kind: deck` |
 
 **Segment ownership** (governs fusion override priority):
 
@@ -263,48 +284,30 @@ The architecture has three independent reference bundles. Full schema in [`docs/
 
 | User path's `kind` | Step 3 action |
 |---|---|
-| `kind: brand` | `design_spec.md` + non-image assets → `<project>/templates/`; logo / illustration / icon **bitmaps** → `<project>/images/`. Strategist locks identity segment as truth; structure stays free. |
-| `kind: layout` | `design_spec.md` + SVG roster → `<project>/templates/`; any **bitmap** assets → `<project>/images/`. Strategist locks structure; identity decided in Strategist confirmation stage e–g. |
-| `kind: deck` | `design_spec.md` + template SVGs → `<project>/templates/`; logos / backgrounds / other **bitmaps** → `<project>/images/`. Strategist locks all segments; Strategist confirmation stage narrows to deck-content fields (audience / page count / outline / tone tweaks). |
+| `kind: brand` | Install `templates/` plus any existing `images/` and `icons/` into the matching project roots; ignore `exports/`. Strategist locks identity; structure stays free. |
+| `kind: layout` | Install `templates/` plus any existing `images/` and `icons/` into the matching project roots; ignore `exports/`. Strategist locks structure; identity is decided in confirmation fields e–g. |
+| `kind: deck` | Install `templates/` plus any existing `images/` and `icons/` into the matching project roots; ignore `exports/`. Strategist locks all segments; confirmation narrows to deck-content fields. |
 
-```bash
-TEMPLATE_DIR="<user-supplied path>"
-PROJECT_TEMPLATES="<project_path>/templates"
-resolve_path() {
-  python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$1"
-}
-# Bitmaps join the project's single runtime image pool (images/, referenced as
-# ../images/); the spec + template SVGs + other non-image assets stay in
-# templates/ as design reference the Strategist/Executor read but never render.
-if [ "$(resolve_path "${TEMPLATE_DIR}")" = "$(resolve_path "${PROJECT_TEMPLATES}")" ]; then
-  # Project-scoped create-template output is already staged in place.
-  true
-else
-  cp -r "${TEMPLATE_DIR}"/. "${PROJECT_TEMPLATES}/"
-  find "${PROJECT_TEMPLATES}" -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.gif' -o -iname '*.webp' -o -iname '*.bmp' \) -exec mv {} "<project_path>/images/" \;
-fi
-```
+Normalize every explicit path before any write:
 
-The same split applies to all three kinds — bitmaps always land in `images/`, the rest in `templates/`. The spec's `kind` field tells Strategist how to read the `templates/` side; downstream code doesn't distinguish. Template SVGs are not export-time overlays: visible output still lives completely in `svg_output/`. Their complete visuals and explicit Master/Layout/placeholder metadata are nevertheless the authoring prototypes selected by `page_layouts`.
+| Input shape | Spec / SVG source | Asset source | Install rule |
+|---|---|---|---|
+| Current workspace: `<root>/templates/design_spec.md` | `<root>/templates/` | Any existing `<root>/images/`, `<root>/icons/` | Map the existing portable roots to the target project's matching roots; ignore `<root>/exports/` |
+| Compatible legacy-flat package: `<root>/design_spec.md` | `<root>/` | Package-local files | SVG/spec/non-bitmaps → project `templates/`; bitmaps → project `images/`; route declared icons to project `icons/` |
 
-When `create-template` used project output scope, its directory is already the
-target project's `templates/` root and its bitmap/icon runtime copies are already
-in their final project pools. Resolve both paths before copying: equality means
-**in-place consumption**, so skip both the copy and bitmap move. An in-place
-directory is one complete bundle and cannot participate in multi-path fusion;
-use external library bundles for fusion. Never place the local bundle under a
-nested `templates/local_master/` directory because the confirmation and quality
-gates read the project `templates/` root.
+**Atomic install preflight (mandatory)**: Resolve source and destination paths, enumerate the complete file mapping, and reject every destination collision before copying any file. Equality between a current project workspace root and the target project root means in-place consumption and no copy. For an external single path, a collision stops Step 3 rather than overwriting. For multi-path fusion, do not copy packages sequentially: resolve segment conflicts and asset-name conflicts first, construct one final mapping, then write it once. Never use recursive copy as an implicit conflict policy.
 
-A project-scoped bundle belongs only to its target project: its SVGs may refer
-to sibling `../images/` and runtime `../icons/` pools that are outside the
-template root. Do not copy another project's `templates/` root as an external
-bundle. For cross-project reuse, recreate/promote the design with
-`create-template` library scope so the package is self-contained.
+Never infer that a flat directory has legacy Master/Layout semantics solely from packaging.
 
-Legacy template packages may ship `native_structure.json` + `source_template.pptx`; keep the pair together in `<project>/templates/` for backward-compatible `preserve` export. Current `create-template` output does not package this pair: it rebuilds complete, explicitly layered SVG templates instead. During fusion, never mix one legacy contract with another template's source package.
+The same current-workspace routing applies to all three kinds: source/spec in `templates/`, visual assets in `images/`, runtime icons in `icons/`, and on-demand review artifacts in `exports/`. Empty optional roots are omitted rather than retained with placeholder files, so a normal workspace has no `exports/` until a review file is explicitly generated. The spec's `kind` tells Strategist how to read the installed source. Template SVGs are not export-time overlays: visible output still lives completely in `svg_output/`. Their complete visuals and explicit Master/Layout/placeholder metadata are nevertheless the authoring prototypes selected by `page_layouts`.
 
-The Strategist confirmation stage decides whether the selected template is used `strict` or `adaptive`. New projects map every page to one input SVG in `page_layouts` and normally use `pptx_structure.mode: template` plus `layout_strategy: distill`, deferring `pptx_layouts` until the complete SVG pages exist. Before locking, inspect every selected prototype placeholder for explicit bounds. A bounds-missing strict legacy template uses immediate compatibility instead: omit the strategy and prewrite the kindless mapping; adaptive may still distill new design-zone bounds. Deferred strict restores the referenced structural contract; adaptive may distill a new Layout while keeping the template Master ids/topology/geometry. Non-mirror paint and typography follow the project skin rules. Legacy `preserve` remains compatible.
+When `create-template` used project output scope, its workspace root is the target project itself and all core directories are already final. Resolve both roots before copying: equality means **in-place consumption**, so skip the installation. An in-place workspace cannot participate in multi-path fusion; use external workspaces for fusion. Never place the local source under a nested `templates/local_master/` directory because the confirmation and quality gates read the project `templates/` root.
+
+A project-scoped workspace has the same portable routing as a library workspace. It may be copied or promoted across roots as one unit (`templates/` plus any existing `images/` and `icons/`); `exports/` stays review-only. Do not pass only another project's `templates/` subdirectory because that would omit sibling assets.
+
+Legacy template packages may ship `native_structure.json` + `source_template.pptx`, omit root Master identity, use direct atomic placeholders, or carry old baseline/distillation metadata. Do not copy or consume those semantic contracts through Step 3. Run [`restore-pptx-structure`](workflows/restore-pptx-structure.md) on the package first, then return with the migrated workspace path. Old flat packaging remains readable when its SVG structure is already current.
+
+The Strategist confirmation stage decides whether the selected template is used `strict` or `adaptive`. New projects use `pptx_structure.mode: structured`, map every page to one input SVG in `page_layouts`, and write complete `pptx_masters` / `pptx_layouts` output mappings before SVG generation. Strict preserves the template's declared Master/Layout/slot contract. Adaptive keeps the template Master and may assign a new Layout key during authoring when the composition genuinely changes. Non-mirror paint and typography follow the project skin rules.
 
 #### Multi-path fusion
 
@@ -416,16 +419,16 @@ Steps:
    python3 ${SKILL_DIR}/scripts/confirm_ui/server.py <project_path> --daemon --wait
    ```
    Page opens at the launch-log URL such as `http://127.0.0.1:5050` — the **same port as the Step 6 live preview** (they never run at once: this page shuts down at the end of Step 4). If 5050 is held, the launcher **auto-advances** (5051, …) — read the actual URL from the launch log and report it. The page does **not** close after Stage 1: it shows a "deriving…" state and polls for Stage 2. **Launch or wait failure is non-fatal**: if it fails or times out (flask missing, port blocked, no GUI / remote / web host), do **NOT** troubleshoot — **on any non-zero exit, re-check `result.json` once** for a fresh `status: stage1-confirmed` before dropping to the chat fallback. **On success (exit 0 with a stage-1 result), do not pause or report — go straight to step 3 in the same turn.**
-3. **Re-derive Stage 2 from the confirmed anchors, write it, then wait for the design-system handoff — immediately, same turn (the page is polling for it).** Read the stage-1 `result.json` (`status: stage1-confirmed`). Using the user's **actual** confirmed anchors (not your originals), author the design-system candidates and **overwrite** `recommendations.json` with `"stage": "stage2"`: page count (content volume × `delivery_purpose`); color and typography as **generative ≥3-candidate** fields (creative recommendations always offer real choice; fewer than 3 only on the honest-shortfall exception, with a stated reason; color: core `palette` with background/secondary_bg/primary/accent/secondary_accent/body_text; typography: CJK + Latin for `heading` and `body` with `css` preview stacks + `body_size` as the body baseline in **px** (every canvas) — **one fixed value per confirmed `delivery_purpose`** (`text` 20 / `balanced` 24 / `presentation` 32), not a range; each typography candidate must include topic-matched `sample_heading` / `sample_heading_latin` / `sample_body` / `sample_body_latin` preview text, never a fixed unrelated industry sample); enumerable `icons` / `formula_policy` (recommended `id`). The still-open page polls, renders Stage 2, and preserves the user's Stage 1 picks. Then attach to the already-running page; if Windows cleaned up the server, `--wait-only` auto-recovers it on the recorded/default port so the browser reconnects:
+3. **Re-derive Stage 2 from the confirmed anchors, write it, then wait for the design-system handoff — immediately, same turn (the page is polling for it).** Read the stage-1 `result.json` (`status: stage1-confirmed`). Using the user's **actual** confirmed anchors (not your originals), author the design-system candidates and **overwrite** `recommendations.json` with `"stage": "stage2"`: page count (content volume × `delivery_purpose`); color and typography as **generative ≥3-candidate** fields (creative recommendations always offer real choice; fewer than 3 only on the honest-shortfall exception, with a stated reason; color: core `palette` with background/secondary_bg/primary/accent/secondary_accent/body_text; typography: CJK + Latin for `heading` and `body` with `css` preview stacks + `body_size` as the body baseline in **px** (every canvas) — **one fixed value per confirmed `delivery_purpose`** (`text` 20 / `balanced` 24 / `presentation` 32), not a range; each typography candidate must include topic-matched `sample_heading` / `sample_heading_latin` / `sample_body` / `sample_body_latin` preview text, never a fixed unrelated industry sample); enumerable `icons` / `formula_policy` (recommended `id`). **Stage 2 is never skipped** — an active deck/layout template (`strict` adherence included) does not exempt it: the template skin becomes the recommended color / typography candidate and real alternatives fill the remaining cards. Never jump `recommendations.json` from `stage1` to `stage3`: the server refuses to render a skipped stage (the page stays on "deriving…") and the waits exit non-zero until the stages are written in order. The still-open page polls, renders Stage 2, and preserves the user's Stage 1 picks. Then attach to the already-running page; if Windows cleaned up the server, `--wait-only` auto-recovers it on the recorded/default port so the browser reconnects:
    ```bash
    python3 ${SKILL_DIR}/scripts/confirm_ui/server.py <project_path> --wait-only --wait-stage stage2
    ```
-   This returns when the page writes the stage-2 `result.json` (`status: stage2-confirmed`). On a non-zero exit, re-check `result.json` once before falling back to chat.
+   This returns when the page writes the stage-2 `result.json` (`status: stage2-confirmed`). On a non-zero exit, re-check `result.json` once before falling back to chat — except a `stage skip detected` error, which is not a page failure: you wrote a stage out of order; rewrite `recommendations.json` with the stage the error names and re-attach.
 4. **Re-derive Stage 3 from the confirmed anchors + design system, then wait for the final confirmation.** Read the stage-2 `result.json`. Author the image and execution recommendations and **overwrite** `recommendations.json` with `"stage": "stage3"`: `image_usage` as one or more source ids (`["ai"]`, `["ai","provided"]`, `["web","placeholder"]`, or `["none"]`; `none` is exclusive); `image_strategy.candidates` as **exactly three non-custom** rendering × palette recommendations from h.5 when `image_usage` includes `ai` (the page adds the fourth Custom card itself); enumerable `image_ai_path` / `generation_mode` and `refine_spec` (recommended `id` / boolean). If the recommendation involves several image sources, keep the source list structured in `recommend.image_usage` and write the usage rationale / page-role guidance into `image_notes` (for example, "封面和章节页用 AI 主视觉，产品页优先用户素材，行业背景页可用网络参考"). Write `image_ai_path` only when `image_usage` includes `ai`. Spot-illustration lean is **not** a candidate field here: it derives from the locked `visual_style`'s illustration propensity and is expressed only in the recommendation rationale / `image_notes`, never as a new confirmation field. Generated-image style palettes are **color behavior only**; final image colors follow the confirmed Stage-2 `color`. Custom image-strategy dimensions are handled by the built-in Custom card, are prose-only, and should not promise a gallery reference image. Then attach to the already-running page; `--wait-only` auto-recovers a dead server as above (same 600000 ms budget):
    ```bash
    python3 ${SKILL_DIR}/scripts/confirm_ui/server.py <project_path> --wait-only
    ```
-   This is the ⛔ BLOCKING completion: returns when the page writes the final `result.json` (`status: confirmed`, `stage: final`, carrying Stage 1 + Stage 2 + Stage 3 fields). On a non-zero exit, re-check `result.json` once. Confirmed sizes are **already px** (the system is px-only — no pt anywhere, no conversion): write `result.json` `typography.body_size` / `sizes` into `design_spec.md` / `spec_lock.md` / SVG verbatim. `generation_mode: "split"` / `refine_spec: true` are explicit user choices.
+   This is the ⛔ BLOCKING completion: returns when the page writes the final `result.json` (`status: confirmed`, `stage: final`, carrying Stage 1 + Stage 2 + Stage 3 fields). On a non-zero exit, re-check `result.json` once (a `stage skip detected` error means Stage 2 was never confirmed — go back to step 3, not the chat fallback). Confirmed sizes are **already px** (the system is px-only — no pt anywhere, no conversion): write `result.json` `typography.body_size` / `sizes` into `design_spec.md` / `spec_lock.md` / SVG verbatim. `generation_mode: "split"` / `refine_spec: true` are explicit user choices.
 5. **Close the confirm page (Mandatory cleanup — every path).** Shut the server down before leaving Step 4 so it cannot keep holding port 5050 (which Step 6 live preview reuses):
    ```bash
    python3 ${SKILL_DIR}/scripts/confirm_ui/server.py <project_path> --shutdown
@@ -622,7 +625,7 @@ python3 ${SKILL_DIR}/scripts/svg_editor/server.py <project_path> --live --daemon
 
 > Image facts: trust the `analysis/image_analysis.csv` regenerated at the end of Step 5. If `images/` changed since (the user swapped or added files), re-run `python3 ${SKILL_DIR}/scripts/analyze_images.py <project_path>/images` before laying images out — facts are re-derived on use, never a stale store (Step 4 image-facts note).
 
-**Per-page spec_lock re-read (Mandatory)**: before **each** SVG page, `read_file <project_path>/spec_lock.md` and use only its colors / fonts / icons / images, plus the per-page `page_rhythm` / `page_layouts` / `page_charts` lookups and the route-specific `pptx_structure` contract. Read `pptx_layouts` only when already finalized. New baseline and deferred-template routes omit it during visual construction; legacy immediate-template and preserve routes retain it. Resists context-compression drift on long decks. See executor-base.md §2.1.
+**Per-page spec_lock re-read (Mandatory)**: before **each** SVG page, `read_file <project_path>/spec_lock.md` and use only its colors / fonts / icons / images, plus the complete `pptx_masters` / `pptx_layouts` structure and the per-page `page_rhythm` / `page_layouts` / `page_charts` lookups. Resists context-compression drift on long decks. See executor-base.md §2.1.
 
 > ⚠️ **Main-agent only**: SVG generation MUST stay in the current main agent — page design depends on full upstream context. Do NOT delegate to sub-agents.
 > ⚠️ **Generation rhythm**: generate pages sequentially, one at a time, in the same continuous context. Do NOT batch (e.g., 5 per group).
@@ -631,9 +634,9 @@ python3 ${SKILL_DIR}/scripts/svg_editor/server.py <project_path> --live --daemon
 
 Each completed SVG MUST be a standalone, complete representation of that slide's visible design. Template SVGs and locked planning artifacts may guide construction, but export must not reach back to them to add visible objects omitted from `svg_output/`. Speaker notes, animation, narration, transitions, and direct native-PPTX workflows remain separately owned artifacts/capabilities. Before drawing a literal stock shape, apply [`native-shape-authoring.md`](references/native-shape-authoring.md): use the stdout-only helper when one PowerPoint preset exactly matches, keep basic SVG primitives for rect/round-rect/ellipse, and keep free SVG for custom semantics. Never infer a preset from contour similarity.
 
-Deferred template pages MUST start from the complete `page_layouts` SVG, keep all inherited visible objects in `svg_output/`, preserve provisional root key/name and stable direct-child Master/Layout/placeholder ids, and omit `data-pptx-layout-kind` until post-design distillation. Strict keeps the prototype structure unchanged; adaptive keeps its Master ids/topology/geometry while the Layout may evolve. Non-mirror fill/stroke/effects/font sizes still follow `spec_lock`. Preserve and legacy immediate-template pages continue to implement their locked output mapping while generated.
+Template pages MUST start from the complete `page_layouts` SVG, keep all inherited visible objects in `svg_output/`, and preserve the locked root Master/Layout identity plus stable atomic Master/Layout and slot ids. Strict keeps the prototype structure unchanged. Adaptive keeps its Master contract and, when Layout atoms or slot topology/bounds genuinely evolve, assigns a new key/name and updates `spec_lock.md` immediately. Non-mirror fill/stroke/effects/font sizes still follow `spec_lock`.
 
-Free-design/brand-only baseline pages MUST remain visually free at this stage: omit explicit Layout/layer/placeholder metadata and do not pre-compute rich Layouts from the page plan. They may use the canonical root `data-pptx-page-role` for compatibility routing. Without committing to any future Layout, keep a likely replaceable atomic title, standalone body frame, or picture in its own top-level one-carrier group when the design permits; keep accents and labels in sibling groups. If the user later selects finished pages for reuse, [`distill-layouts`](workflows/distill-layouts.md) adds the complete root contract, safe direct prototypes, design-zone bounds, and optional shared framing without changing the visible design.
+Free-design and brand-only pages are also structured from the first draft. Use the planned Master roster and page Layout mapping, author Master/Layout fixed visuals only as direct root atoms (never `<g>`), and author reusable content zones as top-level slot groups with positive bounds plus exactly one compatible carrier. A Layout may intentionally have zero slots. Do not add `data-pptx-layout-kind`, `distilled`, `utility`, or a full-page fake slot.
 
 Do not duplicate specialized identity with `data-pptx-role`. Add it only to structural page-frame objects whose package, page-number, or animation behavior is not already expressed by `data-pptx-layer`, `data-pptx-placeholder`, or `data-pptx-native`; such an element needs a stable unique `id`. Do not add generic content roles to ordinary titles, body text, cards, KPIs, diagrams, charts, icons, or images. Full contract: [`references/semantic-svg.md`](references/semantic-svg.md).
 
@@ -666,20 +669,6 @@ python3 ${SKILL_DIR}/scripts/svg_quality_checker.py <project_path>
 > **Chart pages?** If this deck contains data charts (bar / line / pie / radar / etc.), run the standalone [`verify-charts`](workflows/verify-charts.md) workflow before Step 7 to calibrate coordinates. AI models routinely introduce 10–50 px errors when mapping data to pixel positions; verify-charts eliminates that class of error. Skip if no chart pages.
 
 > **Visual self-check (opt-in)?** If the user explicitly asked for a per-page visual re-pass on the SVGs ("跑一下视觉自检 / 视觉回看", "visual review", "check pages visually", etc.), run the standalone [`visual-review`](workflows/visual-review.md) workflow before Step 7. Do NOT run it by default and do NOT recommend it based on inferred model capability or deck size — trigger is user request only.
-
-> **Reusable Layout distillation**: Run
-> [`distill-layouts`](workflows/distill-layouts.md) after the full SVG quality
-> gate when either condition holds: the user selected finished baseline pages
-> for reuse, or the template lock carries `layout_strategy: distill` while
-> `pptx_layouts` is absent. A complete mapping is already finalized and only
-> needs normal validation unless the user explicitly requests re-distillation.
-> Baseline
-> promotes only the user's pages and maps the rest to one empty `utility`
-> Layout. Template distillation processes every `page_layouts` prototype:
-> strict restores the exact structural contract, adaptive keeps the Master structure and may
-> finalize an evolved Layout. Both derive explicit design-zone bounds and keep
-> current Slide geometry independent. If invoked after Step 7, rerun Step
-> 7.2–7.3 with the same export flags.
 
 ---
 
@@ -718,9 +707,6 @@ python3 ${SKILL_DIR}/scripts/svg_to_pptx.py <project_path>
 # Output (default-flow mode):
 #   exports/<project_name>_<timestamp>.pptx           ← native pptx (canonical output, reads svg_output/)
 #   backup/<timestamp>/svg_output/                    ← Executor SVG source backup (always written)
-#   backup/<timestamp>/templates/{native_structure.json,source_template.pptx}
-#                                                     ← preserve mode only
-#   backup/<timestamp>/spec_lock.md                   ← preserve mode only
 # Add --native-objects to emit real editable chart/table objects instead of flattened shapes:
 #   exports/<project_name>_<timestamp>_native_charts.pptx  ← native chart/table objects (data-pptx-native markers)
 # Re-export with --recorded-narration audio (generate-audio workflow) embeds per-slide narration:
@@ -742,9 +728,8 @@ python3 ${SKILL_DIR}/scripts/svg_to_pptx.py <project_path>
 > snapshot in `backup/<timestamp>/` is always written so the project can be
 > re-exported from frozen SVG sources without re-running the LLM. The SVG-rendered
 > preview remains the mandatory `svg_final/` artifact from Step 7.2; it is not
-> packaged as a second PPTX. Preserve mode also backs up the paired native
-> structure/source files and `spec_lock.md` under the same timestamp. Use the
-> default source selection for release exports. `-s final` is diagnostic-only
+> packaged as a second PPTX. Use the default source selection for release
+> exports. `-s final` is diagnostic-only
 > when comparing conversion behavior against the post-processed SVGs; it does
 > not change `svg_output/` ownership or establish a supported release route.
 
@@ -755,156 +740,41 @@ python3 ${SKILL_DIR}/scripts/svg_to_pptx.py <project_path>
 > pages remain ordinary SVG pictures unless the user independently accepts the
 > results of an unsupported Office conversion.
 
-> **PPTX structure mode** — native export first reads
-> `spec_lock.md` `pptx_structure.mode`, then falls back to `baseline` when the
-> section is absent. An explicit `--pptx-structure` CLI value overrides the
-> lock for diagnostics. Free-design and brand-only baseline projects initially
-> omit `pptx_layouts`: the visual pass stays unconstrained and all actual
-> content remains Slide-local. When the user explicitly selects completed pages
-> for reuse, [`distill-layouts`](workflows/distill-layouts.md) adds
-> `layout_strategy: distill` and an atomic all-page mapping. Selected pages use
-> `distilled` contracts; unselected pages share one empty `utility` Layout.
-> Every mapped SVG repeats its key/name/kind. Every distilled placeholder has
-> explicit design-zone bounds, while its current Slide frame may use different
-> geometry. Export then uses the same deterministic Layout compiler and
-> final-package read-back gate as template mode. `page_layouts` stays absent
-> because no input template was selected. Existing structured baseline projects
-> remain readable. If any baseline page declares a Layout, every page must
-> declare one and match the lock; partial or unlocked metadata fails export.
-> The exporter never selects, clusters, or visually infers reusable pages.
+> **PPTX structure mode** — release export requires
+> `spec_lock.md` `pptx_structure.mode: structured`, a complete
+> `pptx_masters` roster, and exactly one `pptx_layouts` row per page in
+> `<master_key> | <layout_key> | <PowerPoint layout name>` form. Every SVG
+> root repeats the Master/Layout keys and picker names. Master/Layout fixed
+> visuals are direct root atoms; a `<g data-pptx-layer="master|layout">` is
+> forbidden. Reusable slots are direct root `<g id>` elements with positive
+> design-zone bounds and exactly one compatible carrier. A composite region
+> uses only the explicit `object` + `proxy` fallback, and a Layout may
+> intentionally have zero slots.
 >
-> An unmapped baseline project — either a new free-design deck before
-> distillation or a legacy deck — keeps
-> the real slide master/layout relationship from the base deck and promotes the
-> strict-majority identical
-> native slide background into the slide master (every slide must carry an
-> explicit background; minority slides keep their own, which overrides the
-> master fill). Baseline may also promote a shared **leading** prefix of
-> top-level SVG elements whose explicit `data-pptx-role` marks page chrome
-> (`logo`, `footer`, `header`, `watermark`, `chrome`, `page-number`). Exact id
-> tokens remain a compatibility fallback only when the role marker is absent.
-> Promotion requires identical generated OOXML on a strict majority of slides
-> sharing the master, no slide-timing reference, and z-order safety; overlay
-> chrome stays slide-local. Minority slides (covers, section pages) keep every
-> shape slide-local and are bound to a generated `Cover` layout with
-> `showMasterSp="0"`, so promoted master chrome never appears on them. Image
-> relationships for promoted chrome are copied to the master. After the SVG
-> pages are complete, baseline assigns conservative semantic layout families:
-> root `data-pptx-page-role` values `cover` / `toc` / `section` / `ending` become
-> `Cover` / `Agenda` / `Section` / `Closing`, while `content` becomes `Content`.
-> Filename tokens remain a compatibility fallback for marker-free SVGs.
-> It also
-> preserves an existing safety `Cover` assignment made while hiding promoted
-> Master chrome. This unmapped route does not inspect visual similarity or infer
-> placeholders,
-> and all actual page content remains slide-local. When every slide in one
-> family carries the exact same explicit background, that background moves to
-> the family layout. The same family may also promote an identical leading
-> prefix of explicitly named chrome when every family member carries the same
-> generated OOXML, relationships are safe, no timing targets it, and z-order is
-> preserved. This is
-> an export-only package pass: SVG authoring, live preview, and model context are
-> unchanged. Baseline also prunes base-template slide layouts no generated slide
-> references, so the PowerPoint new-slide picker only offers layouts that belong
-> to the deck, and
-> converts `data-pptx-role="page-number"` chrome whose text exactly equals the
-> slide's display number into an auto-updating PowerPoint slide-number field
-> (legacy page-number id tokens remain a fallback; other numbering schemes keep
-> their literal text). For projects with a
-> `spec_lock.md` typography contract, baseline also installs `title_family` as
-> the PowerPoint theme major font and `body_family` / `font_family` as the minor
-> font; matching SVG runs use theme tokens so later theme edits can cascade
-> without changing initial rendering. Baseline/template export likewise maps
-> the locked background, text, primary/accent, and border roles into the
-> PowerPoint color scheme. Exact matching SVG/native-object colors use
-> context-safe theme tokens; unrelated local colors, inverse white/black, and
-> effects stay concrete, so the first rendering remains the SVG design while
-> later theme edits can cascade selectively. Add
-> `--pptx-structure flat` only for debugging/comparison when all generated
-> backgrounds and chrome must remain slide-local and fonts must stay concrete.
+> Export creates the declared Masters and Layouts, promotes the represented
+> atoms, binds slot carriers, installs the locked theme/text defaults, and
+> reopens the candidate package to verify Presentation → Master → Layout →
+> Slide registration, picker names, static-object rosters, placeholder
+> type/index/bounds, carrier bindings, hidden proxies, and zero-slot Layouts.
+> It never selects pages, clusters visuals, promotes repeated chrome by
+> heuristic, or invents missing structure. Legacy `baseline`, `template`,
+> `preserve`, `layout_strategy`, `data-pptx-layout-kind`,
+> `distilled`/`utility`, direct atomic placeholders, or missing Master
+> identity must run
+> [`restore-pptx-structure`](workflows/restore-pptx-structure.md) before
+> export.
 
-> **Legacy preserved source-template export** — an existing template package
-> from a structured PPTX may ship `native_structure.json` plus
-> `source_template.pptx`. This pair records a reusable capability; it does not
-> select the downstream route by itself. Only a confirmed
-> `template_adherence: strict` deck may set `pptx_structure.mode: preserve`.
-> Add project-relative
-> `source_template` / `native_structure` rows, and map every page in
-> `pptx_layouts` to an exact imported layout key/name. Native export verifies the
-> source SHA-256 and package parts, creates the generated slides against the
-> original layouts (including multiple source masters), removes SVG-only preview
-> copies of inherited master/layout visuals, and binds slide content to the
-> original placeholder type/index. Preserve mode keeps the source layout picker
-> roster; it does not prune unused source layouts.
->
-> Current template creation no longer emits this pair. `preserve` is retained
-> only so existing template packages and projects remain exportable; do not
-> select it for newly created templates.
 
-> **Explicit reusable Layout export** — deck/layout template routes set
-> `spec_lock.md` `pptx_structure.mode: template`. Distillation-capable template
-> projects and post-design free-layout reuse set `layout_strategy: distill`;
-> template planning owns `page_layouts` but defers `pptx_layouts` until every
-> complete SVG page exists. A bounds-missing strict legacy prototype instead
-> uses the kindless immediate compatibility contract. Every final mapped root
-> declares `data-pptx-layout`; distilled roots also declare
-> `data-pptx-layout-kind`. Direct children
-> explicitly declare master/layout layers, an optional Slide background, or
-> PowerPoint placeholders. This
-> mode builds named reusable layouts and placeholder mappings. Structured
-> baseline uses the same metadata and compiler without an input template. A
-> `utility` Layout is the narrow baseline-only exception for unselected pages;
-> its page-specific visible design remains entirely Slide-local.
-> A distilled placeholder always creates `p:ph` in the reusable Layout. Atomic
-> carriers keep matching Slide bindings for rendering fidelity. A final
-> distilled composite object region remains an ordinary visible group and gets
-> one hidden transparent binding proxy, preventing an empty inherited object
-> slot from painting over a page the user already approved visually. Legacy
-> immediate/pre-authored contracts keep their historical binding behavior.
-> Neither route infers from visual similarity. Static master/layout elements
-> must be
-> repeated consistently in PowerPoint paint order. Chart/table placeholders
-> additionally require `--native-objects`. The metadata contract and authoring
-> example live in
-> [`references/shared-standards.md`](references/shared-standards.md#explicit-pptx-master--layout--placeholder-metadata).
-> Raw PPTX templates still route to `template-fill-pptx`; `template` structure
-> mode is for complete explicitly annotated SVG authoring. Both `strict` and
-> `adaptive` stay on this deterministic route. `page_layouts` selects the input
-> prototype; the post-design checker requires strict key/name/Master/Layout/
-> placeholder structural equality, or adaptive Master-structure equality plus one internally
-> consistent evolved Layout/placeholder contract under a new key/name. Adaptive
-> may retain a prototype identity only while that Layout contract is unchanged.
-> Non-mirror skin remains project-controlled; mirror compares literal Master,
-> reused-Layout, and Slide-local non-text visuals plus referenced asset identity,
-> and permits only visible text replacement unless adaptive proves a genuinely
-> evolved Layout contract under a new identity.
-> The exporter never reads a
-> template to add missing visible objects.
-> Structured baseline and template export also install the locked
-> `typography.title` size into every
-> Master `titleStyle` level and the locked `typography.body` size into every
-> `bodyStyle` and `otherStyle` level. Each text-bearing Layout placeholder also
-> writes its prototype run size to `a:lstStyle/a:lvl1pPr/a:defRPr@sz`, so a
-> newly inserted or reset placeholder keeps that Layout's local size before it
-> falls back to the Master. Generated slide runs and Layout prompt runs keep
-> their direct sizes. Missing or invalid locked title/body sizes fail explicit
-> Layout export. Unmapped baseline, preserve, and flat modes do not apply either
-> text-default update.
-> Before publishing the temporary PPTX, structured baseline and template export
-> reopen the finished
-> package and verify `Presentation → Master ↔ Layout ← Slide` registration,
-> named custom Layout parts and content types, named Master/Layout static-object
-> rosters, explicit reusable backgrounds, distilled carrier/proxy roles,
-> collision-free placeholder identities, reusable default bounds, and prompt/level-one sizes. This read-back gate
-> also verifies atomic carrier bindings, ordinary composite carriers, hidden
-> transparent composite binding proxies, and that a `utility` Layout has no
-> background, shape, or placeholder. It does not
-> compare later same-Layout slides' local geometry
-> or direct text formatting.
-> In every mapped deck, `pptx_layouts` contains exactly one locked Layout row per
-> page; reuse a key for a shared contract instead of creating one key per content
-> instance. A free-design baseline deck omits the whole section until explicit
-> distillation and may use page-role compatibility families in the meantime.
+> **Template structured export** — `page_layouts` records the complete
+> input prototype per page while `pptx_masters` / `pptx_layouts` record the
+> output structure from planning onward. Strict keeps the prototype
+> Master/Layout/slot contract. Adaptive keeps its Master and may assign a new
+> Layout identity during page authoring only when fixed Layout atoms or slot
+> topology/bounds change; the lock is updated immediately. Non-mirror skin
+> remains project-controlled, mirror preserves the reused visual identities,
+> and the exporter never reads a template to add visible objects missing from
+> `svg_output/`. Raw PPTX templates still route to `template-fill-pptx`;
+> reusable template creation goes through `create-template`.
 
 > **Paragraph editability vs line fidelity** — by default, mergeable dy-stacked
 > text collapses into one editable PowerPoint text frame. Evenly spaced authored
@@ -917,9 +787,9 @@ python3 ${SKILL_DIR}/scripts/svg_to_pptx.py <project_path>
 > frame. Add `--no-merge` only when the user explicitly asks for every
 > dy-stacked line to remain its own text frame. The merge detector is
 > conservative; mixed-layout text falls back to per-line frames. A multiline
-> `data-pptx-placeholder` must remain one native text frame; do not combine it
-> with `--no-merge`. Strict-line text stays Slide-local rather than claiming one
-> PowerPoint placeholder.
+> text carrier inside a slot must remain one native text frame; do not combine
+> it with `--no-merge`. Strict-line text stays Slide-local rather than claiming
+> one PowerPoint placeholder.
 
 > **Native table/chart objects** — supported data charts and pure text-grid
 > tables carry `data-pptx-native` markers by default (Executor transcribes
