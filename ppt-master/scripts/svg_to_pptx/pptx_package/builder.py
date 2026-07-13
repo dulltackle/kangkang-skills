@@ -115,6 +115,10 @@ SLIDE_LAYOUT_REL_TYPE = (
 SLIDE_MASTER_REL_TYPE = (
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster"
 )
+THEME_REL_TYPE = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
+)
+THEME_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.theme+xml"
 PML_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
 DML_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -801,6 +805,7 @@ def _create_custom_layout(
     base_layout_path = extract_dir / base_layout_part
     tree = ET.parse(base_layout_path)
     root = tree.getroot()
+    _reseed_p14_creation_id(root)
     root.set("type", "cust")
     root.set("preserve", "1")
     root.set("showMasterSp", "1" if show_master_shapes else "0")
@@ -897,6 +902,22 @@ def _set_master_picker_name(master_path: Path, master_name: str) -> None:
     _write_xml_tree(master_path, tree)
 
 
+def _reseed_p14_creation_id(root: ET.Element) -> None:
+    """Give a cloned Slide/Master/Layout part a fresh PowerPoint creation id."""
+    c_sld = root.find(f"{{{PML_NS}}}cSld")
+    if c_sld is None:
+        return
+    creation_ids = c_sld.findall(
+        f"{{{PML_NS}}}extLst/{{{PML_NS}}}ext/"
+        f"{{{P14_NS}}}creationId"
+    )
+    for creation_id in creation_ids:
+        value = 0
+        while value == 0:
+            value = uuid.uuid4().int & OOXML_UINT32_MAX
+        creation_id.set("val", str(value))
+
+
 def _next_master_part_number(extract_dir: Path) -> int:
     numbers = [
         int(match.group(1))
@@ -904,6 +925,103 @@ def _next_master_part_number(extract_dir: Path) -> int:
         if (match := re.fullmatch(r"slideMaster(\d+)\.xml", path.name))
     ]
     return max(numbers, default=0) + 1
+
+
+def _next_theme_part_number(extract_dir: Path) -> int:
+    numbers = [
+        int(match.group(1))
+        for path in (extract_dir / "ppt" / "theme").glob("theme*.xml")
+        if (match := re.fullmatch(r"theme(\d+)\.xml", path.name))
+    ]
+    return max(numbers, default=0) + 1
+
+
+def _clone_master_theme(
+    extract_dir: Path,
+    source_master_part: str,
+    master_part: str,
+    master_name: str,
+) -> str:
+    """Give a cloned Slide Master its own Theme package part."""
+    source_master_rels = _relationships_path_for_part(
+        extract_dir,
+        source_master_part,
+    )
+    theme_targets = [
+        attrs["Target"]
+        for attrs in _read_relationships(source_master_rels).values()
+        if attrs.get("Type") == THEME_REL_TYPE and attrs.get("Target")
+    ]
+    if len(theme_targets) != 1:
+        raise RuntimeError(
+            "Source Slide Master must have one Theme relationship: "
+            f"{source_master_part}"
+        )
+    source_theme_part = _resolve_package_target(
+        source_master_part,
+        theme_targets[0],
+    )
+    source_theme_path = extract_dir / source_theme_part
+    if not source_theme_path.exists():
+        raise RuntimeError(
+            f"Slide Master Theme part is missing: {source_theme_part}"
+        )
+
+    theme_num = _next_theme_part_number(extract_dir)
+    theme_part = f"ppt/theme/theme{theme_num}.xml"
+    theme_path = extract_dir / theme_part
+    shutil.copyfile(source_theme_path, theme_path)
+    theme_tree = ET.parse(theme_path)
+    theme_tree.getroot().set("name", f"{master_name} Theme")
+    _write_xml_tree(theme_path, theme_tree)
+
+    source_theme_rels = _relationships_path_for_part(
+        extract_dir,
+        source_theme_part,
+    )
+    if source_theme_rels.exists():
+        theme_rels = _relationships_path_for_part(extract_dir, theme_part)
+        theme_rels.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_theme_rels, theme_rels)
+
+    master_rels = _relationships_path_for_part(extract_dir, master_part)
+    theme_relationships = [
+        (rel_id, attrs)
+        for rel_id, attrs in _read_relationships(master_rels).items()
+        if attrs.get("Type") == THEME_REL_TYPE
+    ]
+    if len(theme_relationships) != 1:
+        raise RuntimeError(
+            f"Cloned Slide Master must have one Theme relationship: {master_part}"
+        )
+    theme_rel_id, _attrs = theme_relationships[0]
+    theme_target = posixpath.relpath(theme_part, posixpath.dirname(master_part))
+    rels_content = master_rels.read_text(encoding="utf-8")
+    theme_rel_pattern = re.compile(
+        rf'(<Relationship\b[^>]*\bId="{re.escape(theme_rel_id)}"'
+        rf'[^>]*\bTarget=")[^"]*(")'
+    )
+    rels_content, replaced = theme_rel_pattern.subn(
+        rf"\g<1>{theme_target}\g<2>",
+        rels_content,
+        count=1,
+    )
+    if replaced != 1:
+        raise RuntimeError(
+            f"Could not retarget cloned Slide Master Theme: {master_part}"
+        )
+    master_rels.write_text(rels_content, encoding="utf-8")
+
+    content_types_path = extract_dir / "[Content_Types].xml"
+    content_types_path.write_text(
+        _add_content_type_override(
+            content_types_path.read_text(encoding="utf-8"),
+            theme_part,
+            THEME_CONTENT_TYPE,
+        ),
+        encoding="utf-8",
+    )
+    return theme_part
 
 
 def _clone_structured_master(
@@ -920,6 +1038,7 @@ def _clone_structured_master(
 
     tree = ET.parse(master_path)
     root = tree.getroot()
+    _reseed_p14_creation_id(root)
     c_sld = root.find(f"{{{PML_NS}}}cSld")
     if c_sld is None:
         raise RuntimeError(f"Slide master has no p:cSld: {source_master_part}")
@@ -940,6 +1059,12 @@ def _clone_structured_master(
     for rel_id, attrs in tuple(_read_relationships(master_rels).items()):
         if attrs.get("Type") == SLIDE_LAYOUT_REL_TYPE:
             _remove_relationship(master_rels, rel_id)
+    _clone_master_theme(
+        extract_dir,
+        source_master_part,
+        master_part,
+        master_name,
+    )
 
     presentation_rels = extract_dir / "ppt" / "_rels" / "presentation.xml.rels"
     relationship_target = posixpath.relpath(master_part, "ppt")
@@ -1982,6 +2107,95 @@ def _replace_shape_xfrm(
     sp_pr.insert(0, xfrm)
 
 
+def _placeholder_vertical_anchor(
+    source_bounds: tuple[int, int, int, int],
+    target_bounds: tuple[int, int, int, int],
+) -> str:
+    """Preserve an intentionally centered carrier inside its full slot frame."""
+    _, source_y, _, source_height = source_bounds
+    _, target_y, _, target_height = target_bounds
+    source_center = source_y + source_height / 2
+    target_center = target_y + target_height / 2
+    return (
+        "ctr"
+        if abs(source_center - target_center) <= target_height * 0.2
+        else "t"
+    )
+
+
+def _normalize_placeholder_body_properties(
+    body_pr: ET.Element,
+    source_bounds: tuple[int, int, int, int],
+    target_bounds: tuple[int, int, int, int],
+) -> None:
+    """Make a full-frame placeholder wrap text while preserving vertical intent."""
+    body_pr.set("wrap", "square")
+    body_pr.set("anchor", _placeholder_vertical_anchor(source_bounds, target_bounds))
+    body_pr.set("anchorCtr", "0")
+    autofit_tags = {
+        f"{{{DML_NS}}}noAutofit",
+        f"{{{DML_NS}}}normAutofit",
+        f"{{{DML_NS}}}spAutoFit",
+    }
+    for child in list(body_pr):
+        if child.tag in autofit_tags:
+            body_pr.remove(child)
+    body_pr.append(ET.Element(f"{{{DML_NS}}}noAutofit"))
+
+
+def _apply_layout_frame_to_placeholder_carrier(
+    shape: ET.Element,
+    item: TemplateElementSpec,
+) -> None:
+    """Use the reusable Layout bounds on one template-review Slide carrier."""
+    if item.placeholder_bounds is None:
+        raise TemplateStructureError(
+            f"Placeholder {item.element_id!r} has no reusable Layout bounds"
+        )
+    source_bounds = _shape_bounds_emu(shape, None)
+    target_bounds = _shape_bounds_emu(shape, item.placeholder_bounds)
+    if shape.tag in {f"{{{PML_NS}}}sp", f"{{{PML_NS}}}pic"}:
+        sp_pr = shape.find(f"{{{PML_NS}}}spPr")
+        if sp_pr is None:
+            raise TemplateStructureError(
+                f"Placeholder {item.element_id!r} has no p:spPr"
+            )
+        _replace_shape_xfrm(sp_pr, target_bounds)
+    elif shape.tag == f"{{{PML_NS}}}graphicFrame":
+        xfrm = shape.find(f"{{{PML_NS}}}xfrm")
+        if xfrm is None:
+            xfrm = ET.Element(f"{{{PML_NS}}}xfrm")
+            shape.insert(1, xfrm)
+        for child in list(xfrm):
+            if child.tag in {f"{{{DML_NS}}}off", f"{{{DML_NS}}}ext"}:
+                xfrm.remove(child)
+        x, y, width, height = target_bounds
+        ET.SubElement(xfrm, f"{{{DML_NS}}}off", {"x": str(x), "y": str(y)})
+        ET.SubElement(
+            xfrm,
+            f"{{{DML_NS}}}ext",
+            {"cx": str(width), "cy": str(height)},
+        )
+    else:
+        raise TemplateStructureError(
+            f"Placeholder {item.element_id!r} cannot use Layout bounds on "
+            f"DrawingML element {shape.tag.rsplit('}', 1)[-1]!r}"
+        )
+
+    tx_body = shape.find(f"{{{PML_NS}}}txBody")
+    if tx_body is None:
+        return
+    body_pr = tx_body.find(f"{{{DML_NS}}}bodyPr")
+    if body_pr is None:
+        body_pr = ET.Element(f"{{{DML_NS}}}bodyPr")
+        tx_body.insert(0, body_pr)
+    _normalize_placeholder_body_properties(
+        body_pr,
+        source_bounds,
+        target_bounds,
+    )
+
+
 def _layout_level_one_paragraph_properties(
     list_style: ET.Element,
 ) -> ET.Element:
@@ -2087,11 +2301,19 @@ def _placeholder_text_body(
         if source_tx_body is not None
         else None
     )
-    tx_body.append(
+    body_pr = (
         ET.fromstring(ET.tostring(source_body_pr, encoding="utf-8"))
         if source_body_pr is not None
         else ET.Element(f"{{{DML_NS}}}bodyPr")
     )
+    source_bounds = _shape_bounds_emu(source_shape, None)
+    target_bounds = _shape_bounds_emu(source_shape, item.placeholder_bounds)
+    _normalize_placeholder_body_properties(
+        body_pr,
+        source_bounds,
+        target_bounds,
+    )
+    tx_body.append(body_pr)
     list_style = (
         ET.fromstring(ET.tostring(source_lst_style, encoding="utf-8"))
         if source_lst_style is not None
@@ -2106,9 +2328,22 @@ def _placeholder_text_body(
     tx_body.append(list_style)
 
     paragraph = ET.SubElement(tx_body, f"{{{DML_NS}}}p")
+    source_paragraph_props = (
+        source_tx_body.find(f"{{{DML_NS}}}p/{{{DML_NS}}}pPr")
+        if source_tx_body is not None
+        else None
+    )
+    paragraph_props = (
+        ET.fromstring(ET.tostring(source_paragraph_props, encoding="utf-8"))
+        if source_paragraph_props is not None
+        else None
+    )
     if item.placeholder in {"body", "subtitle"}:
-        paragraph_props = ET.SubElement(paragraph, f"{{{DML_NS}}}pPr")
+        if paragraph_props is None:
+            paragraph_props = ET.Element(f"{{{DML_NS}}}pPr")
         _set_no_bullet_paragraph_properties(paragraph_props)
+    if paragraph_props is not None:
+        paragraph.append(paragraph_props)
     if item.placeholder in {"slide-number", "date"}:
         field_type = (
             "slidenum"
@@ -2393,6 +2628,7 @@ def _apply_explicit_layout_structure(
     conversion_traces: list[dict[str, Any]] | None,
     theme_font_spec: ThemeFontSpec | None,
     *,
+    use_layout_placeholder_frames: bool = False,
     verbose: bool = False,
 ) -> tuple[dict[str, str | None], dict[str, tuple[str, ...]]]:
     """Materialize explicit SVG master/layout/placeholder metadata into OOXML."""
@@ -2520,6 +2756,8 @@ def _apply_explicit_layout_structure(
                         assigned_idx,
                         theme_font_spec=theme_font_spec,
                     )
+                    if use_layout_placeholder_frames:
+                        _apply_layout_frame_to_placeholder_carrier(shape, item)
                     _set_shape_name(
                         shape,
                         f"{item.element_id} Placeholder Carrier",
@@ -4072,6 +4310,7 @@ def create_pptx_with_native_svg(
     doc_metadata: dict[str, Any] | None = None,
     structure_name: str | None = None,
     pptx_structure: str = "structured",
+    use_layout_placeholder_frames: bool = False,
     native_structure_contract: NativeStructureContract | None = None,
     theme_font_spec: ThemeFontSpec | None = None,
     master_text_style_spec: MasterTextStyleSpec | None = None,
@@ -4125,6 +4364,9 @@ def create_pptx_with_native_svg(
             metadata; ``preserve`` reuses an imported source PPTX package;
             ``flat`` keeps generated content Slide-local and builds one clean
             project-owned Master/Blank-Layout shell.
+        use_layout_placeholder_frames: In structured template-review decks, size
+            each Slide placeholder carrier to its reusable Layout bounds instead
+            of the tight SVG content frame. Default off for generated decks.
         native_structure_contract: Validated source package contract for
             ``preserve`` mode.
         theme_font_spec: Locked project major/minor fonts for flat/structured
@@ -4152,6 +4394,10 @@ def create_pptx_with_native_svg(
     use_compat_mode = False
     if pptx_structure not in {"baseline", "structured", "preserve", "flat"}:
         raise ValueError(f"Unsupported pptx_structure: {pptx_structure}")
+    if use_layout_placeholder_frames and pptx_structure != "structured":
+        raise ValueError(
+            "use_layout_placeholder_frames requires pptx_structure='structured'"
+        )
     if structured_baseline:
         raise ValueError(
             "structured_baseline is obsolete; use pptx_structure='structured'"
@@ -4874,6 +5120,7 @@ def create_pptx_with_native_svg(
                 template_specs,
                 conversion_trace if conversion_trace is not None else structure_trace,
                 active_theme_font_spec,
+                use_layout_placeholder_frames=use_layout_placeholder_frames,
                 verbose=verbose,
             )
             master_count = apply_master_text_style_spec(
