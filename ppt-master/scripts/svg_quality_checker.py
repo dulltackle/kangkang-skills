@@ -57,13 +57,20 @@ try:
         DRAWINGML_TEXT_FONT_SIZE_MAX as _DRAWINGML_TEXT_FONT_SIZE_MAX,
         DRAWINGML_TEXT_FONT_SIZE_MIN as _DRAWINGML_TEXT_FONT_SIZE_MIN,
         IDENTITY_MATRIX as _IDENTITY_MATRIX,
+        format_project_geometry_length as _format_project_geometry_length,
         font_px_to_hpt as _font_px_to_hpt,
+        is_canonical_project_geometry_length as _is_canonical_project_geometry_length,
+        iter_project_geometry_lengths as _iter_project_geometry_lengths,
+        iter_project_transforms as _iter_project_transforms,
         matrix_multiply as _matrix_multiply,
+        noncanonical_transform_numbers as _noncanonical_transform_numbers,
         parse_transform_matrix as _parse_transform_matrix,
         parse_font_family as _parse_export_font_family,
         parse_inline_style as _parse_inline_style,
+        parse_project_geometry_length as _parse_project_geometry_length,
         parse_svg_color as _parse_export_color,
         parse_svg_length as _parse_export_length,
+        project_transform_errors as _project_transform_errors,
         rect_to_dml_xfrm as _rect_to_dml_xfrm,
         validate_dml_shape_matrix as _validate_dml_shape_matrix,
     )
@@ -71,15 +78,33 @@ except ImportError:
     _DRAWINGML_TEXT_FONT_SIZE_MAX = None
     _DRAWINGML_TEXT_FONT_SIZE_MIN = None
     _IDENTITY_MATRIX = None
+    _format_project_geometry_length = None
     _font_px_to_hpt = None
+    _is_canonical_project_geometry_length = None
+    _iter_project_geometry_lengths = None
+    _iter_project_transforms = None
     _matrix_multiply = None
+    _noncanonical_transform_numbers = None
     _parse_transform_matrix = None
     _parse_export_font_family = None
     _parse_inline_style = None
+    _parse_project_geometry_length = None
     _parse_export_color = None
     _parse_export_length = None
+    _project_transform_errors = None
     _rect_to_dml_xfrm = None
     _validate_dml_shape_matrix = None
+
+try:
+    from svg_to_pptx.drawingml.paths import (
+        iter_project_freeform_geometry as _iter_project_freeform_geometry,
+        noncanonical_path_numbers as _noncanonical_path_numbers,
+        noncanonical_points_numbers as _noncanonical_points_numbers,
+    )
+except ImportError:
+    _iter_project_freeform_geometry = None
+    _noncanonical_path_numbers = None
+    _noncanonical_points_numbers = None
 
 try:
     from svg_to_pptx.drawingml.converter import (
@@ -965,13 +990,19 @@ class SVGQualityChecker:
     # or build content variants with bespoke slot vocabularies.
     #
     # Variants reuse the parent type's expectation (`03a_content_two_col.svg`
-    # is matched by the same `03_content` rules as `03_content.svg`).
+    # is matched by the same `content` rules as `03_content.svg`).
+    #
+    # Keys are page-type tokens, not numbered stems: template numbering is
+    # presentation order within one template and shifts when the optional
+    # TOC page is present (`02_chapter` in a four-page roster, `03_chapter`
+    # in a five-page roster with `02_toc`), so the defaults must apply to
+    # both spellings.
     DEFAULT_PLACEHOLDER_CONVENTION = {
-        "01_cover": ("{{TITLE}}",),  # only the title is universally expected
-        "02_chapter": ("{{CHAPTER_TITLE}}",),
-        "02_toc": (),  # TOC layouts vary too widely to assert anything
-        "03_content": ("{{PAGE_TITLE}}",),
-        "04_ending": (),  # ending pages legitimately use varied vocabularies
+        "cover": ("{{TITLE}}",),  # only the title is universally expected
+        "chapter": ("{{CHAPTER_TITLE}}",),
+        "toc": (),  # TOC layouts vary too widely to assert anything
+        "content": ("{{PAGE_TITLE}}",),
+        "ending": (),  # ending pages legitimately use varied vocabularies
     }
 
     def __init__(self, *, template_mode: bool = False):
@@ -1044,19 +1075,22 @@ class SVGQualityChecker:
             # produce misleading errors on a broken document.
             root = self._parse_xml_root(content, result)
             if root is not None:
-                if root.get('transform'):
-                    result['errors'].append(
-                        'Root <svg> transform is unsupported; apply transforms '
-                        'to child elements or groups'
-                    )
-
                 # 1. Check viewBox
                 self._check_viewbox(root, result, expected_format)
 
                 # 2. Check forbidden elements
                 self._check_forbidden_elements(content, root, result)
 
-                # 2b. Validate the closed authoring-property surface and
+                # 2a. Validate direct geometry lengths and stroke widths.
+                self._check_geometry_length_values(root, result)
+
+                # 2b. Validate complete path-data and point-list grammar.
+                self._check_freeform_geometry_values(root, result)
+
+                # 2c. Validate complete transform grammar and native mappings.
+                self._check_transform_values(root, result)
+
+                # 2d. Validate the closed authoring-property surface and
                 # conditional definition interfaces before export.
                 self._check_authoring_property_contract(root, result)
                 self._check_paint_compatibility(root, result)
@@ -1065,10 +1099,10 @@ class SVGQualityChecker:
                 self._check_marker_contract(root, result)
                 self._check_clip_path_contract(root, result)
 
-                # 2c. Validate the supported shadow/glow filter interface.
+                # 2e. Validate the supported shadow/glow filter interface.
                 self._check_filter_effects(root, result)
 
-                # 2d. Validate gradient definitions, stops, and coordinates.
+                # 2f. Validate gradient definitions, stops, and coordinates.
                 self._check_gradient_interfaces(root, result)
 
                 # 3. Check font-size values
@@ -2094,6 +2128,173 @@ class SVGQualityChecker:
 
         result['errors'].extend(sorted(issues))
 
+    def _check_geometry_length_values(
+        self,
+        root: ET.Element,
+        result: Dict,
+    ) -> None:
+        """Reject invalid project geometry and advise the unitless spelling."""
+        if (
+            _format_project_geometry_length is None
+            or _is_canonical_project_geometry_length is None
+            or _iter_project_geometry_lengths is None
+            or _parse_project_geometry_length is None
+        ):
+            result['warnings'].append(
+                "Unable to import svg_to_pptx geometry length validators; "
+                "native export will still validate project geometry."
+            )
+            return
+
+        errors: set[str] = set()
+        recommendations: Counter[tuple[str, str, str]] = Counter()
+        examples: Dict[tuple[str, str, str], List[str]] = defaultdict(list)
+
+        for elem, attribute, raw, source in _iter_project_geometry_lengths(root):
+            label = f'{_element_label(elem)} {source}'
+            try:
+                value = _parse_project_geometry_length(raw, attribute)
+            except ValueError as exc:
+                errors.add(f"{label} {attribute}={raw!r}: {exc}")
+                continue
+            if _is_canonical_project_geometry_length(raw):
+                continue
+            normalized = _format_project_geometry_length(value)
+            key = (attribute, raw, normalized)
+            recommendations[key] += 1
+            if label not in examples[key] and len(examples[key]) < 3:
+                examples[key].append(label)
+
+        result['errors'].extend(sorted(errors))
+        for (attribute, raw, normalized), count in sorted(recommendations.items()):
+            shown_examples = ', '.join(examples[(attribute, raw, normalized)])
+            result['warnings'].append(
+                f"Recommendation: project geometry {attribute}={raw!r} is "
+                f"converter-compatible in {count} location(s) ({shown_examples}); "
+                f"generated SVG should prefer the unitless px spelling "
+                f'{attribute}="{normalized}". No change is required for export.'
+            )
+
+    def _check_freeform_geometry_values(
+        self,
+        root: ET.Element,
+        result: Dict,
+    ) -> None:
+        """Reject malformed path/points syntax and advise decimal spelling."""
+        helpers = (
+            _format_project_geometry_length,
+            _iter_project_freeform_geometry,
+            _noncanonical_path_numbers,
+            _noncanonical_points_numbers,
+        )
+        if any(helper is None for helper in helpers):
+            result['warnings'].append(
+                "Unable to import svg_to_pptx freeform geometry validators; "
+                "native export will still validate path and points syntax."
+            )
+            return
+
+        errors: set[str] = set()
+        recommendations: Counter[tuple[str, str, str]] = Counter()
+        examples: Dict[tuple[str, str, str], List[str]] = defaultdict(list)
+
+        for elem, attribute, raw, min_points in _iter_project_freeform_geometry(root):
+            label = _element_label(elem)
+            try:
+                if raw is None:
+                    tag = _local_name(elem)
+                    raise ValueError(f'<{tag}> requires {attribute}')
+                if attribute == 'd':
+                    compatible_numbers = _noncanonical_path_numbers(raw)
+                else:
+                    required_points = min_points or 2
+                    compatible_numbers = _noncanonical_points_numbers(
+                        raw,
+                        min_points=required_points,
+                    )
+            except ValueError as exc:
+                errors.add(f'{label} {attribute}: {exc}')
+                continue
+
+            for number in compatible_numbers:
+                normalized = _format_project_geometry_length(float(number))
+                key = (attribute, number, normalized)
+                recommendations[key] += 1
+                if label not in examples[key] and len(examples[key]) < 3:
+                    examples[key].append(label)
+
+        result['errors'].extend(sorted(errors))
+        for (attribute, raw, normalized), count in sorted(recommendations.items()):
+            shown_examples = ', '.join(examples[(attribute, raw, normalized)])
+            result['warnings'].append(
+                f"Recommendation: freeform geometry {attribute} numeric token "
+                f"{raw!r} is converter-compatible in {count} occurrence(s) "
+                f"({shown_examples}); generated SVG should prefer the ordinary "
+                f"decimal spelling {normalized!r}. No change is required for export."
+            )
+
+    def _check_transform_values(
+        self,
+        root: ET.Element,
+        result: Dict,
+    ) -> None:
+        """Reject invalid transforms and advise ordinary decimal spelling."""
+        helpers = (
+            _format_project_geometry_length,
+            _iter_project_transforms,
+            _noncanonical_transform_numbers,
+            _project_transform_errors,
+        )
+        if any(helper is None for helper in helpers):
+            result['warnings'].append(
+                "Unable to import svg_to_pptx transform validators; "
+                "native export will still validate transform syntax."
+            )
+            return
+
+        transform_errors = set(_project_transform_errors(root))
+        if (
+            not transform_errors
+            and _expand_local_use_references is not None
+            and _UseExpansionError is not None
+        ):
+            expanded_root = copy.deepcopy(root)
+            try:
+                _expand_local_use_references(expanded_root)
+            except _UseExpansionError:
+                # The local-reference check owns the actionable diagnostic.
+                pass
+            else:
+                transform_errors.update(_project_transform_errors(expanded_root))
+        result['errors'].extend(
+            f'Invalid SVG transform: {error}'
+            for error in sorted(transform_errors)
+        )
+
+        recommendations: Counter[tuple[str, str]] = Counter()
+        examples: Dict[tuple[str, str], List[str]] = defaultdict(list)
+        for elem, raw in _iter_project_transforms(root):
+            try:
+                compatible_numbers = _noncanonical_transform_numbers(raw)
+            except ValueError:
+                continue
+            for number in compatible_numbers:
+                normalized = _format_project_geometry_length(float(number))
+                key = (number, normalized)
+                recommendations[key] += 1
+                label = _element_label(elem)
+                if label not in examples[key] and len(examples[key]) < 3:
+                    examples[key].append(label)
+
+        for (raw, normalized), count in sorted(recommendations.items()):
+            shown_examples = ', '.join(examples[(raw, normalized)])
+            result['warnings'].append(
+                f"Recommendation: transform numeric token {raw!r} is "
+                f"converter-compatible in {count} occurrence(s) "
+                f"({shown_examples}); generated SVG should prefer the ordinary "
+                f"decimal spelling {normalized!r}. No change is required for export."
+            )
+
     def _check_font_size_values(self, content: str, result: Dict):
         """Keep supported font-size units compatible and recommend unitless px."""
         canonical_re = re.compile(r'^(?:\d+(?:\.\d+)?|\.\d+)$')
@@ -2115,7 +2316,11 @@ class SVGQualityChecker:
         drawingml_out_of_range = set()
         compatible_noncanonical = set()
         for raw in values:
-            parsed_px = _parse_export_length(raw, math.nan, font_size=16)
+            try:
+                parsed_px = _parse_export_length(raw, math.nan, font_size=16)
+            except (TypeError, ValueError):
+                unsupported.add(raw)
+                continue
             if not math.isfinite(parsed_px) or parsed_px < 0:
                 unsupported.add(raw)
                 continue
@@ -4542,7 +4747,9 @@ class SVGQualityChecker:
         2. ``overrides[<page_type_prefix>]`` — frontmatter entry for the
            variant's parent type (e.g. ``03_content`` for
            ``03a_content_two_col``)
-        3. ``DEFAULT_PLACEHOLDER_CONVENTION[<page_type_prefix>]``
+        3. ``DEFAULT_PLACEHOLDER_CONVENTION[<page_type>]`` — keyed by the
+           type token alone, so it applies regardless of where the type
+           lands in the template's presentation-order numbering
 
         Returns ``None`` for stems with no matching convention or override —
         e.g. extension pages like ``05_section_break``. ``()`` (empty tuple)
@@ -4562,7 +4769,7 @@ class SVGQualityChecker:
         key = f"{num}_{kind}"
         if key in overrides:
             return overrides[key]
-        return cls.DEFAULT_PLACEHOLDER_CONVENTION.get(key)
+        return cls.DEFAULT_PLACEHOLDER_CONVENTION.get(kind)
 
     def _print_result(self, result: Dict):
         """Print check result for a single file"""

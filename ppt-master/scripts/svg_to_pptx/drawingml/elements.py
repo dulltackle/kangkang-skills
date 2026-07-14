@@ -29,7 +29,7 @@ from .context import ConvertContext, ShapeResult
 from .theme_colors import color_node_xml
 from .theme_fonts import theme_font_tokens
 from .utils import (
-    SVG_NS, XLINK_NS, ANGLE_UNIT, FONT_PX_TO_HUNDREDTHS_PT, DASH_PRESETS,
+    SVG_NS, XLINK_NS, ANGLE_UNIT, FONT_PX_TO_HUNDREDTHS_PT,
     px_to_emu, _f, _get_attr, parse_svg_length,
     svg_length_x, svg_length_y, svg_length_size,
     ctx_x, ctx_y, ctx_w, ctx_h,
@@ -38,7 +38,9 @@ from .utils import (
     resolve_url_id, get_effective_filter_id,
     parse_inline_style, parse_font_family, is_cjk_char, estimate_text_width,
     detect_text_lang, font_px_to_hpt, resolve_text_run_fonts,
-    matrix_multiply, parse_transform_matrix, transform_point, _xml_escape,
+    is_thick_circle_shorthand,
+    matrix_multiply, parse_transform_matrix, parse_transform_operations,
+    transform_point, _xml_escape,
 )
 from .styles import (
     build_solid_fill, build_gradient_fill,
@@ -46,7 +48,7 @@ from .styles import (
     get_element_opacity, get_fill_opacity, get_stroke_opacity,
 )
 from .paths import (
-    PathCommand, parse_svg_path, svg_path_to_absolute,
+    PathCommand, parse_svg_path, parse_svg_points, svg_path_to_absolute,
     normalize_path_commands, path_commands_to_drawingml,
 )
 
@@ -1020,27 +1022,10 @@ def _build_arc_ring_path(
 def _is_donut_circle(elem: ET.Element, ctx: ConvertContext) -> bool:
     """Detect if a circle uses stroke-dasharray to simulate an arc segment."""
     dasharray = _get_attr(elem, 'stroke-dasharray', ctx)
-    if not dasharray or dasharray == 'none':
-        return False
     stroke = _get_attr(elem, 'stroke', ctx)
-    if not stroke or stroke == 'none':
-        return False
-
     sw = svg_length_size(_get_attr(elem, 'stroke-width', ctx), ctx, 0)
     r = svg_length_size(elem.get('r'), ctx, 0)
-    if sw <= 0 or r <= 0:
-        return False
-
-    # Standard dash presets are not donut segments
-    if dasharray.strip() in DASH_PRESETS:
-        return False
-
-    # Thin strokes relative to radius are decorative dashed rings, not donut arcs.
-    # Real donut arcs need sw/r >= 0.15 (e.g. sw=40 on r=100 → 0.40).
-    if sw / r < 0.15:
-        return False
-
-    return True
+    return is_thick_circle_shorthand(dasharray, stroke, sw, r)
 
 
 def convert_circle(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
@@ -1063,9 +1048,13 @@ def convert_circle(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
 
         rotate_deg = 0.0
         transform = elem.get('transform', '')
-        r_match = re.search(r'rotate\(\s*([-\d.]+)', transform)
-        if r_match:
-            rotate_deg = float(r_match.group(1))
+        if transform:
+            operations = parse_transform_operations(transform)
+            if len(operations) != 1 or operations[0][0] != 'rotate':
+                raise ValueError(
+                    'Thick-circle arc transform must be one rotate operation'
+                )
+            rotate_deg = operations[0][1][0]
 
         geom, min_x, min_y, w_emu, h_emu = _build_arc_ring_path(
             ctx_x(cx_, ctx) / ctx.scale_x,
@@ -1442,22 +1431,10 @@ def convert_path(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
 # polygon / polyline
 # ---------------------------------------------------------------------------
 
-def _parse_points(points_str: str) -> list[tuple[float, float]]:
-    """Parse SVG points attribute into a list of (x, y) tuples."""
-    nums = re.findall(r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?', points_str)
-    if len(nums) < 4:
-        return []
-    return [(float(nums[i]), float(nums[i + 1])) for i in range(0, len(nums) - 1, 2)]
-
-
 def convert_polygon(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
     """Convert SVG <polygon> to DrawingML custom geometry shape."""
     preset_geom = _build_preset_geom_from_meta(elem)
-    points = _parse_points(elem.get('points', ''))
-    if not points:
-        if preset_geom is not None:
-            raise ValueError('Preset-bearing <polygon> requires valid points')
-        return None
+    points = parse_svg_points(elem.get('points', ''), min_points=3)
 
     commands = [PathCommand('M', [points[0][0], points[0][1]])]
     for px_, py_ in points[1:]:
@@ -1526,11 +1503,7 @@ def convert_polygon(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None
 def convert_polyline(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
     """Convert SVG <polyline> to DrawingML custom geometry shape."""
     preset_geom = _build_preset_geom_from_meta(elem)
-    points = _parse_points(elem.get('points', ''))
-    if not points:
-        if preset_geom is not None:
-            raise ValueError('Preset-bearing <polyline> requires valid points')
-        return None
+    points = parse_svg_points(elem.get('points', ''), min_points=2)
 
     commands = [PathCommand('M', [points[0][0], points[0][1]])]
     for px_, py_ in points[1:]:
@@ -2367,16 +2340,26 @@ def convert_text(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
     box_h = text_height + padding
 
     text_transform = elem.get('transform', '')
-    if text_transform and 'rotate' not in text_transform and not ctx.use_transform_matrix:
-        try:
-            a, b, c, d, e, f = parse_transform_matrix(text_transform)
-        except Exception:
-            a, b, c, d, e, f = 1.0, 0.0, 0.0, 1.0, 0.0, 0.0
+    text_operations = (
+        parse_transform_operations(text_transform)
+        if text_transform else ()
+    )
+    translate_only = bool(text_operations) and all(
+        name == 'translate' for name, _args in text_operations
+    )
+    rotate_only = (
+        len(text_operations) == 1
+        and text_operations[0][0] == 'rotate'
+    )
+    if text_operations and not (translate_only or rotate_only):
+        raise ValueError(
+            'Text transform must be a translate-only list or one rotate operation'
+        )
+    if translate_only and not ctx.use_transform_matrix:
+        a, b, c, d, e, f = parse_transform_matrix(text_transform)
         # A pure-translate transform on a text element (hand-authored, or written
         # by a live-preview move) was otherwise ignored here, drifting the text.
-        # Absorb the translation into the frame position; a scaling transform
-        # would also need to scale font size / line metrics, so leave
-        # non-translate transforms alone.
+        # Absorb the translation into the frame position.
         if (
             abs(a - 1.0) < 1e-9 and abs(b) < 1e-9
             and abs(c) < 1e-9 and abs(d - 1.0) < 1e-9
@@ -2394,26 +2377,22 @@ def convert_text(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
     # box so its center lands where SVG would place the rotated visual center —
     # otherwise rotated y-axis labels etc. drift to the wrong location.
     text_rot = 0
-    if text_transform:
-        rot_match = re.search(
-            r'rotate\(\s*([-\d.]+)(?:[\s,]+([-\d.]+)[\s,]+([-\d.]+))?',
-            text_transform,
-        )
-        if rot_match:
-            angle_deg = float(rot_match.group(1))
-            text_rot = int(angle_deg * ANGLE_UNIT)
-            if rot_match.group(2) is not None:
-                pivot_x = ctx_x(float(rot_match.group(2)), ctx)
-                pivot_y = ctx_y(float(rot_match.group(3)), ctx)
-                cx_box = box_x + box_w / 2
-                cy_box = box_y + box_h / 2
-                rad = math.radians(angle_deg)
-                dx = cx_box - pivot_x
-                dy = cy_box - pivot_y
-                new_cx = pivot_x + dx * math.cos(rad) - dy * math.sin(rad)
-                new_cy = pivot_y + dx * math.sin(rad) + dy * math.cos(rad)
-                box_x = new_cx - box_w / 2
-                box_y = new_cy - box_h / 2
+    if rotate_only:
+        rotate_args = text_operations[0][1]
+        angle_deg = rotate_args[0]
+        text_rot = int(angle_deg * ANGLE_UNIT)
+        if len(rotate_args) == 3:
+            pivot_x = ctx_x(rotate_args[1], ctx)
+            pivot_y = ctx_y(rotate_args[2], ctx)
+            cx_box = box_x + box_w / 2
+            cy_box = box_y + box_h / 2
+            rad = math.radians(angle_deg)
+            dx = cx_box - pivot_x
+            dy = cy_box - pivot_y
+            new_cx = pivot_x + dx * math.cos(rad) - dy * math.sin(rad)
+            new_cy = pivot_y + dx * math.sin(rad) + dy * math.cos(rad)
+            box_x = new_cx - box_w / 2
+            box_y = new_cy - box_h / 2
 
     # Alignment
     algn_map = {'start': 'l', 'middle': 'ctr', 'end': 'r'}
@@ -2635,8 +2614,10 @@ def _resolve_clip_geometry(
 
     # --- Rect with rx/ry → preset roundRect ---
     if shape_tag == 'rect':
-        rx = _f(shape.get('rx'))
-        ry = _f(shape.get('ry'), rx)
+        rx_attr = shape.get('rx')
+        ry_attr = shape.get('ry')
+        rx = svg_length_x(rx_attr, ctx) if rx_attr is not None else 0.0
+        ry = svg_length_y(ry_attr, ctx) if ry_attr is not None else rx
         if rx <= 0 and ry <= 0:
             return DEFAULT  # plain rect clip is a no-op
         r = max(rx, ry)
@@ -2668,9 +2649,7 @@ def _resolve_clip_geometry(
 
     # --- Polygon → custGeom ---
     if shape_tag == 'polygon':
-        pts = _parse_points(shape.get('points', ''))
-        if not pts:
-            return DEFAULT
+        pts = parse_svg_points(shape.get('points', ''), min_points=3)
         commands = [PathCommand('M', [pts[0][0], pts[0][1]])]
         for px_, py_ in pts[1:]:
             commands.append(PathCommand('L', [px_, py_]))

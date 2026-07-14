@@ -8,7 +8,7 @@ Other files link here instead of restating its contracts.
 | Section | Owns | Strength |
 |---|---|---|
 | §1 Required Foundation, Forbidden Features, and Conditional Interfaces | XML validity, the closed generated-authoring surface, structural blacklist, native line ends, image clipping, static local reuse, and imported/authored native-shape semantics | Required / Forbidden / Conditional |
-| §2 Conditional Compatibility Mappings | Literal inline geometry and the approximate group-opacity compatibility boundary | Conditional / Default |
+| §2 Conditional Compatibility Mappings | Direct geometry-length grammar, literal inline geometry, and the approximate group-opacity compatibility boundary | Required / Conditional / Default |
 | §3 Canvas Format Quick Reference | Pointer to the complete canvas catalog | Reference |
 | §4 Required Page Contract and Conditional Packaging | Complete-page authority, semantic markers, editable text/grouping, and package promotion | Required / Conditional |
 | §5 Workflow Authority | Pointer to the serial post-processing/export procedure | Workflow pointer |
@@ -209,8 +209,8 @@ the original `<use>` / `<symbol>` structure.
 |---|---|
 | Reference syntax | Author new SVG with the SVG 2 form `href="#id"`. Legacy `xlink:href="#id"` remains read-compatible and Live Preview normalizes it to `href`; if both attributes exist, their values MUST match. |
 | Referenced target | One of `<symbol>`, `<g>`, `<use>`, `<rect>`, `<circle>`, `<ellipse>`, `<line>`, `<path>`, `<polygon>`, `<polyline>`, `<text>`, or `<image>`. Nested local `<use>` is recursively expanded. |
-| Instance position | `<use x>` / `<use y>` are finite unitless or `px` values; omitted values default to `0`. |
-| Symbol viewport | A referenced `<symbol>` MUST have a finite four-number `viewBox` with positive width/height. Its `<use>` MUST have positive finite unitless or `px` `width` and `height`. |
+| Instance position | Generated `<use x>` / `<use y>` use finite unitless values; an explicit `px` suffix is read-compatible. Omitted values default to `0`. |
+| Symbol viewport | A referenced `<symbol>` MUST have a finite four-number `viewBox` with positive width/height. Its `<use>` MUST have positive finite unitless `width` and `height`; an explicit `px` suffix is read-compatible. |
 | Aspect ratio | Default/aligned `meet` values and plain `preserveAspectRatio="none"` are supported. `slice`, `refX`, and `refY` are forbidden. |
 | Viewport boundary | Symbol artwork MUST stay inside its `viewBox`; expansion does not reproduce symbol overflow clipping. |
 | Internal references | Author exact `href="#id"` and `url(#id)` fragments. The expander also reads legacy `xlink:href="#id"` and rewrites all instance-local cloned IDs. |
@@ -388,7 +388,30 @@ hyperlinks.
 
 ## 2. Conditional Compatibility Mappings
 
-### 2.1 Literal Inline Geometry
+### 2.1 Literal Geometry Lengths and Inline Geometry
+
+**Hard rule — direct geometry length grammar**: New generated SVG writes the
+following XML geometry values and `stroke-width` as finite unitless ordinary
+decimals in the page `viewBox` coordinate space, for example `x="120"` and
+`stroke-width="2"`. The explicit `px` suffix is read-compatible and receives a
+recommendation warning. No other unit is registered for this surface.
+
+| Element / surface | Direct length attributes |
+|---|---|
+| `<svg>`, `<rect>`, `<image>`, `<use>` | `x`, `y`, `width`, `height`; `<rect>` also `rx`, `ry` |
+| `<circle>` | `cx`, `cy`, `r` |
+| `<ellipse>` | `cx`, `cy`, `rx`, `ry` |
+| `<line>` | `x1`, `y1`, `x2`, `y2` |
+| `<text>` / positional `<tspan>` | `x`, `y`; `<tspan>` also `dx`, `dy` |
+| Any supported painted element | `stroke-width` |
+
+`width`, `height`, `r`, `rx`, `ry`, and `stroke-width` must be non-negative;
+the stricter positive `<use>` symbol-viewport rule remains in §1.3. `pt`,
+`pc` / `pica`, `in`, `cm`, `mm`, `q`, `em`, `rem`, percentages, unknown units,
+non-finite values, expressions, scientific notation, leading plus signs, and
+trailing decimal points are invalid here even when generic SVG/CSS defines
+them. A missing attribute may use its documented SVG/project default; an
+explicitly supplied invalid value never falls back to that default.
 
 The following geometry properties may appear in the same element's
 `style="..."`. The pipeline materializes them as
@@ -812,18 +835,30 @@ modes, generated effects, and text-image knockouts are outside editable text.
 |---|---|
 | `rotate(angle[, cx, cy])` | Geometry/image/text/ordinary group; `Native-normalized` |
 | `translate(x y)` | Geometry/image/group; pure translation also safe on text; `Native-normalized` |
-| Positive scale / negative mirror | Geometry/image only; explicit pivot; `Native-normalized` |
-| `matrix(a b c d e f)` | Geometry/image only; transformed axes finite, non-zero, orthogonal; excludes rounded rects; `Native-normalized` |
+| Positive scale / negative mirror | Geometry/image or a group/use whose expanded visual subtree is geometry/image only; explicit pivot; `Native-normalized` |
+| `matrix(a b c d e f)` | Geometry/image or the same geometry/image-only group/use; transformed axes finite, non-zero, orthogonal; excludes rounded rectangles and subtrees containing them; `Native-normalized` |
 | Source order | Back-to-front PPT z-order; `Native-stable` |
 | `<g opacity>` | Compatible approximate mapping; generated SVG prefers descendant alpha, §2.2 |
 | Local `<use>` | §1.3 compile-time reuse; `Native-normalized` |
 
-Set text size/position directly; do not scale or general-matrix text. `skewX`,
-`skewY`, zero/non-orthogonal axes, and shear matrices are forbidden. Native
-chart/table markers allow translate/scale only. The §6.10 thick-circle shortcut
-does not inherit general transform support. Positive rotation is clockwise and
-pivoted rotation normalizes the native frame. A legal transform sequence can
-still produce non-orthogonal axes; importer/live-editor matrices do not expand
+**Hard rule — closed transform grammar**: Use only lowercase `translate`,
+`scale`, `rotate`, and `matrix` with exact finite unitless argument counts:
+`translate` 1/2, `scale` 1/2, `rotate` 1/3, and `matrix` 6. Separate arguments
+and operations with whitespace or one comma. Leading/trailing/repeated commas,
+adjacent operations without a separator, units, unknown functions, and
+incomplete input fail quality check and export. Generated numeric tokens use
+ordinary decimals; a supported leading `+`, exponent, or trailing decimal point
+remains compatible input and receives a non-blocking normalization warning.
+
+Set text size/position directly. A text transform is either a translate-only
+list or one rotate operation; do not scale, matrix-transform, or mix operations
+on text. A group containing text follows the same translate-only/single-rotate
+limit. `skewX`, `skewY`, zero/non-orthogonal axes, and shear matrices are
+forbidden. Native chart/table markers allow translate/scale only. The §6.10
+thick-circle shortcut does not inherit general transform support. Positive
+rotation is clockwise and pivoted rotation normalizes the native frame. Every
+cumulative matrix, including transforms split across ancestors, must remain
+finite, non-zero, and orthogonal; importer/live-editor matrices do not expand
 the hand-authored contract.
 Mirror around vertical pivot `cx` with
 `translate(cx 0) scale(-1 1) translate(-cx 0)`; use the analogous Y sequence
@@ -845,6 +880,25 @@ instance graph.
 | `S/Q/T` | Explicit cubic controls | `Native-normalized` |
 | `A` | Cubic segments of at most 90° | `Approximate` |
 | `Z`; polygon/polyline | Closed/open freeform | `Native-normalized` |
+
+**Hard rule — complete freeform grammar**: Generated `path@d` and
+`polygon` / `polyline@points` use finite unitless ordinary decimals and only
+the commands registered above. Native export consumes the complete attribute;
+it never extracts recognizable fragments while ignoring other characters.
+Finite scientific notation, a leading plus sign, and a trailing decimal point
+remain read-compatible and receive recommendation warnings; generated SVG does
+not write them. Unknown commands or characters, misplaced/repeated commas,
+non-finite numbers, missing attributes, incomplete command groups, and odd
+point counts are invalid. A path starts with `M` / `m`; `A` radii are
+non-negative and both arc flags are exactly `0` or `1`. Each registered path
+command accepts its uppercase absolute and lowercase relative form. Legal
+separator-free arc flag sequences remain valid and are parsed as individual
+flag tokens. A polygon has at least three coordinate pairs and a polyline at
+least two.
+
+**Validation**: Checker and native export consume the same parser in
+[`paths.py`](../scripts/svg_to_pptx/drawingml/paths.py); native-object fallback
+bounds reuse its normalized commands rather than a second path grammar.
 
 Command identity, relative coordinates, shorthand, arc parameters, and original
 handles are not retained. Geometry needs non-zero bounds. Use a closed cubic
@@ -901,7 +955,8 @@ compound ring.
 
 **Thick-circle shorthand — `Approximate`, non-position-sensitive only**:
 
-- One circle per segment; `fill="none"`; no element transform or ancestor full-matrix.
+- One circle per segment; `fill="none"`; the circle may use one `rotate` for its
+  start angle, and ancestor transforms must be translate-only.
 - Exactly two non-preset finite unitless values (`dash gap`); finite unitless `stroke-dashoffset`.
 - `0 < stroke-width < 2r`, `stroke-width/r >= 0.15`,
   `0 < dash < 2πr`, `gap >= 0`, and `dash + gap >= 2πr`.
