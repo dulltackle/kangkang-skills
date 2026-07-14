@@ -9,11 +9,16 @@ from __future__ import annotations
 import colorsys
 import math
 import re
+import unicodedata
 from collections import Counter
 from collections.abc import Iterator
 from xml.etree import ElementTree as ET
 
-from pptx_shapes import validate_ooxml_xfrm
+from pptx_shapes import (
+    resolve_preset_preview_hash,
+    svg_preset_preview_fingerprint,
+    validate_ooxml_xfrm,
+)
 
 from .context import AffineMatrix, ConvertContext, IDENTITY_MATRIX
 
@@ -1926,6 +1931,11 @@ def project_filter_errors(root: ET.Element) -> list[str]:
         if _svg_element_tag(elem) == 'filter'
     }
     errors: set[str] = set()
+    parents = {
+        child: parent
+        for parent in root.iter()
+        for child in parent
+    }
 
     for elem in root.iter():
         tag = (_svg_element_tag(elem) or str(elem.tag)).lower()
@@ -1940,7 +1950,10 @@ def project_filter_errors(root: ET.Element) -> list[str]:
         raw_filter = elem.get('filter')
         if raw_filter is None:
             continue
-        if tag not in PROJECT_FILTER_PUBLIC_TARGETS:
+        if (
+            tag not in PROJECT_FILTER_PUBLIC_TARGETS
+            and not _is_imported_preset_preview_filter_target(elem, parents)
+        ):
             errors.add(
                 f'{label} cannot use filter; supported native targets are '
                 'rect, circle, path, and text'
@@ -2029,6 +2042,76 @@ def project_filter_errors(root: ET.Element) -> list[str]:
                         f'finite number{qualifier}; got {raw_value!r}'
                     )
     return sorted(errors)
+
+
+def _is_imported_preset_preview_filter_target(
+    elem: ET.Element,
+    parents: dict[ET.Element, ET.Element],
+) -> bool:
+    """Recognize the render-only aggregate filter on an imported preset.
+
+    DrawingML presets can contain several visible path layers but own one
+    shape-level effect.  The lossless importer therefore keeps the native
+    filter on the hidden geometry carrier and mirrors the same reference onto
+    its hash-locked preview group.  The preview group is never exported as a
+    separate PowerPoint object; ordinary authored ``<g filter>`` remains
+    outside the project contract.
+    """
+    if (
+        _svg_element_tag(elem) != 'g'
+        or elem.get('data-pptx-part') != 'geometry-preview'
+    ):
+        return False
+    parent = parents.get(elem)
+    if (
+        parent is None
+        or _svg_element_tag(parent) != 'g'
+        or parent.get('data-pptx-object') not in {'shape', 'connector'}
+        or not parent.get('data-pptx-prst')
+        or not parent.get('data-pptx-frame')
+    ):
+        return False
+    previews = [
+        child
+        for child in parent
+        if child.get('data-pptx-part') == 'geometry-preview'
+    ]
+    if len(previews) != 1 or previews[0] is not elem:
+        return False
+    preview_children = list(elem)
+    if not preview_children or any(
+        _svg_element_tag(child) != 'path'
+        or child.get('data-pptx-part') != 'geometry-detail'
+        or len(child) != 0
+        for child in preview_children
+    ):
+        return False
+    carriers = [
+        child
+        for child in parent
+        if child.get('data-pptx-part') == 'geometry'
+    ]
+    if len(carriers) != 1:
+        return False
+    carrier = carriers[0]
+    if not (
+        _svg_element_tag(carrier) == 'path'
+        and carrier.get('visibility') == 'hidden'
+        and carrier.get('pointer-events') == 'none'
+        and carrier.get('data-pptx-object') == parent.get('data-pptx-object')
+        and carrier.get('data-pptx-prst') == parent.get('data-pptx-prst')
+        and carrier.get('data-pptx-frame') == parent.get('data-pptx-frame')
+        and carrier.get('filter') == elem.get('filter')
+    ):
+        return False
+    try:
+        expected_hash = resolve_preset_preview_hash(parent)
+    except ValueError:
+        return False
+    return (
+        expected_hash is not None
+        and svg_preset_preview_fingerprint(parent) == expected_hash
+    )
 
 
 def parse_hex_color(color_str: str) -> str | None:
@@ -2149,6 +2232,123 @@ def detect_text_lang(text: str) -> str:
     return 'zh-CN' if any(is_cjk_char(ch) for ch in text) else 'en-US'
 
 
+def _is_grapheme_extend(ch: str) -> bool:
+    """Return whether ``ch`` extends the preceding rendered character."""
+    cp = ord(ch)
+    return (
+        unicodedata.category(ch) in {'Mn', 'Mc', 'Me'}
+        or 0xFE00 <= cp <= 0xFE0F
+        or 0xE0100 <= cp <= 0xE01EF
+        or 0x1F3FB <= cp <= 0x1F3FF
+        or 0xE0020 <= cp <= 0xE007F
+    )
+
+
+def _is_regional_indicator(ch: str) -> bool:
+    return 0x1F1E6 <= ord(ch) <= 0x1F1FF
+
+
+def _is_virama(ch: str) -> bool:
+    name = unicodedata.name(ch, '')
+    return (
+        unicodedata.combining(ch) == 9
+        or 'VIRAMA' in name
+        or name.endswith(' SIGN HALANT')
+    )
+
+
+def _is_emoji_base(ch: str) -> bool:
+    cp = ord(ch)
+    return 0x2600 <= cp <= 0x27BF or 0x1F000 <= cp <= 0x1FAFF
+
+
+def _unicode_script_key(ch: str) -> str | None:
+    """Return the stable Unicode-name prefix used for project script joins."""
+    name = unicodedata.name(ch, '')
+    if not name:
+        return None
+    tokens = name.split()
+    boundary_tokens = {
+        'CONSONANT',
+        'LETTER',
+        'SIGN',
+        'SYLLABLE',
+        'VOWEL',
+    }
+    for index, token in enumerate(tokens):
+        if index > 0 and token in boundary_tokens:
+            return ' '.join(tokens[:index])
+    if tokens[0] in {'MEETEI', 'OL', 'TAI'} and len(tokens) > 1:
+        return ' '.join(tokens[:2])
+    return tokens[0]
+
+
+def _virama_script_key(cluster: str, virama: str) -> str | None:
+    virama_script = _unicode_script_key(virama)
+    for ch in reversed(cluster):
+        if not unicodedata.category(ch).startswith('L'):
+            continue
+        base_script = _unicode_script_key(ch)
+        return base_script if base_script == virama_script else None
+    return None
+
+
+def split_project_text_clusters(text: str) -> list[str]:
+    """Split text into the rendered units used by project width estimates.
+
+    This intentionally implements only the Unicode joins that affect SVG to
+    DrawingML tracking: combining marks, variation selectors, emoji modifiers,
+    ZWJ sequences, regional-indicator pairs, and common virama conjuncts.
+    """
+    clusters: list[str] = []
+    virama_script: str | None = None
+    emoji_join = False
+    for ch in text:
+        if not clusters:
+            clusters.append(ch)
+            continue
+
+        cluster = clusters[-1]
+        previous = cluster[-1]
+        if ch == '\n' and previous == '\r':
+            clusters[-1] += ch
+            virama_script = None
+            emoji_join = False
+        elif _is_grapheme_extend(ch):
+            if _is_virama(ch):
+                virama_script = _virama_script_key(cluster, ch)
+            clusters[-1] += ch
+        elif ch == '\u200d':
+            clusters[-1] += ch
+            emoji_join = any(_is_emoji_base(item) for item in cluster)
+        elif ch == '\u200c':
+            clusters[-1] += ch
+            virama_script = None
+            emoji_join = False
+        elif (
+            virama_script is not None
+            and unicodedata.category(ch).startswith('L')
+            and _unicode_script_key(ch) == virama_script
+        ):
+            clusters[-1] += ch
+            virama_script = None
+            emoji_join = False
+        elif emoji_join and _is_emoji_base(ch):
+            clusters[-1] += ch
+            emoji_join = False
+        elif (
+            len(cluster) == 1
+            and _is_regional_indicator(cluster)
+            and _is_regional_indicator(ch)
+        ):
+            clusters[-1] += ch
+        else:
+            clusters.append(ch)
+            virama_script = None
+            emoji_join = False
+    return clusters
+
+
 def resolve_text_run_fonts(text: str, fonts: dict[str, str]) -> dict[str, str]:
     """Return DrawingML latin/ea/cs typefaces for one text run."""
     latin = fonts['latin']
@@ -2159,30 +2359,56 @@ def resolve_text_run_fonts(text: str, fonts: dict[str, str]) -> dict[str, str]:
     return {'latin': latin, 'ea': ea, 'cs': latin}
 
 
+def _estimate_character_width(ch: str, font_size: float) -> float:
+    if is_cjk_char(ch):
+        return font_size
+    if ch == ' ':
+        return font_size * 0.3
+    if ch in 'mMwWOQ%':
+        return font_size * 0.75
+    if ch in 'iIlj!|':
+        return font_size * 0.3
+    if ch.isdigit():
+        # digits are tabular (uniform ~0.55em) in most UI fonts, including
+        # '1' — classing it with 'il|' under-sizes the box and makes
+        # renderers that ignore wrap="none" (LibreOffice) wrap the line
+        return font_size * 0.55
+    return font_size * 0.55
+
+
+def _estimate_grapheme_width(cluster: str, font_size: float) -> float:
+    bases = [
+        ch for ch in cluster
+        if ch not in {'\u200c', '\u200d'} and not _is_grapheme_extend(ch)
+    ]
+    if not bases:
+        return font_size * 0.55
+    if (
+        len(bases) > 1
+        and all(_is_regional_indicator(ch) for ch in bases)
+    ) or '\u20e3' in cluster or any(_is_emoji_base(ch) for ch in bases):
+        return font_size
+    return max(_estimate_character_width(ch, font_size) for ch in bases)
+
+
+def estimate_text_cluster_widths(
+    text: str,
+    font_size: float,
+    font_weight: str = '400',
+) -> list[float]:
+    """Estimate each project text cluster without inserting tracking."""
+    widths = [
+        _estimate_grapheme_width(cluster, font_size)
+        for cluster in split_project_text_clusters(text)
+    ]
+    if font_weight in ('bold', '600', '700', '800', '900'):
+        widths = [width * 1.05 for width in widths]
+    return widths
+
+
 def estimate_text_width(text: str, font_size: float, font_weight: str = '400') -> float:
     """Estimate text width in SVG pixels."""
-    width = 0.0
-    for ch in text:
-        if is_cjk_char(ch):
-            width += font_size
-        elif ch == ' ':
-            width += font_size * 0.3
-        elif ch in 'mMwWOQ%':
-            width += font_size * 0.75
-        elif ch in 'iIlj!|':
-            width += font_size * 0.3
-        elif ch.isdigit():
-            # digits are tabular (uniform ~0.55em) in most UI fonts, including
-            # '1' — classing it with 'il|' under-sizes the box and makes
-            # renderers that ignore wrap="none" (LibreOffice) wrap the line
-            width += font_size * 0.55
-        else:
-            width += font_size * 0.55
-
-    if font_weight in ('bold', '600', '700', '800', '900'):
-        width *= 1.05
-
-    return width
+    return sum(estimate_text_cluster_widths(text, font_size, font_weight))
 
 
 def _xml_escape(text: str) -> str:

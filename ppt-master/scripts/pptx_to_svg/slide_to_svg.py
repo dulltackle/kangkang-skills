@@ -35,15 +35,21 @@ from pptx_shapes import (
     svg_native_fallback_markup_fingerprint,
     svg_text_fingerprint,
 )
+from pptx_effects import EFFECT_REASON_ATTR, EFFECT_STATUS_ATTR
 
 from .color_resolver import ColorPalette, find_color_elem, resolve_color
 from .chart_to_svg import CHART_URI, CHARTEX_URI, extract_native_chart_payload
 from .custgeom_to_svg import convert_custom_geom
-from .effect_to_svg import convert_effects
-from .emu_units import NS, Xfrm, fmt_num
+from .effect_to_svg import convert_effects, unsupported_target_effect_metadata
+from .emu_units import NS, Xfrm, fmt_num, format_canvas_px_from_emu
 from .fill_to_svg import resolve_fill
 from .ln_to_svg import resolve_stroke
-from .ooxml_loader import OoxmlPackage, PartRef, SlideRef
+from .ooxml_loader import (
+    OoxmlPackage,
+    PartRef,
+    SlideRef,
+    inherited_shape_visibility,
+)
 from .pic_to_svg import convert_blip_fill, convert_picture
 from .prstgeom_to_svg import GeomResult, convert_prst_geom
 from .preset_svg_markup import serialize_preset_layers
@@ -112,9 +118,10 @@ def assemble_slide(
     """Convert one slide to a complete SVG string + media files map.
 
     inheritance_mode controls how master/layout shapes are rendered:
-        - "flat" (default): emit master + layout non-placeholder shapes inline
-          inside the slide SVG. This is the historical behavior, used for
-          round-trip fidelity with svg_to_pptx.
+        - "flat" (default): emit the effective visible Master/Layout
+          non-placeholder shapes inline inside the slide SVG, honoring both
+          source ``showMasterSp`` flags. This view is used for round-trip
+          fidelity with svg_to_pptx.
         - "layered": skip inherited shapes entirely. The slide SVG contains
           only its own shapes. Callers (e.g. /create-template's PPTX import)
           render master/layout once each as separate SVGs and record the
@@ -134,6 +141,9 @@ def assemble_slide(
     )
 
     canvas_w, canvas_h = pkg.slide_size_px
+    canvas_w_token, canvas_h_token = (
+        format_canvas_px_from_emu(value) for value in pkg.slide_size_emu
+    )
 
     # Background (cSld/bg) — emit as the first body element.
     body_parts: list[str] = []
@@ -176,8 +186,8 @@ def assemble_slide(
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" '
-        f'width="{fmt_num(canvas_w)}" height="{fmt_num(canvas_h)}" '
-        f'viewBox="0 0 {fmt_num(canvas_w)} {fmt_num(canvas_h)}">'
+        f'width="{canvas_w_token}" height="{canvas_h_token}" '
+        f'viewBox="0 0 {canvas_w_token} {canvas_h_token}">'
         f"{defs_block}"
         + "\n".join(body_parts)
         + "</svg>"
@@ -232,6 +242,9 @@ def assemble_part_solo(
     )
 
     canvas_w, canvas_h = pkg.slide_size_px
+    canvas_w_token, canvas_h_token = (
+        format_canvas_px_from_emu(value) for value in pkg.slide_size_emu
+    )
 
     body_parts: list[str] = []
 
@@ -272,8 +285,8 @@ def assemble_part_solo(
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" '
-        f'width="{fmt_num(canvas_w)}" height="{fmt_num(canvas_h)}" '
-        f'viewBox="0 0 {fmt_num(canvas_w)} {fmt_num(canvas_h)}">'
+        f'width="{canvas_w_token}" height="{canvas_h_token}" '
+        f'viewBox="0 0 {canvas_w_token} {canvas_h_token}">'
         f"{defs_block}"
         + "\n".join(body_parts)
         + "</svg>"
@@ -486,19 +499,23 @@ def _build_geometry_xml(node: ShapeNode, sp_pr: ET.Element | None,
         id_prefix="m", id_seq=ctx.marker_seq,
         style_stroke_default=style_defaults.get("stroke"),
     )
-    filter_id, effect_defs = convert_effects(sp_pr, ctx.palette,
-                                             id_prefix="fx",
-                                             id_seq=ctx.filter_seq)
+    effect = convert_effects(
+        sp_pr,
+        ctx.palette,
+        id_prefix="fx",
+        id_seq=ctx.filter_seq,
+    )
 
     ctx.defs.extend(fill.defs)
     ctx.defs.extend(stroke.defs)
-    ctx.defs.extend(effect_defs)
+    ctx.defs.extend(effect.defs)
+    geom.attrs.update(dict(effect.metadata))
 
     attrs = {**fill.attrs, **stroke.attrs}
     for key, value in style_defaults.items():
         attrs.setdefault(key, value)
-    if filter_id is not None:
-        attrs["filter"] = f"url(#{filter_id})"
+    if effect.filter_id is not None:
+        attrs["filter"] = f"url(#{effect.filter_id})"
 
     # Default fill / stroke when not specified by spPr (matches PowerPoint
     # behavior: a:noFill on shape-level fill if there's a txBody, else any
@@ -645,8 +662,21 @@ def _convert_picture(node: ShapeNode, ctx: AssemblyContext, *, top_level: bool) 
     if not result.svg:
         return ""
     ctx.media.update(result.media)
-    picture_svg = _inject_root_svg_attrs(result.svg, _object_metadata(node, ctx))
-    return _wrap_shape_group(picture_svg, node, ctx, top_level=top_level)
+    effect_metadata = unsupported_target_effect_metadata(
+        node.xml.find("p:spPr", NS),
+        "picture",
+    )
+    picture_svg = _inject_root_svg_attrs(
+        result.svg,
+        {**_object_metadata(node, ctx), **effect_metadata},
+    )
+    return _wrap_shape_group(
+        picture_svg,
+        node,
+        ctx,
+        top_level=top_level,
+        extra_attrs=_metadata_group_attrs(effect_metadata),
+    )
 
 
 def _inject_root_svg_attrs(markup: str, attrs: dict[str, str]) -> str:
@@ -690,7 +720,17 @@ def _convert_group(node: ShapeNode, ctx: AssemblyContext, *, top_level: bool) ->
     if not inner_parts:
         return ""
     inner = "\n".join(inner_parts)
-    return _wrap_shape_group(inner, node, ctx, top_level=top_level)
+    effect_metadata = unsupported_target_effect_metadata(
+        node.xml.find("p:grpSpPr", NS),
+        "group",
+    )
+    return _wrap_shape_group(
+        inner,
+        node,
+        ctx,
+        top_level=top_level,
+        extra_attrs=_metadata_group_attrs(effect_metadata),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1077,8 +1117,13 @@ def _theme_background_fill(
 
 def _emit_inherited_shapes(slide: SlideRef, ctx: AssemblyContext) -> list[str]:
     parts: list[str] = []
-    for prefix, part in (("master-", slide.master), ("layout-", slide.layout)):
-        if part is None:
+    show_layout_shapes, show_master_shapes = inherited_shape_visibility(slide)
+    inherited_parts = (
+        ("master-", slide.master, show_master_shapes),
+        ("layout-", slide.layout, show_layout_shapes),
+    )
+    for prefix, part, visible in inherited_parts:
+        if part is None or not visible:
             continue
         original_part = ctx.slide_part
         original_prefix = ctx.group_id_prefix
@@ -1188,6 +1233,14 @@ def _attrs_to_xml(attrs: dict[str, str]) -> str:
     return "".join(f' {key}="{_xml_escape(value)}"' for key, value in attrs.items())
 
 
+def _metadata_group_attrs(attrs: dict[str, str]) -> list[str]:
+    """Serialize import metadata for a logical object wrapper."""
+    return [
+        f'{key}="{_xml_escape(value)}"'
+        for key, value in attrs.items()
+    ]
+
+
 def _geometry_group_attrs(geom: GeomResult | None) -> list[str]:
     """Mirror native geometry semantics onto the logical shape container."""
     if geom is None:
@@ -1199,6 +1252,8 @@ def _geometry_group_attrs(geom: GeomResult | None) -> list[str]:
         "data-pptx-preview-sha256",
         "data-pptx-geometry-status",
         "data-pptx-geometry-reason",
+        EFFECT_STATUS_ATTR,
+        EFFECT_REASON_ATTR,
     )
     attrs: list[str] = []
     for key, value in geom.attrs.items():
