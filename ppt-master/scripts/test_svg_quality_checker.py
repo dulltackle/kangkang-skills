@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Regression tests for SVG checker compatibility severity."""
 
+import io
+import json
+import math
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -22,12 +26,14 @@ from svg_to_pptx.drawingml.converter import (
     SvgNativeConversionError,
     convert_svg_to_slide_shapes,
 )
+from svg_to_pptx.drawingml.utils import parse_inline_style
 from svg_to_pptx.native_objects import (
     NativeMarkerAttributeError,
     native_fallback_kind,
     native_import_source,
     native_replacement_kind,
     native_replacement_status,
+    stamp_native_fallback_baseline,
 )
 from svg_to_pptx.pptx_package.template_structure import (
     TemplateStructureError,
@@ -43,6 +49,16 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
     def _check(self, content: str) -> dict:
         with tempfile.TemporaryDirectory() as tmp_dir:
             svg_path = Path(tmp_dir) / 'fixture.svg'
+            svg_path.write_text(content, encoding='utf-8')
+            return SVGQualityChecker().check_file(str(svg_path))
+
+    def _check_with_spec_lock(self, content: str, lock_text: str) -> dict:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project = Path(tmp_dir)
+            output_dir = project / 'svg_output'
+            output_dir.mkdir()
+            (project / 'spec_lock.md').write_text(lock_text, encoding='utf-8')
+            svg_path = output_dir / 'fixture.svg'
             svg_path.write_text(content, encoding='utf-8')
             return SVGQualityChecker().check_file(str(svg_path))
 
@@ -172,6 +188,22 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
             'requires an explicit stop-color',
             'invalid project gradient',
         )
+
+    def test_converter_string_path_preserves_inline_geometry_diagnostic(self):
+        source = '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 160 120">
+  <rect x="10" y="10" height="40" fill="#2563EB"
+        style="width: 60"/>
+</svg>'''
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            svg_path = Path(tmp_dir) / 'string-path.svg'
+            svg_path.write_text(source, encoding='utf-8')
+
+            with self.assertRaisesRegex(
+                SvgNativeConversionError,
+                "string-path.svg: inline geometry materialization failed",
+            ):
+                convert_svg_to_slide_shapes(str(svg_path))
 
     def test_degenerate_gradient_stroke_blocks_checker_and_exporter(self):
         self._assert_checker_and_exporter_reject(
@@ -604,6 +636,248 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
 
         self.assertEqual(canonical_result, legacy_result)
 
+    def test_authored_hashless_native_marker_has_no_baseline_warning(self):
+        content = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <g id="table" data-pptx-replace-with="table">
+    <metadata type="application/json">{"x":80,"y":80,"width":320,"height":180,"rows":[["A"]]}</metadata>
+    <rect x="80" y="80" width="320" height="180" fill="#FFFFFF"/>
+  </g>
+</svg>'''
+        result = self._check(content)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['warnings'], [])
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            svg_path = Path(tmp_dir) / 'authored.svg'
+            svg_path.write_text(content, encoding='utf-8')
+            stderr = io.StringIO()
+            with patch('sys.stderr', new=stderr):
+                convert_svg_to_slide_shapes(svg_path, native_objects=True)
+
+        self.assertNotIn('fallback-sha256', stderr.getvalue())
+
+    def test_imported_hashless_native_marker_warns_but_remains_compatible(self):
+        for source_attribute in (
+            'data-pptx-import-source="pptx"',
+            'data-pptx-native-source="pptx"',
+        ):
+            content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <g id="table" data-pptx-replace-with="table" {source_attribute}>
+    <metadata type="application/json">{{"x":80,"y":80,"width":320,"height":180,"rows":[["A"]]}}</metadata>
+    <rect x="80" y="80" width="320" height="180" fill="#FFFFFF"/>
+  </g>
+</svg>'''
+            with self.subTest(source_attribute=source_attribute):
+                result = self._check(content)
+                self.assertTrue(result['passed'])
+                self.assertIn(
+                    'imported marker has no data-pptx-fallback-sha256 baseline',
+                    '\n'.join(result['warnings']),
+                )
+
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    svg_path = Path(tmp_dir) / 'imported.svg'
+                    svg_path.write_text(content, encoding='utf-8')
+                    stderr = io.StringIO()
+                    with patch('sys.stderr', new=stderr):
+                        convert_svg_to_slide_shapes(
+                            svg_path,
+                            native_objects=True,
+                        )
+                self.assertIn(
+                    'imported marker has no data-pptx-fallback-sha256 baseline',
+                    stderr.getvalue(),
+                )
+
+    def test_explicit_authored_fallback_baseline_still_blocks_stale_native_export(self):
+        root = ET.fromstring(
+            '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <g id="table" data-pptx-replace-with="table">
+    <metadata type="application/json">{"x":80,"y":80,"width":320,"height":180,"rows":[["A"]]}</metadata>
+    <rect x="80" y="80" width="320" height="180" fill="#FFFFFF"/>
+  </g>
+</svg>'''
+        )
+        marker = next(elem for elem in root if elem.tag.endswith('g'))
+        stamp_native_fallback_baseline(marker, document_root=root)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            svg_path = Path(tmp_dir) / 'sealed-authored.svg'
+            ET.ElementTree(root).write(svg_path, encoding='unicode')
+            fresh_result = SVGQualityChecker().check_file(str(svg_path))
+            self.assertTrue(fresh_result['passed'])
+            self.assertEqual(fresh_result['warnings'], [])
+            convert_svg_to_slide_shapes(svg_path, native_objects=True)
+
+            rect = next(elem for elem in marker if elem.tag.endswith('rect'))
+            rect.set('fill', '#EEEEEE')
+            ET.ElementTree(root).write(svg_path, encoding='unicode')
+            stale_result = SVGQualityChecker().check_file(str(svg_path))
+            self.assertTrue(stale_result['passed'])
+            self.assertIn(
+                'visible SVG fallback differs from its recorded baseline',
+                '\n'.join(stale_result['warnings']),
+            )
+            convert_svg_to_slide_shapes(svg_path)
+            with self.assertRaisesRegex(
+                SvgNativeConversionError,
+                'fallback was edited after its baseline',
+            ):
+                convert_svg_to_slide_shapes(svg_path, native_objects=True)
+
+    def test_explicit_authored_invalid_fallback_baseline_still_fails_native_export(self):
+        content = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <g id="table" data-pptx-replace-with="table"
+     data-pptx-fallback-sha256="invalid">
+    <metadata type="application/json">{"x":80,"y":80,"width":320,"height":180,"rows":[["A"]]}</metadata>
+    <rect x="80" y="80" width="320" height="180" fill="#FFFFFF"/>
+  </g>
+</svg>'''
+        result = self._check(content)
+        self.assertTrue(result['passed'])
+        self.assertIn(
+            'must be a 64-digit SHA-256',
+            '\n'.join(result['warnings']),
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            svg_path = Path(tmp_dir) / 'invalid-baseline.svg'
+            svg_path.write_text(content, encoding='utf-8')
+            convert_svg_to_slide_shapes(svg_path)
+            with self.assertRaisesRegex(
+                SvgNativeConversionError,
+                'must be a 64-digit SHA-256',
+            ):
+                convert_svg_to_slide_shapes(svg_path, native_objects=True)
+
+    def test_authored_template_markers_do_not_preseed_static_fallback_hashes(self):
+        template_root = SCRIPT_DIR.parent / 'templates'
+        offenders = []
+        for svg_path in template_root.rglob('*.svg'):
+            root = ET.parse(svg_path).getroot()
+            for elem in root.iter():
+                if not native_replacement_kind(elem):
+                    continue
+                if native_import_source(elem) == 'pptx':
+                    continue
+                if elem.get('data-pptx-fallback-sha256') is not None:
+                    offenders.append(str(svg_path.relative_to(template_root)))
+        self.assertEqual(offenders, [])
+
+    def test_chart_templates_name_all_top_level_groups(self):
+        chart_root = SCRIPT_DIR.parent / 'templates' / 'charts'
+        anonymous_groups = []
+        duplicate_ids = []
+        for svg_path in chart_root.glob('*.svg'):
+            root = ET.parse(svg_path).getroot()
+            seen_ids = set()
+            for elem in root.iter():
+                element_id = elem.get('id')
+                if not element_id:
+                    continue
+                if element_id in seen_ids:
+                    duplicate_ids.append(
+                        f'{svg_path.name}: {element_id}'
+                    )
+                seen_ids.add(element_id)
+            for index, child in enumerate(list(root), start=1):
+                if child.tag.rsplit('}', 1)[-1] != 'g':
+                    continue
+                if (child.get('id') or '').strip():
+                    continue
+                anonymous_groups.append(
+                    f'{svg_path.name}: root child {index}'
+                )
+        self.assertEqual(anonymous_groups, [])
+        self.assertEqual(duplicate_ids, [])
+
+    def test_chart_templates_use_canonical_readable_font_sizes(self):
+        chart_root = SCRIPT_DIR.parent / 'templates' / 'charts'
+        noncanonical_sizes = []
+        undersized_text = []
+        for svg_path in chart_root.glob('*.svg'):
+            root = ET.parse(svg_path).getroot()
+            for elem in root.iter():
+                styles = parse_inline_style(elem.get('style'))
+                raw_size = styles.get('font-size', elem.get('font-size'))
+                if raw_size is None:
+                    continue
+                try:
+                    size = float(raw_size)
+                except ValueError:
+                    noncanonical_sizes.append(
+                        f'{svg_path.name}: {raw_size}'
+                    )
+                    continue
+                if not math.isfinite(size):
+                    noncanonical_sizes.append(
+                        f'{svg_path.name}: {raw_size}'
+                    )
+                    continue
+                if size < 12:
+                    element_id = elem.get('id') or elem.tag.rsplit('}', 1)[-1]
+                    undersized_text.append(
+                        f'{svg_path.name}: {element_id}={raw_size}'
+                    )
+        self.assertEqual(noncanonical_sizes, [])
+        self.assertEqual(undersized_text, [])
+
+    def test_chart_catalog_passes_checker_and_export_routes(self):
+        chart_root = SCRIPT_DIR.parent / 'templates' / 'charts'
+        index = json.loads(
+            (chart_root / 'charts_index.json').read_text(encoding='utf-8')
+        )
+        indexed_keys = set(index['charts'])
+        svg_paths = sorted(chart_root.glob('*.svg'))
+        svg_keys = {path.stem for path in svg_paths}
+        self.assertEqual(index['meta']['total'], len(indexed_keys))
+        self.assertEqual(svg_keys, indexed_keys)
+
+        for svg_path in svg_paths:
+            with self.subTest(chart=svg_path.stem):
+                checker_result = SVGQualityChecker().check_file(str(svg_path))
+                self.assertEqual(checker_result['errors'], [])
+
+                default_result = convert_svg_to_slide_shapes(svg_path)
+                default_xml = default_result[0]
+                self.assertNotIn('<c:chart ', default_xml)
+                self.assertNotIn('<cx:chart ', default_xml)
+                self.assertNotIn('<a:tbl>', default_xml)
+
+                root = ET.parse(svg_path).getroot()
+                replacement_kinds = {
+                    kind
+                    for elem in root.iter()
+                    if (kind := native_replacement_kind(elem))
+                }
+                stderr = io.StringIO()
+                with patch('sys.stderr', new=stderr):
+                    native_result = convert_svg_to_slide_shapes(
+                        svg_path,
+                        native_objects=True,
+                    )
+                native_xml = native_result[0]
+
+                if not replacement_kinds:
+                    self.assertEqual(native_result, default_result)
+                    continue
+
+                self.assertEqual(len(replacement_kinds), 1)
+                self.assertNotEqual(native_result, default_result)
+                if replacement_kinds == {'chart'}:
+                    self.assertTrue(
+                        '<c:chart ' in native_xml
+                        or '<cx:chart ' in native_xml
+                    )
+                    self.assertNotIn('<a:tbl>', native_xml)
+                elif replacement_kinds == {'table'}:
+                    self.assertIn('<a:tbl>', native_xml)
+                    self.assertNotIn('<c:chart ', native_xml)
+                    self.assertNotIn('<cx:chart ', native_xml)
+                else:
+                    self.fail(
+                        f'unsupported replacement kinds: {replacement_kinds}'
+                    )
+
     def test_compact_authored_preset_exports_one_native_shape(self):
         fragment = render_preset_shape_fragment(
             'rightArrow',
@@ -791,22 +1065,50 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
             f'{fragment}</svg>'
         )
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            project = Path(tmp_dir)
-            output_dir = project / 'svg_output'
-            output_dir.mkdir()
-            (project / 'spec_lock.md').write_text(
+        result = self._check_with_spec_lock(
+            source,
+            (
                 '# Execution Lock\n\n'
                 '## colors\n'
-                '- primary: #2563EB\n',
-                encoding='utf-8',
-            )
-            svg_path = output_dir / '01_cube.svg'
-            svg_path.write_text(source, encoding='utf-8')
-            result = SVGQualityChecker().check_file(str(svg_path))
+                '- primary: #2563EB\n'
+            ),
+        )
 
         self.assertTrue(result['passed'])
         self.assertNotIn('spec_lock drift', '\n'.join(result['warnings']))
+
+    def test_spec_lock_color_fallback_normalizes_every_declared_color(self):
+        source = '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 160 120">
+  <rect x="10" y="10" width="60" height="40" fill="#2563EB"/>
+  <rect x="90" y="10" width="60" height="40" fill="#10B981"/>
+</svg>'''
+        lock_text = (
+            '# Execution Lock\n\n'
+            '## colors\n'
+            '- primary: #2563EB\n'
+            '- success: #10B981\n'
+        )
+
+        with patch('svg_quality_checker._parse_export_color', None):
+            result = self._check_with_spec_lock(source, lock_text)
+
+        self.assertTrue(result['passed'])
+        self.assertNotIn('spec_lock drift', '\n'.join(result['warnings']))
+
+    def test_spec_lock_color_fallback_accepts_empty_color_section(self):
+        source = '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 160 120">
+  <rect x="10" y="10" width="60" height="40" fill="#FFFFFF"/>
+</svg>'''
+        lock_text = '# Execution Lock\n\n## colors\n'
+
+        with patch('svg_quality_checker._parse_export_color', None):
+            result = self._check_with_spec_lock(source, lock_text)
+
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['errors'], [])
+        self.assertIn('spec_lock drift', '\n'.join(result['warnings']))
 
     def test_foreign_namespace_cannot_impersonate_compact_svg_path(self):
         fragment = render_preset_shape_fragment(
@@ -1069,6 +1371,244 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
             with self.subTest(attribute=attribute):
                 with self.assertRaises(UseExpansionError):
                     expand_local_use_references(root)
+
+    def test_text_property_contract_preserves_registered_drawingml_semantics(self):
+        source = '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 640 360" font-style="italic">
+  <g id="text-group" style="font-weight:600; text-anchor:end;
+     letter-spacing:2; text-decoration:underline line-through">
+    <text x="500" y="160" font-family="Arial" font-size="24">
+      <tspan font-weight="500">Regular</tspan><tspan font-weight="600">Bold</tspan>
+    </text>
+  </g>
+</svg>'''
+        result = self._check(source)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['warnings'], [])
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            svg_path = Path(tmp_dir) / 'text-contract.svg'
+            svg_path.write_text(source, encoding='utf-8')
+            slide_xml = convert_svg_to_slide_shapes(svg_path)[0]
+
+        self.assertEqual(slide_xml.count('<a:r>'), 2)
+        self.assertEqual(slide_xml.count(' b="1"'), 1)
+        self.assertEqual(slide_xml.count(' i="1"'), 2)
+        self.assertEqual(slide_xml.count(' u="sng"'), 2)
+        self.assertEqual(slide_xml.count(' strike="sngStrike"'), 2)
+        self.assertEqual(slide_xml.count(' spc="150"'), 2)
+        self.assertIn('algn="r"', slide_xml)
+
+    def test_text_property_compatibility_aliases_warn_and_normalize(self):
+        compatible = '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 640 360">
+  <text x="40" y="100" font-family="Arial" font-size="24"
+        font-weight="medium" letter-spacing="2px"
+        text-decoration="line-through underline">Medium</text>
+  <text x="40" y="180" font-family="Arial" font-size="24"
+        font-weight="semibold">Semibold</text>
+</svg>'''
+        canonical = compatible.replace(
+            'font-weight="medium"', 'font-weight="500"'
+        ).replace(
+            'letter-spacing="2px"', 'letter-spacing="2"'
+        ).replace(
+            'text-decoration="line-through underline"',
+            'text-decoration="underline line-through"',
+        ).replace('font-weight="semibold"', 'font-weight="600"')
+
+        result = self._check(compatible)
+        warning_text = '\n'.join(result['warnings'])
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['errors'], [])
+        self.assertIn("font-weight='medium'", warning_text)
+        self.assertIn('font-weight="500"', warning_text)
+        self.assertIn("font-weight='semibold'", warning_text)
+        self.assertIn('font-weight="600"', warning_text)
+        self.assertIn("letter-spacing='2px'", warning_text)
+        self.assertIn('letter-spacing="2"', warning_text)
+        self.assertIn(
+            "text-decoration='line-through underline'",
+            warning_text,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            svg_path = Path(tmp_dir) / 'text-compatible.svg'
+            svg_path.write_text(compatible, encoding='utf-8')
+            compatible_xml = convert_svg_to_slide_shapes(svg_path)[0]
+            svg_path.write_text(canonical, encoding='utf-8')
+            canonical_xml = convert_svg_to_slide_shapes(svg_path)[0]
+
+        self.assertEqual(compatible_xml, canonical_xml)
+        self.assertEqual(compatible_xml.count(' b="1"'), 1)
+        self.assertIn(' spc="150"', compatible_xml)
+        self.assertIn(' u="sng"', compatible_xml)
+        self.assertIn(' strike="sngStrike"', compatible_xml)
+
+    def test_invalid_text_properties_block_checker_and_exporter(self):
+        cases = {
+            'anchor': ('text-anchor="banana"', 'text-anchor'),
+            'weight': ('font-weight="heavy"', 'font-weight'),
+            'style': ('font-style="oblique"', 'font-style'),
+            'decoration': ('text-decoration="notunderline"', 'text-decoration'),
+            'spacing': ('letter-spacing="banana"', 'letter-spacing'),
+            'spacing_keyword': ('letter-spacing="normal"', 'letter-spacing'),
+            'word_spacing': ('word-spacing="2"', 'word-spacing'),
+            'baseline': ('style="dominant-baseline:middle"', 'dominant-baseline'),
+            'unknown_attribute': ('textLength="120"', 'textLength'),
+            'inline_filter': ('style="filter:url(#shadow)"', 'filter'),
+        }
+        for name, (declaration, expected) in cases.items():
+            content = (
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                f'<text x="40" y="100" font-size="24" {declaration}>'
+                'Broken</text></svg>'
+            )
+            with self.subTest(name=name):
+                self._assert_checker_and_exporter_reject(
+                    content,
+                    expected,
+                    'invalid project text property',
+                )
+
+    def test_compatible_letter_spacing_units_match_unitless_px(self):
+        cases = (
+            ('2px', '2', '150'),
+            ('3pt', '4', '300'),
+            ('1em', '24', '1800'),
+        )
+        for compatible, canonical, spacing in cases:
+            source = (
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<text x="40" y="100" font-family="Arial" font-size="24" '
+                f'letter-spacing="{compatible}">Tracking</text></svg>'
+            )
+            normalized = source.replace(
+                f'letter-spacing="{compatible}"',
+                f'letter-spacing="{canonical}"',
+            )
+            with self.subTest(value=compatible):
+                result = self._check(source)
+                self.assertTrue(result['passed'])
+                self.assertIn(
+                    f'letter-spacing="{canonical}"',
+                    '\n'.join(result['warnings']),
+                )
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    svg_path = Path(tmp_dir) / 'tracking.svg'
+                    svg_path.write_text(source, encoding='utf-8')
+                    compatible_xml = convert_svg_to_slide_shapes(svg_path)[0]
+                    svg_path.write_text(normalized, encoding='utf-8')
+                    canonical_xml = convert_svg_to_slide_shapes(svg_path)[0]
+                self.assertEqual(compatible_xml, canonical_xml)
+                self.assertIn(f' spc="{spacing}"', compatible_xml)
+
+    def test_relative_font_sizes_share_one_inheritance_model(self):
+        source = '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 640 360" font-size="20">
+  <g id="relative-text" font-size="1.5em" letter-spacing="1em">
+    <text x="40" y="100" font-family="Arial" font-size="2em">Parent<tspan
+          font-size=".5em">Child</tspan></text>
+    <text x="40" y="180" font-family="Arial" font-size="2em">
+      <tspan x="40" dy="60" font-size=".5em">Positioned child</tspan>
+    </text>
+  </g>
+</svg>'''
+        result = self._check(source)
+        warning_text = '\n'.join(result['warnings'])
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['errors'], [])
+        self.assertIn('letter-spacing="30"', warning_text)
+        self.assertNotIn('letter-spacing="60"', warning_text)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            svg_path = Path(tmp_dir) / 'relative-text.svg'
+            svg_path.write_text(source, encoding='utf-8')
+            slide_xml = convert_svg_to_slide_shapes(svg_path)[0]
+
+        self.assertIn(' sz="4500"', slide_xml)
+        self.assertIn(' sz="2250"', slide_xml)
+        self.assertIn(' spc="2250"', slide_xml)
+        self.assertNotIn(' spc="4500"', slide_xml)
+
+    def test_invalid_inherited_and_overridden_text_values_cannot_hide(self):
+        cases = {
+            'root_inheritance': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360" font-weight="heavy">'
+                '<text x="40" y="100" font-size="24">Broken</text></svg>'
+            ), 'font-weight'),
+            'overridden_attribute': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<text x="40" y="100" font-size="24" font-weight="heavy" '
+                'style="font-weight:700">Broken</text></svg>'
+            ), 'font-weight'),
+            'tspan_anchor': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<text x="40" y="100" font-size="24">'
+                '<tspan text-anchor="end">Broken</tspan></text></svg>'
+            ), 'text-anchor'),
+            'spacing_range': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<text x="40" y="100" font-size="24" '
+                'letter-spacing="5333.35">Broken</text></svg>'
+            ), 'letter-spacing'),
+            'malformed_inheritance': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<g style="font-weight"><text x="40" y="100" '
+                'font-size="24">Broken</text></g></svg>'
+            ), 'malformed inline style'),
+            'hidden_invalid_font_size': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<text x="40" y="100" '
+                'style="font-size:banana; font-size:24">Broken</text></svg>'
+            ), 'font-size'),
+            'wrong_element': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<rect x="20" y="20" width="100" height="60" '
+                'font-weight="bold"/></svg>'
+            ), 'cannot carry text property'),
+            'unsupported_group_property': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<g line-height="2"><text x="40" y="100" '
+                'font-size="24">Broken</text></g></svg>'
+            ), 'line-height'),
+            'unsupported_group_style': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<g style="font-feature-settings:smcp"><text x="40" '
+                'y="100" font-size="24">Broken</text></g></svg>'
+            ), 'font-feature-settings'),
+            'unregistered_prefixed_property': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<g font-optical-sizing="auto"><text x="40" y="100" '
+                'font-size="24">Broken</text></g></svg>'
+            ), 'font-optical-sizing'),
+            'malformed_prefixed_property': ((
+                '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 640 360">'
+                '<g style="font-optical-sizing"><text x="40" y="100" '
+                'font-size="24">Broken</text></g></svg>'
+            ), 'malformed inline style'),
+        }
+        for name, (content, expected) in cases.items():
+            with self.subTest(name=name):
+                self._assert_checker_and_exporter_reject(
+                    content,
+                    expected,
+                    'invalid project text property',
+                )
 
 
 if __name__ == '__main__':

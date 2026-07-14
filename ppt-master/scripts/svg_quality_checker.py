@@ -173,6 +173,13 @@ except ImportError:
     _validate_preset_geometry_metadata = None
 
 try:
+    from svg_to_pptx.drawingml.text_properties import (
+        project_text_property_diagnostics as _project_text_property_diagnostics,
+    )
+except ImportError:
+    _project_text_property_diagnostics = None
+
+try:
     from pptx_to_svg.preset_authoring import (
         AUTHORING_ATTR as _AUTHORING_ATTR,
         authored_preset_encoding as _authored_preset_encoding,
@@ -1149,6 +1156,7 @@ class SVGQualityChecker:
                 # 2g. Validate the closed authoring-property surface and
                 # conditional definition interfaces before export.
                 self._check_authoring_property_contract(root, result)
+                self._check_text_property_contract(root, result)
                 self._check_paint_compatibility(root, result)
                 self._check_reference_spelling(root, result)
                 self._check_definition_contract(root, result)
@@ -1652,6 +1660,50 @@ class SVGQualityChecker:
                     )
 
         result['errors'].extend(sorted(errors))
+
+    def _check_text_property_contract(
+        self,
+        root: ET.Element,
+        result: Dict,
+    ) -> None:
+        """Validate text property names and values with the export contract."""
+        if _project_text_property_diagnostics is None:
+            result['warnings'].append(
+                "Unable to import the shared text-property validator; native "
+                "export will still validate text properties."
+            )
+            return
+
+        errors: set[str] = set()
+        recommendations: Counter[tuple[str, str, str]] = Counter()
+        examples: Dict[tuple[str, str, str], List[str]] = defaultdict(list)
+        for diagnostic in _project_text_property_diagnostics(root):
+            if diagnostic.severity == 'error':
+                errors.add(diagnostic.message)
+                continue
+            if diagnostic.canonical is None:
+                continue
+            key = (
+                diagnostic.name,
+                diagnostic.raw,
+                diagnostic.canonical,
+            )
+            recommendations[key] += 1
+            if (
+                diagnostic.label not in examples[key]
+                and len(examples[key]) < 3
+            ):
+                examples[key].append(diagnostic.label)
+
+        result['errors'].extend(sorted(errors))
+        for (name, raw, canonical), count in sorted(recommendations.items()):
+            shown_examples = ', '.join(examples[(name, raw, canonical)])
+            result['warnings'].append(
+                f"Recommendation: text property {name}={raw!r} is "
+                f"converter-compatible in {count} location(s) "
+                f"({shown_examples}); generated SVG should prefer "
+                f'{name}="{canonical}". No change is required for export.'
+            )
 
     def _check_definition_contract(
         self,
@@ -3258,6 +3310,10 @@ class SVGQualityChecker:
                 color, _alpha = _parse_export_color(v)
                 if color:
                     allowed_colors.add(color)
+            else:
+                color = _normalize_hex_rgb(v)
+                if color:
+                    allowed_colors.add(color)
 
         # A validated compact preset may contain registry-derived darken/lighten
         # layer colors.  Their base paint still comes from spec_lock; the exact
@@ -3283,10 +3339,6 @@ class SVGQualityChecker:
                             color = _normalize_hex_rgb(raw_value)
                         if color:
                             allowed_colors.add(color)
-            else:
-                color = _normalize_hex_rgb(v)
-                if color:
-                    allowed_colors.add(color)
 
         typo = lock.get('typography', {})
         numeric_size_re = re.compile(r'^(?:\d+(?:\.\d+)?|\.\d+)$')
