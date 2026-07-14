@@ -591,6 +591,10 @@ as uppercase six-digit `#RRGGBB`. `fill` / `stroke` may instead use lowercase
 short/alpha HEX, functional colors, and bare legacy HEX remain supported input.
 The quality checker prints an optional canonical rewrite as a recommendation
 warning; it does not require modification or block export.
+Explicit empty, malformed, or unrecognized paint values are errors in both
+Checker and exporter preflight; neither converts unknown intent into
+`noFill` or default black. Omitted properties still follow their own element
+contract, such as SVG's default fill or §6.3's required gradient-stop color.
 
 | Intent | Canonical authoring | Native result / fidelity |
 |---|---|---|
@@ -628,8 +632,8 @@ alias for `rgba()` on a fill-only object.
 accepts finite numeric values that SVG/CSS clamps into that interval;
 `stop-opacity` and `flood-opacity` additionally accept finite percentages. The
 checker reports those supported non-default spellings as recommendation warnings.
-Malformed or non-finite values remain errors because the exporter cannot
-preserve their intent.
+Malformed or non-finite values are errors in both Checker and exporter
+preflight; neither substitutes an opaque default for unknown intent.
 `fill="transparent"` / `stroke="transparent"` become no fill/line; use a color
 plus alpha when a painted transparent layer must remain represented. Prefer
 descendant alpha over group opacity when isolated compositing matters (§2.2).
@@ -657,7 +661,8 @@ Linear export preserves stops/alpha/direction but reduces coordinates to an
 angle. Radial export becomes a centered circular gradient and does not preserve
 `cx/cy/r/fx/fy`. Gradient strokes remain editable, but PPTX-to-SVG re-import may
 retain only the first stop. Stop alpha and element opacity multiply.
-The quality checker validates definition location, references, and paint context.
+The quality checker and exporter preflight both validate definition location,
+references, gradient structure, and paint context from the same closed contract.
 
 ```xml
 <defs>
@@ -684,6 +689,7 @@ Filters are native-effect metadata, not a general pixel-filter surface.
 | Public targets | `<rect>`, `<circle>`, `<path>`, `<text>` |
 | Required primitive | `feDropShadow` or `feGaussianBlur` |
 | Accepted helpers | `feOffset`, `feFlood`, `feComposite`, `feMerge`, `feMergeNode`, `feComponentTransfer`, linear `feFuncA` |
+| Numeric values | Finite unitless values; non-negative `stdDeviation`; finite `dx` / `dy`; `feFuncA slope` within `0..1` |
 | Classification | Meaningful non-zero offset → one outer shadow; zero/no offset → one glow |
 | Fidelity | `Approximate`; one filter becomes one DrawingML effect |
 
@@ -694,6 +700,9 @@ Native export does not preserve filter-region, `in/in2/result`, merge order, or
 composite topology. Other primitives, multiple independent effects, filters on
 `<image>` / `<tspan>` / `<g>` / unsupported targets are forbidden; apply the
 effect to supported objects or use explicit layers.
+The quality checker and exporter preflight enforce the same definition,
+reference, primitive, target, and numeric-value contract; malformed values are
+never replaced by effect defaults during native export.
 
 ```xml
 <defs>
@@ -758,6 +767,17 @@ alpha `0.03–0.05`, increasing offset/radius, and optional same-family tint nea
 | Uniform fade | `<image opacity="...">` | Native picture alpha |
 | Shaped picture | §1.2 image-only `clip-path` | Preset/custom picture geometry |
 
+**Hard rule — closed image aspect-ratio grammar**: on `<image>`, omit
+`preserveAspectRatio` for the default `xMidYMid meet`, use `none` alone for
+stretch, or use one of the nine case-sensitive alignments (`xMinYMin`,
+`xMidYMin`, `xMaxYMin`, `xMinYMid`, `xMidYMid`, `xMaxYMid`, `xMinYMax`,
+`xMidYMax`, `xMaxYMax`) followed by explicit `meet` or `slice`. Generated SVG
+always includes the mode on an aligned value. An alignment without a mode and
+values needing whitespace normalization are compatible input and receive a
+Checker recommendation. Empty values, `defer`, unknown/wrong-case alignments or
+modes, `none` with a mode, and extra tokens are errors; the converter never
+guesses a fallback.
+
 **Hard rule — fit/clip interaction**: a non-trivial clip disables `meet`
 frame-fit. Match the image box to the source ratio or use `slice`. Do not apply
 filters directly to `<image>`.
@@ -782,12 +802,28 @@ fidelity.
 | Surface | Contract / native result |
 |---|---|
 | Solid stroke/width/alpha | `Native-stable` editable line |
-| `4,4`; `2,2`; `8,4`; `8,4,2,4` | `dash`; `sysDot`; `lgDash`; `lgDashDot` (`Native-normalized`) |
-| Other custom dash | Exactly two positive finite unitless numbers (`dash gap`); export scales/quantizes against stroke width; longer arrays reduce to the first pair; `Native-normalized` |
+| `4,4`; `6,3`; `2,2`; `8,4`; `8,4,2,4` (comma or space separators) | `dash`; `dash`; `sysDot`; `lgDash`; `lgDashDot` (`Native-normalized`) |
+| Canonical custom dash | Exactly two positive finite unitless ordinary decimals (`dash gap`); export scales/quantizes against stroke width; `Native-normalized` |
+| Compatible custom dash | Three or more positive finite unitless values are accepted but reduce to the first pair with a Checker recommendation; compatible numeric spellings also warn |
 | `stroke-linecap` | `butt`, `round`, `square`; `Native-stable` |
 | `stroke-linejoin` | `miter`, `round`, `bevel`; `Native-stable` |
+| `vector-effect` | Exactly `none` or `non-scaling-stroke`; export resolves the choice into native line width (`Native-normalized`) |
+| `stroke-dashoffset` | No general line mapping; allowed only as a direct finite unitless ordinary-decimal attribute on a §6.10 thick-circle shorthand (`px` suffix is compatible input and warns) |
 | Gradient stroke | §6.3; re-import may flatten to first stop |
 | `marker-start` / `marker-end` | §1.1 native line end; type `Native-normalized`, size `Approximate` (`sm/med/lg`) |
+
+The dash grammar is closed: exact lowercase `none`, or at least two finite
+unitless numbers separated by whitespace or one comma. Generated SVG uses
+ordinary decimal spellings. A leading plus sign, exponent, trailing decimal
+point, surrounding whitespace, or longer custom list is compatible input and
+produces a non-blocking normalization recommendation. Unknown units, one-value
+arrays, empty or repeated comma fields, non-finite values, and negative or zero
+entries are errors. The only zero exception is a gap declared directly on the
+§6.10 thick-circle element.
+
+Generated cap, join, and `vector-effect` values use the exact lowercase tokens
+in the table. Surrounding whitespace is compatible input and produces a
+recommendation; every other token is an error.
 
 Match marker fill to the parent stroke. Use markers for connectors and §6.10
 calculated geometry for a manual diagonal arrowhead. When exact grid spacing
@@ -957,9 +993,11 @@ compound ring.
 
 - One circle per segment; `fill="none"`; the circle may use one `rotate` for its
   start angle, and ancestor transforms must be translate-only.
-- Exactly two non-preset finite unitless values (`dash gap`); finite unitless `stroke-dashoffset`.
+- Exactly two non-preset finite unitless ordinary-decimal values (`dash gap`);
+  `stroke-dashoffset` is a direct finite unitless ordinary-decimal attribute.
 - `0 < stroke-width < 2r`, `stroke-width/r >= 0.15`,
-  `0 < dash < 2πr`, `gap >= 0`, and `dash + gap >= 2πr`.
+  `0 < dash < 2πr`, `gap >= 0`, and `dash + gap >= 2πr - 1` SVG unit. The
+  one-unit tolerance exists only for integer-rounded circumference values.
 - Native construction uses only the first dash and re-imports as a freeform.
   Its native start is 90° counterclockwise from the SVG preview; use explicit
   arcs whenever start angle, cap, or radial precision matters.
