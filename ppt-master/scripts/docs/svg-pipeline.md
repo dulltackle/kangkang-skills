@@ -8,16 +8,19 @@ The supported delivery contract has one PPTX path: `svg_output/` → the project
 
 ## `svg_authoring_view.py`
 
-Create a lightweight inspection/authoring projection of one PPTX-imported SVG
-or a directory of imported SVGs:
+Create a lightweight editable authoring IR bundle from one PPTX-imported SVG or
+a directory of imported SVGs:
 
 ```bash
-python3 scripts/svg_authoring_view.py <svg-file-or-directory> -o <output-dir>
+python3 scripts/svg_authoring_view.py <svg-file-or-directory> -o <output-dir> \
+  --projection-kind layered
 ```
 
 The operation is non-destructive and refuses existing output files unless
 `--force` is explicit. It never writes back to the source SVG. The JSON report
-on stdout records original/projected byte counts and removals by category.
+on stdout records original/projected byte counts and removals by category. The
+output directory contains the editable SVGs and one atomic
+`authoring_manifest.json` sidecar.
 
 The projected copy:
 
@@ -27,14 +30,16 @@ The projected copy:
 - removes source-object identity/style/hash attributes that are only useful to
   an exact import round trip;
 - keeps visible paths, text, images, stable ids, Master/Layout root markers,
-  and selected native-shape intent useful for inspection; and
+  selected native-shape intent, and a document-local `data-pptx-source-ref` on
+  each imported logical object;
 - rewrites relative local asset references for the projection's new location.
 
-The complete imported SVG remains the evidence source for mirror restoration.
-The exporter does not read the import workspace or the projection. The
-projection is deliberately not a template generator, not a replacement for
-the explicit Master/Layout restoration workflow, and not a supported release
-input to `svg_to_pptx.py`.
+The manifest stores relative source/authoring filenames, source and initial
+authoring hashes, and source element paths. It deliberately does not copy the
+opaque payload. The authoring bundle is the editable source for template
+creation; the complete imported SVG remains immutable native-payload backing.
+Final `templates/*.svg` files are materialized and validated from that pair.
+The IR directory itself is not a supported direct input to `svg_to_pptx.py`.
 
 This projection is separate from canonical preset authoring. New project SVGs
 and project-owned templates use the compact authored form: one atomic
@@ -47,6 +52,72 @@ evidence required for import and round-trip decisions. The normative boundary
 is owned by [`shared-standards.md`](../../references/shared-standards.md), with
 authoring guidance in
 [`native-shape-authoring.md`](../../references/native-shape-authoring.md).
+
+## `extract_svg_assets.py`
+
+Factor large vector subtrees out of lightweight authoring IR documents and
+replace them with compact `<use data-icon>` references:
+
+```bash
+python3 scripts/extract_svg_assets.py <layered_svg_dir> \
+  --icons-dir <icons_dir> --icon-namespace imported \
+  --inplace --id-prefix layered
+python3 scripts/extract_svg_assets.py <flat_svg_dir> \
+  --icons-dir <icons_dir> --icon-namespace imported \
+  --reuse-inventory <layered_inventory.json> \
+  --inplace --id-prefix flat
+```
+
+The first pass records a source fingerprint before namespacing each extracted
+asset's internal ids. The second pass reuses a fingerprint-matched asset and
+writes no duplicate SVG file. Unmatched flat-only subtrees still extract
+normally. Use `--clean-stale` on both import-workspace passes to remove stale
+generated files for their respective prefixes. In create-template workspaces,
+`imported` is the fixed namespace: assets live once under `icons/imported/`, and
+the working SVGs reference them as `data-icon="imported/<name>"`. Inventory
+entries retain source refs from each extracted subtree, allowing expansion to
+restore the authoring-manifest mapping. A rerun on an
+already rewritten namespaced projection inventories those references and does
+not progressively extract their remaining parent or sibling geometry.
+
+## `mirror_template_materialize.py`
+
+Compile one Type A PPTX import workspace into a deterministic structured mirror
+template after the layered authoring IR has been reviewed and edited:
+
+```bash
+python3 scripts/mirror_template_materialize.py \
+  <import_workspace> <empty_template_workspace>
+```
+
+The command treats `<import_workspace>/authoring-svg/` as the sole editable
+source. It validates the layered authoring manifest, immutable lossless SVG
+hashes, source PPTX hash, complete Master/Layout/Slide graph, inheritance
+visibility facts, source-ref closure, and extracted-vector inventory before it
+writes anything. It refuses a non-empty destination and stages the whole result
+before atomic publication, so a failed preflight cannot leave a partial
+template.
+
+Materialization preserves source page order and emits one definition-only
+`layout_<layout_key>.svg` for every source Layout unused by all source Slides.
+It mechanically expands fixed Master/Layout group wrappers into direct atoms,
+rehydrates only unchanged converter-supported Slide-local/slot refs, keeps the
+current SVG fallback for edited refs, restores explicit text hard breaks, and
+removes every IR-only source ref. Source `p:sldLayout@showMasterSp` and
+`p:sld@showMasterSp` facts become canonical root
+`data-pptx-show-master-shapes` and
+`data-pptx-show-inherited-shapes` booleans. An imported text placeholder keeps
+its authoritative native frame on the `<text data-pptx-frame>` carrier so the
+Slide-local frame can differ from the reusable Layout bounds without collapsing
+to glyph bounds.
+
+The output routes reusable vectors once to `icons/imported/`, bitmaps to
+`images/`, and other referenced files to `templates/assets/`. The JSON report
+is written to stdout only. The command intentionally does not create
+`templates/design_spec.md`; Template_Designer writes that personality and page
+roster after materialization. This compiler is for Type A mirror restoration,
+not `standard` / `fidelity`, loose Type B SVGs, ordinary generation, finalize,
+or export.
 
 ## `extract_svg_pictures.py`
 

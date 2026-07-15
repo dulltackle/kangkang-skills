@@ -28,7 +28,7 @@ Other files link here instead of restating its contracts.
 | Text treatments | Mixed runs, tracking, underline, strikethrough, gradient fill, outline, transparency, watermark text, and text glow | §4.2, §6.7 |
 | Transforms and composition | Translate, scale, rotate, mirror, supported matrix composition, layering, and static local reuse | §1.3, §6.8 |
 | Freeform geometry | Full SVG path vocabulary, curves, organic containers, multi-subpaths, and asymmetric rounded rectangles | §6.9 |
-| Imported PowerPoint shapes | Lossless import payload, lightweight inspection projection, and selective restoration of preset/custom geometry, connectors, and unchanged native text bodies | §1.4 |
+| Imported PowerPoint shapes | Immutable lossless payload backing, editable authoring IR, and selective restoration of preset/custom geometry, connectors, and unchanged native text bodies | §1.4 |
 | Authored PowerPoint preset shapes | Registry-generated visible fragments that export as one native preset shape or connector | §1.5; [`native-shape-authoring.md`](./native-shape-authoring.md) |
 | Radial/chart geometry | Pie/donut arcs, dashed-circle ring segments, gauges, progress rings, sunbursts, and diagonal polygon arrowheads | §6.10 |
 | Constructed visual styles | Faux glass, hand-drawn marks, ink wash, Riso offset, pixel grid, halftone, isometric facets, paper cut, and line-plus-area data treatment | §6.11 |
@@ -296,10 +296,18 @@ one. This array is still diagnostic metadata, not an authoring surface.
 
 | Representation | Contract |
 |---|---|
-| Lossless import SVG | Keep complete native payload, hidden carriers, and preview evidence in the temporary analysis workspace. This is the round-trip source, not the model-facing authored page. |
-| Lightweight authoring projection | Exclude opaque payload and duplicate hidden carriers from model context while retaining visible shape intent and logical ids needed to locate an adopted object in the lossless import. It is not an export source. |
+| Lossless import SVG | Keep complete native payload, hidden carriers, and preview evidence in the temporary analysis workspace. It is immutable native-payload backing, not the editable template source. |
+| Authoring IR bundle | Keep editable SVGs plus `authoring_manifest.json`. Exclude opaque payload and duplicate hidden carriers from model context while retaining visible shape intent and a stable document-local `data-pptx-source-ref` on each imported logical object. The manifest owns source paths and initial hashes; it never duplicates raw payload. |
 | `standard` / `fidelity` output | Use the compact authored-preset contract (§1.5) for newly authored stock shapes; do not transplant opaque import payload or source topology. |
-| `mirror` output | Keep the expanded lossless representation and supported imported metadata only on unchanged Slide-local/slot objects. Expand fixed Master/Layout group wrappers into direct semantic atoms while preserving source ownership, paint order, and visible appearance. |
+| `mirror` output | Materialize from the edited authoring IR. Rehydrate supported imported metadata only when a Slide-local/slot object's source ref and initial authoring hash still match; otherwise keep the current SVG fallback. Expand fixed Master/Layout group wrappers into direct semantic atoms while preserving source ownership, paint order, and visible appearance. |
+
+**Hard rule — authoring source refs**: `data-pptx-source-ref` is reserved for
+the create-template authoring IR. Its value is unique within one authoring SVG,
+not across the workspace, and must be resolved through that document's
+`authoring_manifest.json` record. Moving a referenced subtree into
+`icons/imported/` for readability must preserve the attribute and record it in
+the vector inventory; re-inlining restores the same mapping. Final materialized
+template SVGs and normal project `svg_output/` must not contain this attribute.
 
 **Hard rule — structural-layer boundary**: An unchanged imported logical object
 may keep currently supported metadata while it remains Slide-local or inside a
@@ -312,10 +320,10 @@ to exactly one native shape/connector. Do not use this normalization to change
 ownership or appearance.
 
 **Hard rule — selective payload**: Do not copy every imported metadata block into
-an authored template. Keep the full lossless import SVG separately as the
-audit/fallback source. Mirror may reuse only metadata already supported by the
-converter on unchanged Slide-local/slot objects; unsupported or edited objects
-use the current SVG fallback. `data-pptx-replace-with` remains reserved for the
+an authored template. Keep the full lossless import SVG separately as immutable
+audit/fallback backing. Mirror may reuse only metadata already supported by the
+converter on source-ref/hash-matching Slide-local/slot objects; unsupported or
+edited objects use the current SVG fallback. `data-pptx-replace-with` remains reserved for the
 optional PowerPoint-native Chart/Table replacement contract.
 
 **Registry and rendering rules**:
@@ -1749,8 +1757,12 @@ Every new SVG project declares one deterministic route. Free-design and brand-on
 
 **Template behavior**: Strict preserves the selected prototype's declared Master/Layout/slot contract. Adaptive retains its Master and may allocate a new Layout key/name only when fixed Layout atoms or slot topology/bounds change; update the lock during authoring. Mirror-created prototypes preserve restored source identity, literal paint, typography, effects, atomic geometry, and referenced assets. `standard` / `fidelity` never make source topology authoritative; mirror does not synthesize a replacement topology.
 
-Imported inherited-shape visibility is an analysis fact, not generated SVG
-authoring syntax; see
+Imported inherited-shape visibility remains an immutable analysis fact until a
+structured mirror is materialized. The final mirror root carries that fact with
+the two optional canonical booleans below so export can restore the source
+package fields without inferring visibility from which shapes happen to be
+present. Authored `standard` / `fidelity` templates normally omit both and use
+the default `true`. See
 [`powerpoint-svg-mapping.md`](../../../docs/powerpoint-svg-mapping.md) §2 and
 [`conversion.md`](../scripts/docs/conversion.md#pptx_to_svgpy).
 
@@ -1787,6 +1799,8 @@ prototype size remain unchanged.
 | `data-pptx-master-name="Default Master"` | root `<svg>` | Sets the Master picker/display name |
 | `data-pptx-layout="content"` | root `<svg>` | Binds the slide to one generated reusable layout key |
 | `data-pptx-layout-name="Title and Content"` | root `<svg>` | Sets the PowerPoint layout-picker name; defaults from the layout key |
+| `data-pptx-show-master-shapes="false"` | root `<svg>` | Accepts exact lowercase `true` or `false` and restores the assigned Layout's `p:sldLayout@showMasterSp`; every SVG using the same Layout key must repeat the same value; omission means `true` |
+| `data-pptx-show-inherited-shapes="false"` | root `<svg>` | Accepts exact lowercase `true` or `false` and restores this Slide's `p:sld@showMasterSp`; `false` hides inherited Layout and Master shapes without removing backgrounds, placeholders, parts, or parent relationships; omission means `true` |
 | `data-pptx-layer="master"` | direct semantic atom | Moves one repeated static object/background into the named Slide Master; ordinary `<g>` is forbidden, while one validated compact authored-preset `<g>` (§1.5) is an atomic exception |
 | `data-pptx-layer="layout"` | direct semantic atom | Moves one repeated static object/background into the selected Layout; ordinary `<g>` is forbidden, while one validated compact authored-preset `<g>` (§1.5) is an atomic exception |
 | `data-pptx-layer="slide"` | direct full-canvas solid `<rect>` only | Writes a one-page override as Slide `p:bg` |
@@ -1797,7 +1811,7 @@ prototype size remain unchanged.
 | `data-pptx-placeholder-binding="proxy"` | composite `object` slot `<g>` only | Keeps the visible group ordinary and creates one hidden transparent binding proxy |
 | `data-pptx-editable="false"` | master/layout element or slide background | Declares intentional editing outside ordinary slide content |
 
-**Hard rule — explicit only**: On a structured deck/layout template route, every SVG requires the four root Master/Layout identity attributes. Every Master/Layout atom and slot requires a unique stable `id` and is a direct root child. Layouts with zero slots are valid. `data-pptx-layout-kind`, `distilled`, and `utility` are legacy metadata and fail the structured contract. Flat free-design/brand-only pages omit the entire interface.
+**Hard rule — explicit only**: On a structured deck/layout template route, every SVG requires the four root Master/Layout identity attributes. Optional inherited-shape visibility uses only exact lowercase `true` / `false`; other spellings fail, and omission means `true`. Every Master/Layout atom and slot requires a unique stable `id` and is a direct root child. Layouts with zero slots are valid. `data-pptx-layout-kind`, `distilled`, and `utility` are legacy metadata and fail the structured contract. Flat free-design/brand-only pages omit the entire interface, including the visibility attributes.
 
 **Layer order**: Author the SVG in PowerPoint paint order: Master background,
 Layout background, optional Slide background, remaining Master atoms, remaining Layout atoms,
@@ -1833,6 +1847,14 @@ native text frame. Use the default paragraph merge; `--no-merge` cannot supply
 several line shapes as one
 PowerPoint placeholder prototype/binding. Leave strict-line text Slide-local
 when separate frames are the required result.
+
+For a materialized mirror, an imported text carrier may additionally keep the
+source shape's positive `data-pptx-frame="x y width height"`. That frame owns
+the Slide carrier `a:xfrm`; the converter reconstructs text-body insets from the
+visible SVG anchor/baseline instead of shrinking the shape to glyph bounds.
+`data-pptx-placeholder-bounds` remains the reusable Layout default and may
+legitimately differ. Do not add `data-pptx-frame` to an authored
+`standard` / `fidelity` carrier merely to duplicate its Layout bounds.
 
 **Blank text carrier**: Leave a marked text carrier empty or whitespace-only
 when the placeholder must remain visually blank. Export materializes one
