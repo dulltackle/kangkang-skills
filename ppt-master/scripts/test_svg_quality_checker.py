@@ -2,6 +2,7 @@
 """Regression tests for SVG checker compatibility severity."""
 
 import base64
+import copy
 import contextlib
 import io
 import json
@@ -10,6 +11,7 @@ import re
 import sys
 import tempfile
 import unittest
+import warnings
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -27,6 +29,7 @@ from animation_config import main as animation_config_main
 from svg_quality_checker import SVGQualityChecker
 from pptx_shapes import (
     CONNECTOR_PRESET_TYPES,
+    OOXML_COORDINATE_MAX,
     get_preset_registry,
     svg_preset_preview_fingerprint,
     svg_text_fingerprint,
@@ -36,13 +39,16 @@ from pptx_to_svg.preset_authoring import (
     render_preset_shape_fragment,
     validate_authored_preset_tree,
 )
-from pptx_to_svg.emu_units import Xfrm
+from pptx_to_svg.emu_units import Xfrm, format_ooxml_alpha
+from pptx_to_svg.color_resolver import ColorPalette, resolve_color
 from pptx_to_svg.effect_to_svg import (
     convert_effects,
     unsupported_target_effect_metadata,
 )
+from pptx_to_svg.fill_to_svg import resolve_fill
 from pptx_to_svg.preset_registry_to_svg import render_preset_geometry
 from pptx_to_svg.preset_svg_markup import serialize_preset_layers
+from pptx_to_svg.ln_to_svg import _build_arrow_marker, resolve_stroke
 from pptx_to_svg.converter import ConvertOptions, convert_pptx_to_svg
 from pptx_to_svg.ooxml_loader import parse_ooxml_boolean
 from pptx_to_svg.txbody_to_svg import convert_txbody, convert_vertical_txbody
@@ -57,8 +63,13 @@ from svg_to_pptx.canvas_contract import (
 )
 from svg_to_pptx.drawingml.converter import (
     SvgNativeConversionError,
-    _txbody_has_run_effects,
     convert_svg_to_slide_shapes,
+)
+from svg_to_pptx.drawingml.context import ConvertContext
+from svg_to_pptx.drawingml.styles import (
+    build_gradient_fill,
+    build_stroke_xml,
+    get_stroke_opacity,
 )
 from svg_to_pptx.pptx_package.builder import create_pptx_with_native_svg
 from svg_to_pptx.pptx_package.dimensions import (
@@ -67,9 +78,12 @@ from svg_to_pptx.pptx_package.dimensions import (
 )
 from svg_to_pptx.drawingml.elements import parse_project_nested_svg_crop
 from svg_to_pptx.drawingml.utils import (
+    EMU_PER_PX,
     estimate_text_width,
     parse_inline_style,
     project_filter_errors,
+    quantize_ooxml_alpha,
+    quantize_ooxml_unit_ratio,
     split_project_text_clusters,
 )
 from svg_to_pptx.native_objects import (
@@ -81,8 +95,13 @@ from svg_to_pptx.native_objects import (
     stamp_native_fallback_baseline,
 )
 from svg_to_pptx.pptx_package.template_structure import (
+    NativeLayoutSpec,
+    NativePlaceholderSpec,
+    TemplateElementSpec,
+    TemplateSlideSpec,
     TemplateStructureError,
     _validate_placeholder_carrier,
+    match_native_placeholders,
     parse_template_slide,
 )
 from svg_to_pptx.use_expander import UseExpansionError, expand_local_use_references
@@ -90,9 +109,14 @@ from template_preview_pptx import _canvas_viewbox as preview_canvas_viewbox
 from template_import.manifest import (
     _effective_inherited_image_assets,
     build_manifest,
+    extract_placeholder_text_style,
 )
 from template_import.native_structure import build_native_structure
-from pptx_effects import project_effect_status_errors
+from pptx_effects import (
+    project_effect_status_errors,
+    txbody_has_run_effects,
+    unsupported_effect_metadata,
+)
 
 
 class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
@@ -232,6 +256,7 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
 
         pml = 'http://schemas.openxmlformats.org/presentationml/2006/main'
         dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+
         with zipfile.ZipFile(path, 'r') as source:
             members = [(info, source.read(info.filename)) for info in source.infolist()]
         replacements: dict[str, bytes] = {}
@@ -259,6 +284,383 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
                 }:
                     sp_pr.remove(child)
             sp_pr.append(ET.fromstring(effect_xml))
+            replacements[slide_part] = ET.tostring(
+                slide_root,
+                encoding='utf-8',
+                xml_declaration=True,
+            )
+
+        rewritten = path.with_name(f'{path.stem}-rewritten.pptx')
+        with zipfile.ZipFile(rewritten, 'w') as target:
+            for info, data in members:
+                target.writestr(info, replacements.get(info.filename, data))
+        rewritten.replace(path)
+
+    @staticmethod
+    def _write_vertical_run_effect_fixture(
+        path: Path,
+        effects: list[str | None],
+        shape_effects: list[str | None] | None = None,
+    ) -> None:
+        """Write vertical text slides with optional run and shape effects."""
+        if shape_effects is not None and len(shape_effects) != len(effects):
+            raise ValueError('shape_effects must match the run-effect count')
+        presentation = Presentation()
+        blank = presentation.slide_layouts[6]
+        for index, _effect in enumerate(effects, start=1):
+            slide = presentation.slides.add_slide(blank)
+            shape = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE,
+                Emu(914400),
+                Emu(914400),
+                Emu(1371600),
+                Emu(2743200),
+            )
+            shape.name = f'VERTICAL EFFECT TEXT {index}'
+            shape.text = '甲乙'
+        presentation.save(path)
+
+        pml = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+        dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        with zipfile.ZipFile(path, 'r') as source:
+            members = [(info, source.read(info.filename)) for info in source.infolist()]
+        member_data = {info.filename: data for info, data in members}
+        replacements: dict[str, bytes] = {}
+
+        for index, effect_xml in enumerate(effects, start=1):
+            slide_part = f'ppt/slides/slide{index}.xml'
+            slide_root = ET.fromstring(member_data[slide_part])
+            target = next(
+                shape
+                for shape in slide_root.findall(f'.//{{{pml}}}sp')
+                if (
+                    shape.find(f'{{{pml}}}nvSpPr/{{{pml}}}cNvPr')
+                    is not None
+                    and shape.find(
+                        f'{{{pml}}}nvSpPr/{{{pml}}}cNvPr'
+                    ).get('name') == f'VERTICAL EFFECT TEXT {index}'
+                )
+            )
+            tx_body = target.find(f'{{{pml}}}txBody')
+            assert tx_body is not None
+            body_pr = tx_body.find(f'{{{dml}}}bodyPr')
+            assert body_pr is not None
+            body_pr.set('vert', 'eaVert')
+            run = tx_body.find(f'.//{{{dml}}}r')
+            assert run is not None
+            run_properties = run.find(f'{{{dml}}}rPr')
+            if run_properties is None:
+                run_properties = ET.Element(f'{{{dml}}}rPr')
+                run.insert(0, run_properties)
+            if effect_xml is not None:
+                run_properties.append(ET.fromstring(effect_xml))
+            shape_effect_xml = (
+                shape_effects[index - 1]
+                if shape_effects is not None
+                else None
+            )
+            if shape_effect_xml is not None:
+                shape_properties = target.find(f'{{{pml}}}spPr')
+                assert shape_properties is not None
+                shape_properties.append(ET.fromstring(shape_effect_xml))
+            replacements[slide_part] = ET.tostring(
+                slide_root,
+                encoding='utf-8',
+                xml_declaration=True,
+            )
+
+        rewritten = path.with_name(f'{path.stem}-rewritten.pptx')
+        with zipfile.ZipFile(rewritten, 'w') as target:
+            for info, data in members:
+                target.writestr(info, replacements.get(info.filename, data))
+        rewritten.replace(path)
+
+    @staticmethod
+    def _write_relationship_run_effect_fixture(
+        path: Path,
+        cases: list[tuple[str | None, bool]],
+    ) -> None:
+        """Write text slides with optional hyperlinks and run effects."""
+        presentation = Presentation()
+        blank = presentation.slide_layouts[6]
+        for index, (_effect, has_relationship) in enumerate(cases, start=1):
+            slide = presentation.slides.add_slide(blank)
+            shape = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE,
+                Emu(914400),
+                Emu(914400),
+                Emu(2743200),
+                Emu(914400),
+            )
+            shape.name = f'RELATIONSHIP EFFECT TEXT {index}'
+            paragraph = shape.text_frame.paragraphs[0]
+            run = paragraph.add_run()
+            run.text = f'LINK {index}'
+            if has_relationship:
+                run.hyperlink.address = 'https://example.com/'
+        presentation.save(path)
+
+        pml = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+        dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        with zipfile.ZipFile(path, 'r') as source:
+            members = [
+                (info, source.read(info.filename))
+                for info in source.infolist()
+            ]
+        member_data = {info.filename: data for info, data in members}
+        replacements: dict[str, bytes] = {}
+
+        for index, (effect_xml, _has_relationship) in enumerate(
+            cases,
+            start=1,
+        ):
+            slide_part = f'ppt/slides/slide{index}.xml'
+            slide_root = ET.fromstring(member_data[slide_part])
+            target = next(
+                shape
+                for shape in slide_root.findall(f'.//{{{pml}}}sp')
+                if (
+                    shape.find(f'{{{pml}}}nvSpPr/{{{pml}}}cNvPr')
+                    is not None
+                    and shape.find(
+                        f'{{{pml}}}nvSpPr/{{{pml}}}cNvPr'
+                    ).get('name') == f'RELATIONSHIP EFFECT TEXT {index}'
+                )
+            )
+            run = target.find(f'.//{{{dml}}}r')
+            assert run is not None
+            run_properties = run.find(f'{{{dml}}}rPr')
+            if run_properties is None:
+                run_properties = ET.Element(f'{{{dml}}}rPr')
+                run.insert(0, run_properties)
+            if effect_xml is not None:
+                # CT_TextCharacterProperties orders the effect group before
+                # hlinkClick / hlinkMouseOver / extLst.
+                run_properties.insert(0, ET.fromstring(effect_xml))
+            replacements[slide_part] = ET.tostring(
+                slide_root,
+                encoding='utf-8',
+                xml_declaration=True,
+            )
+
+        rewritten = path.with_name(f'{path.stem}-rewritten.pptx')
+        with zipfile.ZipFile(rewritten, 'w') as target:
+            for info, data in members:
+                target.writestr(info, replacements.get(info.filename, data))
+        rewritten.replace(path)
+
+    @staticmethod
+    def _write_inherited_run_effect_fixture(
+        path: Path,
+        *,
+        style_source: str = 'layout',
+    ) -> None:
+        """Write placeholder text inheriting one Layout or Master run effect."""
+        if style_source not in {'layout', 'master'}:
+            raise ValueError("style_source must be 'layout' or 'master'")
+        presentation = Presentation()
+        layout = presentation.slide_layouts[1]
+        layout_part = str(layout.part.partname).lstrip('/')
+        master_part = str(layout.slide_master.part.partname).lstrip('/')
+        slide_parts: list[str] = []
+        for index in range(1, 4):
+            slide = presentation.slides.add_slide(layout)
+            slide_parts.append(str(slide.part.partname).lstrip('/'))
+            body = slide.placeholders[1]
+            body.text = f'INHERITED EFFECT {index}'
+            if index == 3:
+                body.text_frame.paragraphs[0].runs[0].hyperlink.address = (
+                    'https://example.com/'
+                )
+        presentation.save(path)
+
+        pml = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+        dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+
+        def body_placeholder(
+            root: ET.Element,
+        ) -> tuple[ET.Element, ET.Element]:
+            placeholder_path = (
+                f'{{{pml}}}nvSpPr/{{{pml}}}nvPr/{{{pml}}}ph'
+            )
+            for shape in root.findall(f'.//{{{pml}}}sp'):
+                placeholder = shape.find(placeholder_path)
+                if placeholder is not None and placeholder.get('idx') == '1':
+                    return shape, placeholder
+            raise AssertionError('content placeholder idx=1 not found')
+
+        with zipfile.ZipFile(path, 'r') as source:
+            members = [
+                (info, source.read(info.filename))
+                for info in source.infolist()
+            ]
+        member_data = {info.filename: data for info, data in members}
+        replacements: dict[str, bytes] = {}
+
+        layout_root = ET.fromstring(member_data[layout_part])
+        layout_placeholder, layout_placeholder_properties = body_placeholder(
+            layout_root
+        )
+        layout_placeholder_properties.attrib.pop('type', None)
+        list_style = layout_placeholder.find(
+            f'{{{pml}}}txBody/{{{dml}}}lstStyle'
+        )
+        assert list_style is not None
+
+        if style_source == 'layout':
+            style_root = list_style
+        else:
+            master_root = ET.fromstring(member_data[master_part])
+            style_root = master_root.find(
+                f'{{{pml}}}txStyles/{{{pml}}}bodyStyle'
+            )
+            assert style_root is not None
+
+        level_properties = style_root.find(f'{{{dml}}}lvl1pPr')
+        if level_properties is None:
+            level_properties = ET.SubElement(
+                style_root,
+                f'{{{dml}}}lvl1pPr',
+            )
+        default_properties = level_properties.find(f'{{{dml}}}defRPr')
+        if default_properties is None:
+            default_properties = ET.SubElement(
+                level_properties,
+                f'{{{dml}}}defRPr',
+            )
+        default_properties.append(ET.fromstring(f'''<a:effectLst xmlns:a="{dml}">
+  <a:glow rad="38100"><a:srgbClr val="2563EB"/></a:glow>
+</a:effectLst>'''))
+        if style_source == 'master':
+            replacements[master_part] = ET.tostring(
+                master_root,
+                encoding='utf-8',
+                xml_declaration=True,
+            )
+        replacements[layout_part] = ET.tostring(
+            layout_root,
+            encoding='utf-8',
+            xml_declaration=True,
+        )
+
+        vertical_root = ET.fromstring(member_data[slide_parts[1]])
+        vertical_placeholder, _ = body_placeholder(vertical_root)
+        body_properties = vertical_placeholder.find(
+            f'{{{pml}}}txBody/{{{dml}}}bodyPr'
+        )
+        assert body_properties is not None
+        body_properties.set('vert', 'eaVert')
+        replacements[slide_parts[1]] = ET.tostring(
+            vertical_root,
+            encoding='utf-8',
+            xml_declaration=True,
+        )
+
+        rewritten = path.with_name(f'{path.stem}-rewritten.pptx')
+        with zipfile.ZipFile(rewritten, 'w') as target:
+            for info, data in members:
+                target.writestr(info, replacements.get(info.filename, data))
+        rewritten.replace(path)
+
+    @staticmethod
+    def _write_table_run_effect_fixture(
+        path: Path,
+        cases: list[tuple[str, bool]],
+    ) -> None:
+        """Write one real table per run-effect placement and transform case."""
+        presentation = Presentation()
+        blank = presentation.slide_layouts[6]
+        for index, (_placement, _rotated) in enumerate(cases, start=1):
+            slide = presentation.slides.add_slide(blank)
+            frame = slide.shapes.add_table(
+                1,
+                1,
+                Emu(914400),
+                Emu(914400),
+                Emu(2743200),
+                Emu(914400),
+            )
+            frame.name = f'TABLE EFFECT TEXT {index}'
+            frame.table.cell(0, 0).text = f'CELL {index}'
+        presentation.save(path)
+
+        pml = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+        dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        effect_list = ET.fromstring(f'''<a:effectLst xmlns:a="{dml}">
+  <a:glow rad="38100"><a:srgbClr val="2563EB"/></a:glow>
+</a:effectLst>''')
+        with zipfile.ZipFile(path, 'r') as source:
+            members = [
+                (info, source.read(info.filename))
+                for info in source.infolist()
+            ]
+        member_data = {info.filename: data for info, data in members}
+        replacements: dict[str, bytes] = {}
+
+        for index, (placement, rotated) in enumerate(cases, start=1):
+            slide_part = f'ppt/slides/slide{index}.xml'
+            slide_root = ET.fromstring(member_data[slide_part])
+            frame = next(
+                candidate
+                for candidate in slide_root.findall(f'.//{{{pml}}}graphicFrame')
+                if (
+                    candidate.find(
+                        f'{{{pml}}}nvGraphicFramePr/{{{pml}}}cNvPr'
+                    ) is not None
+                    and candidate.find(
+                        f'{{{pml}}}nvGraphicFramePr/{{{pml}}}cNvPr'
+                    ).get('name') == f'TABLE EFFECT TEXT {index}'
+                )
+            )
+            tx_body = frame.find(f'.//{{{dml}}}tc/{{{dml}}}txBody')
+            assert tx_body is not None
+            paragraph = tx_body.find(f'{{{dml}}}p')
+            assert paragraph is not None
+            run = paragraph.find(f'{{{dml}}}r')
+            assert run is not None
+
+            if placement.startswith('rPr:'):
+                run_properties = run.find(f'{{{dml}}}rPr')
+                if run_properties is None:
+                    run_properties = ET.Element(f'{{{dml}}}rPr')
+                    run.insert(0, run_properties)
+                container = placement.split(':', 1)[1]
+                if container == 'effectLst':
+                    run_properties.insert(0, copy.deepcopy(effect_list))
+                elif container.startswith('empty-'):
+                    run_properties.insert(
+                        0,
+                        ET.Element(f'{{{dml}}}{container.removeprefix("empty-")}'),
+                    )
+                else:
+                    raise AssertionError(
+                        f'unknown run effect container: {container}'
+                    )
+            elif placement == 'defRPr':
+                paragraph_properties = paragraph.find(f'{{{dml}}}pPr')
+                if paragraph_properties is None:
+                    paragraph_properties = ET.Element(f'{{{dml}}}pPr')
+                    paragraph.insert(0, paragraph_properties)
+                default_properties = ET.SubElement(
+                    paragraph_properties,
+                    f'{{{dml}}}defRPr',
+                )
+                default_properties.append(copy.deepcopy(effect_list))
+            elif placement == 'endParaRPr':
+                end_properties = paragraph.find(f'{{{dml}}}endParaRPr')
+                if end_properties is None:
+                    end_properties = ET.SubElement(
+                        paragraph,
+                        f'{{{dml}}}endParaRPr',
+                    )
+                end_properties.insert(0, copy.deepcopy(effect_list))
+            elif placement != 'none':
+                raise AssertionError(f'unknown table effect placement: {placement}')
+
+            if rotated:
+                xfrm = frame.find(f'{{{pml}}}xfrm')
+                assert xfrm is not None
+                xfrm.set('rot', '60000')
             replacements[slide_part] = ET.tostring(
                 slide_root,
                 encoding='utf-8',
@@ -932,6 +1334,33 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
             ),
             {'layout-shape.png', 'master-shared.png'},
         )
+
+    def test_manifest_text_style_uses_explicit_element_precedence(self):
+        pml = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+        dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        shape = ET.fromstring(f'''<p:sp xmlns:p="{pml}" xmlns:a="{dml}">
+  <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r>
+    <a:rPr sz="2400" b="1"/><a:t>Primary</a:t>
+  </a:r><a:endParaRPr sz="1200" i="1"/></a:p></p:txBody>
+</p:sp>''')
+        fallback_shape = ET.fromstring(
+            f'''<p:sp xmlns:p="{pml}" xmlns:a="{dml}">
+  <p:txBody><a:bodyPr/><a:lstStyle/><a:p>
+    <a:endParaRPr sz="1200" i="1"/>
+  </a:p></p:txBody>
+</p:sp>'''
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', DeprecationWarning)
+            primary = extract_placeholder_text_style(shape)
+            fallback = extract_placeholder_text_style(fallback_shape)
+
+        self.assertEqual(primary['fontSizePx'], 32.0)
+        self.assertTrue(primary['bold'])
+        self.assertNotIn('italic', primary)
+        self.assertEqual(fallback['fontSizePx'], 16.0)
+        self.assertTrue(fallback['italic'])
 
     def test_top_level_group_ids_are_unique_animation_anchors(self):
         duplicate = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
@@ -2074,6 +2503,1651 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
             'invalid project gradient',
         )
 
+    def test_imported_line_end_size_buckets_round_trip(self):
+        drawingml_ns = (
+            'http://schemas.openxmlformats.org/drawingml/2006/main'
+        )
+        for width_bucket in ('sm', 'med', 'lg'):
+            for length_bucket in ('sm', 'med', 'lg'):
+                with self.subTest(
+                    width=width_bucket,
+                    length=length_bucket,
+                ):
+                    end = ET.Element(
+                        f'{{{drawingml_ns}}}tailEnd',
+                        {
+                            'type': 'triangle',
+                            'w': width_bucket,
+                            'len': length_bucket,
+                        },
+                    )
+                    marker_id, marker_markup = _build_arrow_marker(
+                        end,
+                        '#112233',
+                        id_prefix='roundtrip-',
+                        seq=[0],
+                        reversed_=False,
+                    )
+                    marker = ET.fromstring(marker_markup)
+                    line = ET.fromstring(
+                        '<line xmlns="http://www.w3.org/2000/svg" '
+                        'stroke="#112233" '
+                        f'marker-end="url(#{marker_id})"/>'
+                    )
+                    stroke_xml = build_stroke_xml(
+                        line,
+                        ConvertContext(defs={marker_id: marker}),
+                    )
+                    self.assertIn(
+                        '<a:tailEnd type="triangle" '
+                        f'w="{width_bucket}" len="{length_bucket}"/>',
+                        stroke_xml,
+                    )
+
+    def test_native_line_end_shape_types_round_trip_in_mapper(self):
+        drawingml_ns = (
+            'http://schemas.openxmlformats.org/drawingml/2006/main'
+        )
+        for marker_type in (
+            'triangle',
+            'stealth',
+            'arrow',
+            'diamond',
+            'oval',
+        ):
+            with self.subTest(marker_type=marker_type):
+                end = ET.Element(
+                    f'{{{drawingml_ns}}}tailEnd',
+                    {'type': marker_type, 'w': 'med', 'len': 'med'},
+                )
+                marker_id, marker_markup = _build_arrow_marker(
+                    end,
+                    '#112233',
+                    id_prefix='roundtrip-',
+                    seq=[0],
+                    reversed_=False,
+                )
+                marker = ET.fromstring(marker_markup)
+                if marker_type == 'arrow':
+                    marker_path = next(iter(marker))
+                    self.assertEqual(marker_path.get('fill'), 'none')
+                    self.assertEqual(marker_path.get('stroke'), '#112233')
+                line = ET.fromstring(
+                    '<line xmlns="http://www.w3.org/2000/svg" '
+                    'stroke="#112233" '
+                    f'marker-end="url(#{marker_id})"/>'
+                )
+                stroke_xml = build_stroke_xml(
+                    line,
+                    ConvertContext(defs={marker_id: marker}),
+                )
+                self.assertIn(
+                    f'<a:tailEnd type="{marker_type}" '
+                    'w="med" len="med"/>',
+                    stroke_xml,
+                )
+
+    def test_native_line_end_shape_types_pass_checker_and_exporter(self):
+        drawingml_ns = (
+            'http://schemas.openxmlformats.org/drawingml/2006/main'
+        )
+        for marker_type in (
+            'triangle',
+            'stealth',
+            'arrow',
+            'diamond',
+            'oval',
+        ):
+            with self.subTest(marker_type=marker_type):
+                end = ET.Element(
+                    f'{{{drawingml_ns}}}tailEnd',
+                    {'type': marker_type, 'w': 'med', 'len': 'med'},
+                )
+                marker_id, marker_markup = _build_arrow_marker(
+                    end,
+                    '#112233',
+                    id_prefix='roundtrip-',
+                    seq=[0],
+                    reversed_=False,
+                )
+                svg = f'''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>{marker_markup}</defs>
+  <line x1="80" y1="80" x2="300" y2="80" stroke="#112233"
+        marker-end="url(#{marker_id})"/>
+</svg>'''
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    svg_path = Path(tmp_dir) / f'{marker_type}.svg'
+                    svg_path.write_text(svg, encoding='utf-8')
+                    checker_result = SVGQualityChecker().check_file(
+                        str(svg_path)
+                    )
+                    self.assertEqual(checker_result['errors'], [])
+                    slide_xml, *_rest = convert_svg_to_slide_shapes(svg_path)
+                self.assertIn(
+                    f'<a:tailEnd type="{marker_type}" '
+                    'w="med" len="med"/>',
+                    slide_xml,
+                )
+
+    def test_unknown_native_line_end_shape_is_rejected_on_import(self):
+        sp_pr = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln><a:tailEnd type="futureArrow"/></a:ln>
+</p:spPr>''')
+        with self.assertRaisesRegex(
+            ValueError,
+            "Unsupported DrawingML line-end type: 'futureArrow'",
+        ):
+            resolve_stroke(sp_pr, None)
+
+    def test_native_line_end_structure_must_be_unique_and_empty(self):
+        cases = (
+            (
+                '<a:tailEnd type="triangle"/>'
+                '<a:tailEnd type="diamond"/>',
+                'DrawingML line must contain at most one tailEnd',
+            ),
+            (
+                '<a:headEnd type="triangle" extra="1"/>',
+                'Invalid DrawingML headEnd structure',
+            ),
+            (
+                '<a:tailEnd type="triangle"><a:extLst/></a:tailEnd>',
+                'Invalid DrawingML tailEnd structure',
+            ),
+            (
+                '<a:tailEnd type=""/>',
+                "Unsupported DrawingML line-end type: ''",
+            ),
+            (
+                '<a:tailEnd w="xl"/>',
+                "Unsupported DrawingML line-end width bucket: 'xl'",
+            ),
+        )
+        for endpoint_markup, expected in cases:
+            with self.subTest(endpoint_markup=endpoint_markup):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln>{endpoint_markup}</a:ln>
+</p:spPr>''')
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_stroke(sp_pr, None)
+
+        omitted_type = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln><a:tailEnd/></a:ln>
+</p:spPr>''')
+        self.assertEqual(resolve_stroke(omitted_type, None).attrs, {})
+
+    def test_native_line_end_requires_visible_line_paint(self):
+        sp_pr = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln>
+    <a:noFill/>
+    <a:tailEnd type="triangle"/>
+  </a:ln>
+</p:spPr>''')
+        with self.assertRaisesRegex(
+            ValueError,
+            'DrawingML line end requires a visible line paint',
+        ):
+            resolve_stroke(sp_pr, None)
+
+    def test_unknown_native_line_end_size_is_rejected_on_import(self):
+        for attribute, dimension in (("w", "width"), ("len", "length")):
+            with self.subTest(attribute=attribute):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln><a:tailEnd type="triangle" {attribute}="xl"/></a:ln>
+</p:spPr>''')
+                with self.assertRaisesRegex(
+                    ValueError,
+                    f"Unsupported DrawingML line-end {dimension} bucket: "
+                    "'xl'",
+                ):
+                    resolve_stroke(sp_pr, None)
+
+    def test_invalid_native_line_width_is_rejected_on_import(self):
+        cases = (
+            ('12.5', "Invalid DrawingML line width: '12.5'"),
+            ('-1', 'DrawingML line width -1 is outside'),
+            ('20116801', 'DrawingML line width 20116801 is outside'),
+        )
+        for width, expected in cases:
+            with self.subTest(width=width):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln w="{width}"/>
+</p:spPr>''')
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_stroke(sp_pr, None)
+
+    def test_minimum_positive_native_line_width_round_trips(self):
+        sp_pr = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln w="1"/>
+</p:spPr>''')
+        stroke = resolve_stroke(sp_pr, None)
+        width = stroke.attrs['stroke-width']
+        self.assertEqual(width, '0.0001')
+        line = ET.fromstring(
+            '<line xmlns="http://www.w3.org/2000/svg" '
+            f'stroke="#112233" stroke-width="{width}"/>'
+        )
+        stroke_xml = build_stroke_xml(line, ConvertContext())
+        self.assertIn('<a:ln w="1">', stroke_xml)
+
+    def test_minimum_positive_native_alpha_round_trips(self):
+        self.assertEqual(format_ooxml_alpha(0.00001), '0.00001')
+        self.assertEqual(format_ooxml_alpha(0.99999), '0.99999')
+        self.assertEqual(quantize_ooxml_alpha(0.000005), 1)
+        self.assertEqual(quantize_ooxml_alpha(0.000015), 2)
+        for alpha_value in (1, 7, 13, 33333, 99999):
+            with self.subTest(alpha_value=alpha_value):
+                opacity = format_ooxml_alpha(alpha_value / 100000)
+                self.assertEqual(
+                    quantize_ooxml_alpha(float(opacity)),
+                    alpha_value,
+                )
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln>
+    <a:solidFill>
+      <a:srgbClr val="112233"><a:alpha val="{alpha_value}"/></a:srgbClr>
+    </a:solidFill>
+  </a:ln>
+</p:spPr>''')
+                stroke = resolve_stroke(sp_pr, None)
+                imported_opacity = stroke.attrs['stroke-opacity']
+                self.assertEqual(imported_opacity, opacity)
+                line = ET.fromstring(
+                    '<line xmlns="http://www.w3.org/2000/svg" '
+                    f'stroke="#112233" '
+                    f'stroke-opacity="{imported_opacity}"/>'
+                )
+                context = ConvertContext()
+                stroke_xml = build_stroke_xml(
+                    line,
+                    context,
+                    get_stroke_opacity(line, context),
+                )
+                self.assertIn(
+                    f'<a:alpha val="{alpha_value}"/>',
+                    stroke_xml,
+                )
+
+    def test_native_fill_choice_must_be_unambiguous(self):
+        competing_fills = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:noFill/>
+  <a:solidFill><a:srgbClr val="112233"/></a:solidFill>
+</p:spPr>''')
+        with self.assertRaisesRegex(
+            ValueError,
+            'must contain at most one fill',
+        ):
+            resolve_fill(competing_fills, None)
+
+        for group_fill in (
+            '<a:grpFill '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>',
+            '<p:spPr '
+            'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<a:grpFill/></p:spPr>',
+        ):
+            with self.subTest(group_fill=group_fill):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Unsupported DrawingML fill: grpFill',
+                ):
+                    resolve_fill(ET.fromstring(group_fill), None)
+
+        foreign_fill = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:future="urn:future">
+  <future:solidFill/>
+</p:spPr>''')
+        with self.assertRaisesRegex(
+            ValueError,
+            'Invalid DrawingML fill element namespace: solidFill',
+        ):
+            resolve_fill(foreign_fill, None)
+
+    def test_native_no_fill_must_be_an_empty_leaf(self):
+        invalid_no_fills = (
+            '<a:noFill future="x"/>',
+            '<a:noFill><a:future/></a:noFill>',
+            '<a:noFill>payload</a:noFill>',
+        )
+        namespace = (
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+        )
+        for no_fill in invalid_no_fills:
+            with self.subTest(route='fill', no_fill=no_fill):
+                fill = ET.fromstring(f'<a:fill {namespace}>{no_fill}</a:fill>')
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML noFill structure',
+                ):
+                    resolve_fill(fill, None)
+
+            with self.subTest(route='line', no_fill=no_fill):
+                sp_pr = ET.fromstring(
+                    f'<a:spPr {namespace}><a:ln>{no_fill}</a:ln></a:spPr>'
+                )
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML noFill structure',
+                ):
+                    resolve_stroke(sp_pr, None)
+
+    def test_native_solid_fill_requires_one_resolvable_color(self):
+        invalid_solid_fills = (
+            ('<a:solidFill/>', 'requires one explicit color'),
+            (
+                '<a:solidFill future="x">'
+                '<a:srgbClr val="112233"/></a:solidFill>',
+                'Invalid DrawingML solid fill structure',
+            ),
+            (
+                '<a:solidFill><a:srgbClr val="112233"/>'
+                '<a:prstClr val="red"/></a:solidFill>',
+                'Invalid DrawingML solid fill structure',
+            ),
+            (
+                '<a:solidFill><a:future/></a:solidFill>',
+                'Invalid DrawingML solid fill structure',
+            ),
+            (
+                '<a:solidFill>payload<a:srgbClr val="112233"/>'
+                '</a:solidFill>',
+                'Invalid DrawingML solid fill structure',
+            ),
+            (
+                '<a:solidFill><a:srgbClr val="112233"/>payload'
+                '</a:solidFill>',
+                'Invalid DrawingML solid fill structure',
+            ),
+            (
+                '<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>',
+                'solid fill color cannot be resolved',
+            ),
+        )
+        namespace = (
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+        )
+        for solid_fill, expected in invalid_solid_fills:
+            with self.subTest(route='fill', solid_fill=solid_fill):
+                fill = ET.fromstring(
+                    f'<a:fill {namespace}>{solid_fill}</a:fill>'
+                )
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_fill(fill, None)
+
+            with self.subTest(route='line', solid_fill=solid_fill):
+                sp_pr = ET.fromstring(
+                    f'<a:spPr {namespace}><a:ln>{solid_fill}</a:ln></a:spPr>'
+                )
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_stroke(sp_pr, None)
+
+    def test_native_srgb_color_requires_six_digit_hex(self):
+        invalid_colors = (
+            ('<a:srgbClr/>', 'sRGB color structure'),
+            ('<a:srgbClr val="ABC"/>', 'sRGB color value'),
+            ('<a:srgbClr val="#112233"/>', 'sRGB color value'),
+            ('<a:srgbClr val="11223344"/>', 'sRGB color value'),
+            ('<a:srgbClr val="GGGGGG"/>', 'sRGB color value'),
+            (
+                '<a:srgbClr val="112233" future="x"/>',
+                'sRGB color structure',
+            ),
+            (
+                '<a:srgbClr val="112233" '
+                'xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main" '
+                'a14:legacySpreadsheetColorIndex="1"/>',
+                'sRGB color structure',
+            ),
+            (
+                '<a:srgbClr val="112233">payload</a:srgbClr>',
+                'sRGB color structure',
+            ),
+            (
+                '<a:srgbClr val="112233"><a:alpha val="50000"/>payload'
+                '</a:srgbClr>',
+                'sRGB color structure',
+            ),
+        )
+        namespace = (
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+        )
+        for color, expected in invalid_colors:
+            with self.subTest(color=color):
+                fill = ET.fromstring(
+                    f'<a:solidFill {namespace}>{color}</a:solidFill>'
+                )
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_fill(fill, None)
+
+        foreign_color = ET.fromstring(
+            '<future:srgbClr xmlns:future="urn:future" val="112233"/>'
+        )
+        with self.assertRaisesRegex(ValueError, 'sRGB color structure'):
+            resolve_color(foreign_color, None)
+
+        valid = ET.fromstring(f'''
+<a:solidFill {namespace}>
+  <a:srgbClr val="a1b2c3"><a:alpha val="50000"/></a:srgbClr>
+</a:solidFill>''')
+        resolved = resolve_fill(valid, None)
+        self.assertEqual(resolved.attrs['fill'], '#A1B2C3')
+        self.assertEqual(resolved.attrs['fill-opacity'], '0.5')
+
+    def test_native_scheme_color_requires_registered_reference(self):
+        invalid_colors = (
+            ('<a:schemeClr/>', 'scheme color structure'),
+            (
+                '<a:schemeClr val="accent1" future="x"/>',
+                'scheme color structure',
+            ),
+            ('<a:schemeClr val="Accent1"/>', 'scheme color value'),
+            ('<a:schemeClr val="accent7"/>', 'scheme color value'),
+            ('<a:schemeClr val=" accent1 "/>', 'scheme color value'),
+            (
+                '<a:schemeClr val="accent1">payload</a:schemeClr>',
+                'scheme color structure',
+            ),
+            (
+                '<a:schemeClr val="accent1"><a:tint val="50000"/>payload'
+                '</a:schemeClr>',
+                'scheme color structure',
+            ),
+        )
+        namespace = (
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+        )
+        for color, expected in invalid_colors:
+            with self.subTest(color=color):
+                fill = ET.fromstring(
+                    f'<a:solidFill {namespace}>{color}</a:solidFill>'
+                )
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_fill(fill, None)
+
+        foreign_color = ET.fromstring(
+            '<future:schemeClr xmlns:future="urn:future" val="accent1"/>'
+        )
+        with self.assertRaisesRegex(ValueError, 'scheme color structure'):
+            resolve_color(foreign_color, None)
+
+        palette = ColorPalette(None, None)
+        palette.scheme['accent1'] = '112233'
+        accent = ET.fromstring(
+            f'<a:schemeClr {namespace} val="accent1"/>'
+        )
+        self.assertEqual(resolve_color(accent, palette), ('#112233', 1.0))
+
+        placeholder = ET.fromstring(
+            f'<a:schemeClr {namespace} val="phClr"/>'
+        )
+        self.assertEqual(
+            resolve_color(placeholder, None, placeholder_hex='#445566'),
+            ('#445566', 1.0),
+        )
+
+    def test_native_system_color_requires_registered_fallback(self):
+        invalid_colors = (
+            ('<a:sysClr lastClr="112233"/>', 'system color structure'),
+            (
+                '<a:sysClr val="futureColor" lastClr="112233"/>',
+                'system color value',
+            ),
+            (
+                '<a:sysClr val="WindowText" lastClr="112233"/>',
+                'system color value',
+            ),
+            (
+                '<a:sysClr val="windowText"/>',
+                'requires a lastClr fallback',
+            ),
+            (
+                '<a:sysClr val="windowText" lastClr="ABC"/>',
+                'system color fallback',
+            ),
+            (
+                '<a:sysClr val="windowText" lastClr="#112233"/>',
+                'system color fallback',
+            ),
+            (
+                '<a:sysClr val="windowText" lastClr="112233" future="x"/>',
+                'system color structure',
+            ),
+            (
+                '<a:sysClr val="windowText" lastClr="112233">payload'
+                '</a:sysClr>',
+                'system color structure',
+            ),
+            (
+                '<a:sysClr val="windowText" lastClr="112233">'
+                '<a:alpha val="50000"/>payload</a:sysClr>',
+                'system color structure',
+            ),
+        )
+        namespace = (
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+        )
+        for color, expected in invalid_colors:
+            with self.subTest(color=color):
+                fill = ET.fromstring(
+                    f'<a:solidFill {namespace}>{color}</a:solidFill>'
+                )
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_fill(fill, None)
+
+        foreign_color = ET.fromstring(
+            '<future:sysClr xmlns:future="urn:future" '
+            'val="windowText" lastClr="112233"/>'
+        )
+        with self.assertRaisesRegex(ValueError, 'system color structure'):
+            resolve_color(foreign_color, None)
+
+        valid = ET.fromstring(f'''
+<a:sysClr {namespace} val="windowText" lastClr="a1b2c3">
+  <a:alpha val="50000"/>
+</a:sysClr>''')
+        self.assertEqual(resolve_color(valid, None), ('#A1B2C3', 0.5))
+
+    def test_native_preset_color_requires_registered_value(self):
+        invalid_colors = (
+            ('<a:prstClr/>', 'preset color structure'),
+            (
+                '<a:prstClr val="red" future="x"/>',
+                'preset color structure',
+            ),
+            ('<a:prstClr val="Red"/>', 'preset color value'),
+            ('<a:prstClr val="futureColor"/>', 'preset color value'),
+            ('<a:prstClr val=" red "/>', 'preset color value'),
+            (
+                '<a:prstClr val="red">payload</a:prstClr>',
+                'preset color structure',
+            ),
+            (
+                '<a:prstClr val="red"><a:alpha val="50000"/>payload'
+                '</a:prstClr>',
+                'preset color structure',
+            ),
+        )
+        namespace = (
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+        )
+        for color, expected in invalid_colors:
+            with self.subTest(color=color):
+                fill = ET.fromstring(
+                    f'<a:solidFill {namespace}>{color}</a:solidFill>'
+                )
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_fill(fill, None)
+
+        foreign_color = ET.fromstring(
+            '<future:prstClr xmlns:future="urn:future" val="red"/>'
+        )
+        with self.assertRaisesRegex(ValueError, 'preset color structure'):
+            resolve_color(foreign_color, None)
+
+        valid = ET.fromstring(f'''
+<a:prstClr {namespace} val="dkBlue">
+  <a:alpha val="50000"/>
+</a:prstClr>''')
+        self.assertEqual(resolve_color(valid, None), ('#00008B', 0.5))
+
+    def test_native_hsl_color_requires_bounded_integer_channels(self):
+        invalid_colors = (
+            (
+                '<a:hslClr sat="100000" lum="50000"/>',
+                'HSL color structure',
+            ),
+            (
+                '<a:hslClr hue="0" sat="100000" lum="50000" '
+                'future="x"/>',
+                'HSL color structure',
+            ),
+            (
+                '<a:hslClr hue="-1" sat="100000" lum="50000"/>',
+                'HSL color hue',
+            ),
+            (
+                '<a:hslClr hue="21600000" sat="100000" lum="50000"/>',
+                'HSL color hue',
+            ),
+            (
+                '<a:hslClr hue="0.0" sat="100000" lum="50000"/>',
+                'HSL color hue',
+            ),
+            (
+                '<a:hslClr hue="0" sat="100%" lum="50000"/>',
+                'HSL color sat',
+            ),
+            (
+                '<a:hslClr hue="0" sat="100001" lum="50000"/>',
+                'HSL color sat',
+            ),
+            (
+                '<a:hslClr hue="0" sat="100000" lum="-1"/>',
+                'HSL color lum',
+            ),
+            (
+                '<a:hslClr hue="0" sat="100000" lum="1e2"/>',
+                'HSL color lum',
+            ),
+            (
+                '<a:hslClr hue="0" sat="100000" lum="50000">payload'
+                '</a:hslClr>',
+                'HSL color structure',
+            ),
+            (
+                '<a:hslClr hue="0" sat="100000" lum="50000">'
+                '<a:alpha val="50000"/>payload</a:hslClr>',
+                'HSL color structure',
+            ),
+        )
+        namespace = (
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+        )
+        for color, expected in invalid_colors:
+            with self.subTest(color=color):
+                fill = ET.fromstring(
+                    f'<a:solidFill {namespace}>{color}</a:solidFill>'
+                )
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_fill(fill, None)
+
+        foreign_color = ET.fromstring(
+            '<future:hslClr xmlns:future="urn:future" '
+            'hue="0" sat="100000" lum="50000"/>'
+        )
+        with self.assertRaisesRegex(ValueError, 'HSL color structure'):
+            resolve_color(foreign_color, None)
+
+        valid = ET.fromstring(f'''
+<a:hslClr {namespace} hue="0" sat="100000" lum="50000">
+  <a:alpha val="50000"/>
+</a:hslClr>''')
+        self.assertEqual(resolve_color(valid, None), ('#FF0000', 0.5))
+
+    def test_native_gradient_stop_position_round_trips(self):
+        for position in (0, 1, 7, 13, 33333, 99999, 100000):
+            with self.subTest(position=position):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="{position}"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    <a:lin ang="0"/>
+  </a:gradFill>
+</p:spPr>''')
+                fill = resolve_fill(sp_pr, None)
+                gradient = ET.fromstring(fill.defs[0])
+                offset = next(iter(gradient)).get('offset')
+                self.assertEqual(
+                    quantize_ooxml_unit_ratio(float(offset)),
+                    position,
+                )
+                gradient_xml = build_gradient_fill(gradient)
+                self.assertIn(f'<a:gs pos="{position}">', gradient_xml)
+
+        percentage = ET.fromstring('''
+<linearGradient xmlns="http://www.w3.org/2000/svg">
+  <stop offset="1%" stop-color="#112233"/>
+</linearGradient>''')
+        self.assertIn('<a:gs pos="1000">', build_gradient_fill(percentage))
+
+    def test_native_gradient_stop_position_must_be_valid(self):
+        invalid_positions = (
+            (None, 'requires a pos attribute'),
+            ('', 'Invalid DrawingML gradient stop position'),
+            ('1.5', 'Invalid DrawingML gradient stop position'),
+            ('1e2', 'Invalid DrawingML gradient stop position'),
+            ('NaN', 'Invalid DrawingML gradient stop position'),
+            ('-1', 'position=-1 is outside 0..100000'),
+            ('100001', 'position=100001 is outside 0..100000'),
+        )
+        for position, expected in invalid_positions:
+            with self.subTest(position=position):
+                pos_attr = '' if position is None else f' pos="{position}"'
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs{pos_attr}><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+  </a:gradFill>
+</p:spPr>''')
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_fill(sp_pr, None)
+
+    def test_native_gradient_stop_positions_must_be_nondecreasing(self):
+        equal_positions = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="50000"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="50000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+  </a:gradFill>
+</p:spPr>''')
+        fill = resolve_fill(equal_positions, None)
+        gradient = ET.fromstring(fill.defs[0])
+        self.assertEqual(
+            [stop.get('offset') for stop in gradient],
+            ['0.5', '0.5'],
+        )
+
+        descending_positions = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="50000"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="40000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+  </a:gradFill>
+</p:spPr>''')
+        with self.assertRaisesRegex(
+            ValueError,
+            'gradient stop positions must be nondecreasing',
+        ):
+            resolve_fill(descending_positions, None)
+
+    def test_native_gradient_requires_resolvable_stops(self):
+        invalid_gradients = (
+            (
+                '',
+                'requires exactly one gsLst',
+            ),
+            (
+                '<a:gsLst/><a:gsLst/>',
+                'requires exactly one gsLst',
+            ),
+            (
+                '<a:gsLst/>',
+                'requires at least two color stops',
+            ),
+            (
+                '<a:gsLst><a:gs pos="0"/></a:gsLst>',
+                'requires at least two color stops',
+            ),
+            (
+                '<a:gsLst>'
+                '<a:gs pos="0"/>'
+                '<a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>'
+                '</a:gsLst>',
+                'Invalid DrawingML gradient stop structure',
+            ),
+            (
+                '<a:gsLst future="x">'
+                '<a:gs pos="0"><a:srgbClr val="112233"/></a:gs>'
+                '<a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>'
+                '</a:gsLst>',
+                'Invalid DrawingML gradient stop list structure',
+            ),
+            (
+                '<a:gsLst>'
+                '<a:gs pos="0"><a:srgbClr val="112233"/></a:gs>'
+                '<a:future/>'
+                '<a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>'
+                '</a:gsLst>',
+                'Invalid DrawingML gradient stop list structure',
+            ),
+            (
+                '<a:gsLst>payload'
+                '<a:gs pos="0"><a:srgbClr val="112233"/></a:gs>'
+                '<a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>'
+                '</a:gsLst>',
+                'Invalid DrawingML gradient stop list structure',
+            ),
+            (
+                '<a:gsLst>'
+                '<a:gs pos="0"><a:srgbClr val="112233"/></a:gs>'
+                '<a:gs pos="100000"><a:schemeClr val="accent1"/></a:gs>'
+                '</a:gsLst>',
+                'gradient stop color cannot be resolved',
+            ),
+        )
+        for gradient_markup, expected in invalid_gradients:
+            with self.subTest(gradient_markup=gradient_markup):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>{gradient_markup}</a:gradFill>
+</p:spPr>''')
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_fill(sp_pr, None)
+
+    def test_native_gradient_stop_structure_must_be_closed(self):
+        invalid_stops = (
+            '<a:gs pos="0" future="x"><a:srgbClr val="112233"/></a:gs>',
+            '<a:gs xmlns:future="urn:future" pos="0" future:mode="x">'
+            '<a:srgbClr val="112233"/></a:gs>',
+            '<a:gs pos="0"><a:srgbClr val="112233"/>'
+            '<a:prstClr val="red"/></a:gs>',
+            '<a:gs pos="0"><a:future/></a:gs>',
+            '<a:gs pos="0">payload<a:srgbClr val="112233"/></a:gs>',
+            '<a:gs pos="0"><a:srgbClr val="112233"/>payload</a:gs>',
+        )
+        for invalid_stop in invalid_stops:
+            with self.subTest(invalid_stop=invalid_stop):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      {invalid_stop}
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+  </a:gradFill>
+</p:spPr>''')
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML gradient stop structure',
+                ):
+                    resolve_fill(sp_pr, None)
+
+    def test_native_gradient_fill_child_structure_must_be_closed(self):
+        stop_list = (
+            '<a:gsLst>'
+            '<a:gs pos="0"><a:srgbClr val="112233"/></a:gs>'
+            '<a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>'
+            '</a:gsLst>'
+        )
+        invalid_children = (
+            f'{stop_list}<a:future/>',
+            f'{stop_list}<future:lin xmlns:future="urn:future"/>',
+            f'<a:lin/>{stop_list}',
+            f'{stop_list}<a:tileRect/><a:lin/>',
+            f'payload{stop_list}',
+            f'{stop_list}payload',
+        )
+        for children in invalid_children:
+            with self.subTest(children=children):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>{children}</a:gradFill>
+</p:spPr>''')
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML gradient fill child structure',
+                ):
+                    resolve_fill(sp_pr, None)
+
+    def test_native_linear_gradient_angle_must_be_valid(self):
+        valid_angles = (
+            (None, None, 0.0),
+            ('0', None, 0.0),
+            ('21599999', '1', 360.0),
+        )
+        for angle, scaled, expected_degrees in valid_angles:
+            with self.subTest(angle=angle, scaled=scaled):
+                angle_attr = '' if angle is None else f' ang="{angle}"'
+                scaled_attr = '' if scaled is None else f' scaled="{scaled}"'
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    <a:lin{angle_attr}{scaled_attr}/>
+  </a:gradFill>
+</p:spPr>''')
+                fill = resolve_fill(sp_pr, None)
+                gradient = ET.fromstring(fill.defs[0])
+                x1 = float(gradient.get('x1'))
+                y1 = float(gradient.get('y1'))
+                x2 = float(gradient.get('x2'))
+                y2 = float(gradient.get('y2'))
+                actual_degrees = math.degrees(math.atan2(y2 - y1, x2 - x1))
+                self.assertAlmostEqual(
+                    actual_degrees % 360,
+                    expected_degrees % 360,
+                    places=4,
+                )
+
+        invalid_angles = (
+            ('', 'Invalid DrawingML linear gradient angle'),
+            ('1.5', 'Invalid DrawingML linear gradient angle'),
+            ('1e2', 'Invalid DrawingML linear gradient angle'),
+            ('NaN', 'Invalid DrawingML linear gradient angle'),
+            ('-1', 'angle=-1 is outside 0..21599999'),
+            ('21600000', 'angle=21600000 is outside 0..21599999'),
+        )
+        for angle, expected in invalid_angles:
+            with self.subTest(angle=angle):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    <a:lin ang="{angle}"/>
+  </a:gradFill>
+</p:spPr>''')
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_fill(sp_pr, None)
+
+    def test_native_linear_gradient_scaling_must_be_representable(self):
+        def resolve_linear(angle: str, scaled: str | None):
+            scaled_attr = '' if scaled is None else f' scaled="{scaled}"'
+            sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    <a:lin ang="{angle}"{scaled_attr}/>
+  </a:gradFill>
+</p:spPr>''')
+            return resolve_fill(sp_pr, None)
+
+        for scaled in (None, '0', 'false'):
+            with self.subTest(cardinal_scaled=scaled):
+                self.assertTrue(resolve_linear('5400000', scaled).defs)
+        for scaled in ('1', 'true'):
+            with self.subTest(diagonal_scaled=scaled):
+                self.assertTrue(resolve_linear('2700000', scaled).defs)
+
+        for scaled in (None, '0', 'false'):
+            with self.subTest(unscaled_diagonal=scaled):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Unscaled non-cardinal DrawingML linear gradients',
+                ):
+                    resolve_linear('2700000', scaled)
+
+        for scaled in ('', '2', 'TRUE', 'on', 'yes'):
+            with self.subTest(invalid_scaled=scaled):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML linear gradient scaled value',
+                ):
+                    resolve_linear('0', scaled)
+
+    def test_native_linear_gradient_structure_must_be_closed(self):
+        invalid_linear_directions = (
+            '<a:lin ang="0" future="x"/>',
+            '<a:lin xmlns:future="urn:future" ang="0" future:mode="x"/>',
+            '<a:lin ang="0"><a:ext/></a:lin>',
+            '<a:lin ang="0">payload</a:lin>',
+        )
+        for linear_direction in invalid_linear_directions:
+            with self.subTest(linear_direction=linear_direction):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    {linear_direction}
+  </a:gradFill>
+</p:spPr>''')
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML linear gradient structure',
+                ):
+                    resolve_fill(sp_pr, None)
+
+    def test_native_gradient_direction_must_be_unambiguous(self):
+        direction_cases = (
+            '<a:lin ang="0"/><a:lin ang="0"/>',
+            '<a:path path="circle"/><a:path path="circle"/>',
+            '<a:lin ang="0"/><a:path path="circle"/>',
+        )
+        for directions in direction_cases:
+            with self.subTest(directions=directions):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    {directions}
+  </a:gradFill>
+</p:spPr>''')
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'at most one lin/path direction',
+                ):
+                    resolve_fill(sp_pr, None)
+
+        default_direction = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+  </a:gradFill>
+</p:spPr>''')
+        fill = resolve_fill(default_direction, None)
+        gradient = ET.fromstring(fill.defs[0])
+        self.assertEqual(gradient.tag, 'linearGradient')
+        self.assertEqual(
+            tuple(gradient.get(name) for name in ('x1', 'y1', 'x2', 'y2')),
+            ('0', '0', '1', '0'),
+        )
+
+    def test_native_path_gradient_type_must_be_registered(self):
+        def resolve_path(path_type: str | None):
+            path_attr = '' if path_type is None else f' path="{path_type}"'
+            sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    <a:path{path_attr}/>
+  </a:gradFill>
+</p:spPr>''')
+            return resolve_fill(sp_pr, None)
+
+        for path_type in (None, 'circle', 'rect', 'shape'):
+            with self.subTest(valid_path_type=path_type):
+                fill = resolve_path(path_type)
+                self.assertEqual(
+                    ET.fromstring(fill.defs[0]).tag,
+                    'radialGradient',
+                )
+
+        for path_type in ('', 'Circle', 'ellipse', 'futurePath'):
+            with self.subTest(invalid_path_type=path_type):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Unsupported DrawingML path gradient type',
+                ):
+                    resolve_path(path_type)
+
+    def test_native_path_gradient_structure_must_be_closed(self):
+        invalid_path_directions = (
+            '<a:path path="circle" future="x"/>',
+            '<a:path xmlns:future="urn:future" path="circle" '
+            'future:mode="x"/>',
+            '<a:path path="circle"><a:ext/></a:path>',
+            '<a:path path="circle">payload</a:path>',
+            '<a:path path="circle"><a:fillToRect/>payload</a:path>',
+        )
+        for path_direction in invalid_path_directions:
+            with self.subTest(path_direction=path_direction):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    {path_direction}
+  </a:gradFill>
+</p:spPr>''')
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML path gradient structure',
+                ):
+                    resolve_fill(sp_pr, None)
+
+    def test_native_gradient_must_rotate_with_shape(self):
+        def resolve_rotation(rotates: str | None):
+            rotation_attr = (
+                '' if rotates is None else f' rotWithShape="{rotates}"'
+            )
+            sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill{rotation_attr}>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+  </a:gradFill>
+</p:spPr>''')
+            return resolve_fill(sp_pr, None)
+
+        for rotates in (None, '1', 'true'):
+            with self.subTest(valid_rotates=rotates):
+                self.assertTrue(resolve_rotation(rotates).defs)
+
+        for rotates in ('0', 'false'):
+            with self.subTest(unsupported_rotates=rotates):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'do not rotate with their shape',
+                ):
+                    resolve_rotation(rotates)
+
+        for rotates in ('', '2', 'TRUE', 'on', 'yes'):
+            with self.subTest(invalid_rotates=rotates):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML gradient rotWithShape value',
+                ):
+                    resolve_rotation(rotates)
+
+    def test_native_gradient_flip_must_be_none(self):
+        def resolve_flip(flip: str | None):
+            flip_attr = '' if flip is None else f' flip="{flip}"'
+            sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill{flip_attr}>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+  </a:gradFill>
+</p:spPr>''')
+            return resolve_fill(sp_pr, None)
+
+        for flip in (None, 'none'):
+            with self.subTest(valid_flip=flip):
+                self.assertTrue(resolve_flip(flip).defs)
+
+        for flip in ('', 'x', 'y', 'xy', 'None', 'futureFlip'):
+            with self.subTest(unsupported_flip=flip):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Unsupported DrawingML gradient flip',
+                ):
+                    resolve_flip(flip)
+
+    def test_native_gradient_rejects_unknown_attributes(self):
+        sp_pr = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+        xmlns:future="urn:future">
+  <a:gradFill futureMode="x" future:mode="y">
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+  </a:gradFill>
+</p:spPr>''')
+        with self.assertRaisesRegex(
+            ValueError,
+            'Unsupported DrawingML gradient fill attribute',
+        ):
+            resolve_fill(sp_pr, None)
+
+    def test_native_gradient_tile_rect_must_cover_full_area(self):
+        def resolve_tile_rect(tile_rect: str):
+            sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    {tile_rect}
+  </a:gradFill>
+</p:spPr>''')
+            return resolve_fill(sp_pr, None)
+
+        valid_rects = (
+            '',
+            '<a:tileRect/>',
+            '<a:tileRect l="0" t="+0" r="-0" b="0.0%"/>',
+        )
+        for tile_rect in valid_rects:
+            with self.subTest(valid_tile_rect=tile_rect):
+                self.assertTrue(resolve_tile_rect(tile_rect).defs)
+
+        for tile_rect in (
+            '<a:tileRect l="1"/>',
+            '<a:tileRect t="-1"/>',
+            '<a:tileRect r="1%"/>',
+        ):
+            with self.subTest(nonzero_tile_rect=tile_rect):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Non-zero DrawingML gradient tileRect',
+                ):
+                    resolve_tile_rect(tile_rect)
+
+        for raw in ('', 'NaN', '1e2', '0px', '2147483648'):
+            with self.subTest(invalid_tile_rect_value=raw):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML gradient tileRect l',
+                ):
+                    resolve_tile_rect(f'<a:tileRect l="{raw}"/>')
+
+        invalid_structures = (
+            '<a:tileRect/><a:tileRect/>',
+            '<a:tileRect future="0"/>',
+            '<a:tileRect><a:ext/></a:tileRect>',
+            '<a:tileRect>payload</a:tileRect>',
+        )
+        for tile_rect in invalid_structures:
+            with self.subTest(invalid_tile_rect=tile_rect):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'tileRect',
+                ):
+                    resolve_tile_rect(tile_rect)
+
+    def test_native_path_gradient_focus_rect_must_be_valid(self):
+        def resolve_focus_rect(focus_rect: str):
+            sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:gradFill>
+    <a:gsLst>
+      <a:gs pos="0"><a:srgbClr val="112233"/></a:gs>
+      <a:gs pos="100000"><a:srgbClr val="445566"/></a:gs>
+    </a:gsLst>
+    <a:path path="circle">{focus_rect}</a:path>
+  </a:gradFill>
+</p:spPr>''')
+            return resolve_fill(sp_pr, None)
+
+        valid_rects = (
+            '',
+            '<a:fillToRect/>',
+            '<a:fillToRect l="50000" t="50%" r="-25000" b="125%"/>',
+        )
+        for focus_rect in valid_rects:
+            with self.subTest(valid_focus_rect=focus_rect):
+                fill = resolve_focus_rect(focus_rect)
+                self.assertEqual(
+                    ET.fromstring(fill.defs[0]).tag,
+                    'radialGradient',
+                )
+
+        for raw in ('', 'NaN', '1e2', '0px', '2147483648'):
+            with self.subTest(invalid_focus_value=raw):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'Invalid DrawingML path gradient fillToRect l',
+                ):
+                    resolve_focus_rect(f'<a:fillToRect l="{raw}"/>')
+
+        invalid_structures = (
+            '<a:fillToRect/><a:fillToRect/>',
+            '<a:fillToRect future="0"/>',
+            '<a:fillToRect><a:ext/></a:fillToRect>',
+            '<a:fillToRect>payload</a:fillToRect>',
+        )
+        for focus_rect in invalid_structures:
+            with self.subTest(invalid_focus_rect=focus_rect):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    'fillToRect',
+                ):
+                    resolve_focus_rect(focus_rect)
+
+    def test_compound_native_line_is_rejected_on_import(self):
+        for compound in ('dbl', 'thickThin', 'thinThick', 'tri'):
+            with self.subTest(compound=compound):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln cmpd="{compound}"/>
+</p:spPr>''')
+                with self.assertRaisesRegex(
+                    ValueError,
+                    f"Unsupported DrawingML compound line: '{compound}'",
+                ):
+                    resolve_stroke(sp_pr, None)
+
+        single = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln cmpd="sng"/>
+</p:spPr>''')
+        self.assertEqual(resolve_stroke(single, None).attrs, {})
+
+    def test_noncentered_native_line_is_rejected_on_import(self):
+        for alignment in ('in', 'futureAlignment'):
+            with self.subTest(alignment=alignment):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln algn="{alignment}"/>
+</p:spPr>''')
+                with self.assertRaisesRegex(
+                    ValueError,
+                    f"Unsupported DrawingML line alignment: '{alignment}'",
+                ):
+                    resolve_stroke(sp_pr, None)
+
+        centered = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln algn="ctr"/>
+</p:spPr>''')
+        self.assertEqual(resolve_stroke(centered, None).attrs, {})
+
+    def test_native_line_paint_must_be_unique_and_resolvable(self):
+        cases = (
+            (
+                '<a:noFill/><a:solidFill><a:srgbClr val="112233"/>'
+                '</a:solidFill>',
+                'DrawingML line must contain at most one paint',
+            ),
+            (
+                '<a:pattFill/>',
+                'Unsupported DrawingML line paint: pattFill',
+            ),
+            (
+                '<a:solidFill/>',
+                'DrawingML solid fill requires one explicit color',
+            ),
+            (
+                '<a:gradFill/>',
+                'DrawingML gradient line requires a color stop',
+            ),
+        )
+        for paint_markup, expected in cases:
+            with self.subTest(paint_markup=paint_markup):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln>{paint_markup}</a:ln>
+</p:spPr>''')
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_stroke(sp_pr, None)
+
+        valid_cases = (
+            ('<a:noFill/>', 'none'),
+            (
+                '<a:solidFill><a:srgbClr val="112233"/></a:solidFill>',
+                '#112233',
+            ),
+            (
+                '<a:gradFill><a:gsLst><a:gs pos="0">'
+                '<a:srgbClr val="445566"/></a:gs><a:gs pos="100000">'
+                '<a:srgbClr val="778899"/></a:gs></a:gsLst></a:gradFill>',
+                '#445566',
+            ),
+        )
+        for paint_markup, expected_stroke in valid_cases:
+            with self.subTest(valid_paint=paint_markup):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln>{paint_markup}</a:ln>
+</p:spPr>''')
+                stroke = resolve_stroke(sp_pr, None)
+                self.assertEqual(stroke.attrs['stroke'], expected_stroke)
+
+    def test_unknown_native_line_cap_is_rejected_on_import(self):
+        sp_pr = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln cap="square"/>
+</p:spPr>''')
+        with self.assertRaisesRegex(
+            ValueError,
+            "Unsupported DrawingML line cap: 'square'",
+        ):
+            resolve_stroke(sp_pr, None)
+
+    def test_native_line_join_requires_unambiguous_default_geometry(self):
+        invalid_cases = (
+            (
+                '<a:round/><a:bevel/>',
+                'DrawingML line must contain at most one join',
+            ),
+            (
+                '<a:round unexpected="1"/>',
+                'Invalid DrawingML line join structure',
+            ),
+            (
+                '<a:miter lim="400000"/>',
+                "Unsupported DrawingML miter limit: '400000'",
+            ),
+            (
+                '<a:miter/>',
+                'Unsupported DrawingML miter limit: None',
+            ),
+        )
+        for join_markup, expected in invalid_cases:
+            with self.subTest(join_markup=join_markup):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln>{join_markup}</a:ln>
+</p:spPr>''')
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_stroke(sp_pr, None)
+
+        sp_pr = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln><a:miter lim="800000"/></a:ln>
+</p:spPr>''')
+        stroke = resolve_stroke(sp_pr, None)
+        self.assertEqual(stroke.attrs['stroke-linejoin'], 'miter')
+
+    def test_unknown_native_preset_dash_is_rejected_on_import(self):
+        sp_pr = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln><a:prstDash val="futureDash"/></a:ln>
+</p:spPr>''')
+        with self.assertRaisesRegex(
+            ValueError,
+            "Unsupported DrawingML preset dash: 'futureDash'",
+        ):
+            resolve_stroke(sp_pr, None)
+
+    def test_native_line_dash_choice_must_be_unique_and_exact(self):
+        cases = (
+            (
+                '<a:prstDash val="dash"/><a:custDash>'
+                '<a:ds d="100000" sp="100000"/></a:custDash>',
+                'DrawingML line must contain at most one dash',
+            ),
+            (
+                '<a:prstDash val="dash"/><a:prstDash val="dot"/>',
+                'DrawingML line must contain at most one dash',
+            ),
+            (
+                '<a:prstDash val="dash" extra="1"/>',
+                'Invalid DrawingML preset dash structure',
+            ),
+            (
+                '<a:custDash extra="1">'
+                '<a:ds d="100000" sp="100000"/></a:custDash>',
+                'Invalid DrawingML custom dash structure',
+            ),
+        )
+        for dash_markup, expected in cases:
+            with self.subTest(dash_markup=dash_markup):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln>{dash_markup}</a:ln>
+</p:spPr>''')
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_stroke(sp_pr, None)
+
+    def test_invalid_native_custom_dash_is_rejected_on_import(self):
+        cases = (
+            ('', 'Invalid DrawingML custom dash structure'),
+            (
+                '<a:ds d="bad" sp="100000"/>',
+                "Invalid DrawingML custom dash d: 'bad'",
+            ),
+            (
+                '<a:ds d="100000" sp="0"/>',
+                'DrawingML custom dash sp=0 is outside',
+            ),
+            (
+                '<a:ds d="100000" sp="100000" extra="1"/>',
+                'Invalid DrawingML custom dash structure',
+            ),
+        )
+        for dash_stops, expected in cases:
+            with self.subTest(dash_stops=dash_stops):
+                sp_pr = ET.fromstring(f'''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln><a:custDash>{dash_stops}</a:custDash></a:ln>
+</p:spPr>''')
+                with self.assertRaisesRegex(ValueError, expected):
+                    resolve_stroke(sp_pr, None)
+
+    def test_native_custom_dash_preserves_all_stops_on_import(self):
+        sp_pr = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln w="9525">
+    <a:custDash>
+      <a:ds d="100000" sp="200000"/>
+      <a:ds d="300000" sp="400000"/>
+    </a:custDash>
+  </a:ln>
+</p:spPr>''')
+        stroke = resolve_stroke(sp_pr, None)
+        self.assertEqual(stroke.attrs['stroke-dasharray'], '1 2 3 4')
+
+    def test_native_custom_dash_keeps_minimum_positive_stop(self):
+        sp_pr = ET.fromstring('''
+<p:spPr xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <a:ln w="9525">
+    <a:custDash><a:ds d="1" sp="2"/></a:custDash>
+  </a:ln>
+</p:spPr>''')
+        stroke = resolve_stroke(sp_pr, None)
+        self.assertEqual(
+            stroke.attrs['stroke-dasharray'],
+            '0.00001 0.00002',
+        )
+
+    def test_imported_head_end_uses_supported_reversible_orientation(self):
+        drawingml_ns = (
+            'http://schemas.openxmlformats.org/drawingml/2006/main'
+        )
+        head_end = ET.Element(
+            f'{{{drawingml_ns}}}headEnd',
+            {'type': 'triangle', 'w': 'med', 'len': 'med'},
+        )
+        marker_id, marker_markup = _build_arrow_marker(
+            head_end,
+            '#112233',
+            id_prefix='roundtrip-',
+            seq=[0],
+            reversed_=True,
+        )
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>{marker_markup}</defs>
+  <line x1="80" y1="80" x2="300" y2="80" stroke="#112233"
+        marker-start="url(#{marker_id})"/>
+</svg>'''
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            svg_path = Path(tmp_dir) / 'head-end.svg'
+            svg_path.write_text(svg, encoding='utf-8')
+            checker_result = SVGQualityChecker().check_file(str(svg_path))
+            self.assertEqual(checker_result['errors'], [])
+            slide_xml, *_rest = convert_svg_to_slide_shapes(svg_path)
+        self.assertIn(
+            '<a:headEnd type="triangle" w="med" len="med"/>',
+            slide_xml,
+        )
+
+    def test_invalid_line_end_marker_blocks_checker_and_exporter(self):
+        self._assert_checker_and_exporter_reject(
+            '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>
+    <marker id="broken" orient="0">
+      <path d="M 0 0 L 10 5 L 0 10" fill="#112233"/>
+    </marker>
+  </defs>
+  <line x1="80" y1="80" x2="300" y2="80" stroke="#112233"
+        marker-end="url(#broken)"/>
+</svg>''',
+            '<marker id="broken"> requires orient="auto"',
+            'invalid project line-end marker',
+        )
+
+    def test_unclassifiable_line_end_shape_blocks_checker_and_exporter(self):
+        self._assert_checker_and_exporter_reject(
+            '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>
+    <marker id="broken" orient="auto">
+      <path d="M 0 0 L 10 10 L 0 10 L 10 0 Z" fill="#112233"/>
+    </marker>
+  </defs>
+  <line x1="80" y1="80" x2="300" y2="80" stroke="#112233"
+        marker-end="url(#broken)"/>
+</svg>''',
+            'a simple closed 4-vertex diamond/stealth',
+            'invalid project line-end marker',
+        )
+
+    def test_open_arrow_marker_requires_matching_stroke(self):
+        cases = (
+            (
+                'filled arrow',
+                'fill="#112233"',
+                'open arrow marker requires fill="none"',
+            ),
+            (
+                'mismatched arrow stroke',
+                'fill="none" stroke="#445566"',
+                "marker stroke '#445566' does not match effective line stroke",
+            ),
+        )
+        for label, marker_paint, expected in cases:
+            with self.subTest(label=label):
+                self._assert_checker_and_exporter_reject(
+                    f'''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>
+    <marker id="arrow" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10" {marker_paint}/>
+    </marker>
+  </defs>
+  <line x1="80" y1="80" x2="300" y2="80" stroke="#112233"
+        marker-end="url(#arrow)"/>
+</svg>''',
+                    expected,
+                    'invalid project line-end marker',
+                )
+
     def test_invalid_filter_contract_blocks_checker_and_exporter(self):
         self._assert_checker_and_exporter_reject(
             '''<svg xmlns="http://www.w3.org/2000/svg"
@@ -2088,6 +4162,239 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
 </svg>''',
             'stdDeviation must be a finite number',
             'invalid project filter',
+        )
+
+    def test_filter_effect_geometry_must_be_explicit(self):
+        cases = (
+            (
+                'Gaussian blur standard deviation',
+                '<feGaussianBlur/>',
+                '<feGaussianBlur> requires explicit stdDeviation',
+            ),
+            (
+                'drop shadow standard deviation',
+                '<feDropShadow dx="0" dy="4"/>',
+                '<feDropShadow> requires explicit stdDeviation',
+            ),
+            (
+                'drop shadow horizontal offset',
+                '<feDropShadow dy="4" stdDeviation="6"/>',
+                '<feDropShadow> requires explicit dx',
+            ),
+            (
+                'drop shadow vertical offset',
+                '<feDropShadow dx="0" stdDeviation="6"/>',
+                '<feDropShadow> requires explicit dy',
+            ),
+        )
+        for label, primitive, expected in cases:
+            with self.subTest(label=label):
+                self._assert_checker_and_exporter_reject(
+                    f'''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs><filter id="effect">{primitive}</filter></defs>
+  <rect x="80" y="80" width="300" height="180"
+        fill="#FFFFFF" filter="url(#effect)"/>
+</svg>''',
+                    expected,
+                    'invalid project filter',
+                )
+
+    def test_filter_alpha_transfer_slope_must_be_explicit(self):
+        self._assert_checker_and_exporter_reject(
+            '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>
+    <filter id="effect">
+      <feGaussianBlur stdDeviation="6"/>
+      <feComponentTransfer>
+        <feFuncA type="linear"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <rect x="80" y="80" width="300" height="180"
+        fill="#FFFFFF" filter="url(#effect)"/>
+</svg>''',
+            '<feFuncA> requires explicit slope',
+            'invalid project filter',
+        )
+
+    def test_filter_alpha_transfer_rejects_unmapped_intercept(self):
+        self._assert_checker_and_exporter_reject(
+            '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>
+    <filter id="effect">
+      <feGaussianBlur stdDeviation="6"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.4" intercept="0.5"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <rect x="80" y="80" width="300" height="180"
+        fill="#FFFFFF" filter="url(#effect)"/>
+</svg>''',
+            '<feFuncA> intercept is unsupported',
+            'invalid project filter',
+        )
+
+    def test_filter_blur_rejects_unmapped_edge_mode(self):
+        self._assert_checker_and_exporter_reject(
+            '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>
+    <filter id="effect">
+      <feGaussianBlur stdDeviation="6" edgeMode="wrap"/>
+      <feFlood flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect x="80" y="80" width="300" height="180"
+        fill="#FFFFFF" filter="url(#effect)"/>
+</svg>''',
+            '<feGaussianBlur> edgeMode is unsupported',
+            'invalid project filter',
+        )
+
+    def test_filter_rejects_object_bounding_box_primitive_units(self):
+        self._assert_checker_and_exporter_reject(
+            '''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>
+    <filter id="effect" primitiveUnits="objectBoundingBox">
+      <feGaussianBlur stdDeviation="0.1"/>
+      <feFlood flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect x="80" y="80" width="300" height="180"
+        fill="#FFFFFF" filter="url(#effect)"/>
+</svg>''',
+            'primitiveUnits must be userSpaceOnUse',
+            'invalid project filter',
+        )
+
+        user_space = ET.fromstring('''<svg xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="effect" primitiveUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="6"/>
+      <feFlood flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+</svg>''')
+        self.assertEqual(project_filter_errors(user_space), [])
+
+    def test_filter_flood_opacity_must_be_explicit(self):
+        cases = (
+            (
+                'drop-shadow shorthand',
+                '<feDropShadow dx="0" dy="4" stdDeviation="6" '
+                'flood-color="#000000"/>',
+                '<feDropShadow> requires explicit flood-opacity',
+            ),
+            (
+                'expanded flood primitive',
+                '<feGaussianBlur stdDeviation="6"/>'
+                '<feFlood flood-color="#000000"/>',
+                '<feFlood> requires explicit flood-opacity',
+            ),
+        )
+        for label, graph, expected in cases:
+            with self.subTest(label=label):
+                self._assert_checker_and_exporter_reject(
+                    f'''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs><filter id="effect">{graph}</filter></defs>
+  <rect x="80" y="80" width="300" height="180"
+        fill="#FFFFFF" filter="url(#effect)"/>
+</svg>''',
+                    expected,
+                    'invalid project filter',
+                )
+
+        styled = ET.fromstring('''<svg xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="effect">
+      <feGaussianBlur stdDeviation="6"/>
+      <feFlood flood-color="#000000" style="flood-opacity:0.2"/>
+    </filter>
+  </defs>
+</svg>''')
+        self.assertEqual(project_filter_errors(styled), [])
+
+    def test_filter_coordinates_block_drawingml_overflow(self):
+        cases = (
+            (
+                'glow radius',
+                '<feGaussianBlur stdDeviation="2863311530"/>',
+                'DrawingML rad must map within',
+            ),
+            (
+                'shadow blur radius',
+                '<feDropShadow dx="1" dy="0" '
+                'stdDeviation="1431655765" flood-opacity="0.2"/>',
+                'DrawingML blurRad must map within',
+            ),
+            (
+                'shadow distance',
+                '<feDropShadow dx="2863311530" dy="0" '
+                'stdDeviation="1" flood-opacity="0.2"/>',
+                'DrawingML dist must map within',
+            ),
+            (
+                'mapped infinity',
+                '<feGaussianBlur stdDeviation="1e308"/>',
+                'DrawingML rad must be finite after EMU mapping',
+            ),
+        )
+        for label, primitive, expected in cases:
+            with self.subTest(label=label):
+                self._assert_checker_and_exporter_reject(
+                    f'''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs><filter id="effect">{primitive}</filter></defs>
+  <rect x="80" y="80" width="300" height="180"
+        fill="#FFFFFF" filter="url(#effect)"/>
+</svg>''',
+                    expected,
+                    'invalid project filter',
+                )
+
+    def test_filter_coordinates_accept_drawingml_maximum(self):
+        glow_std_dev = OOXML_COORDINATE_MAX / EMU_PER_PX
+        shadow_std_dev = OOXML_COORDINATE_MAX / (2 * EMU_PER_PX)
+        svg = f'''<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="{glow_std_dev!r}"/>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="{glow_std_dev!r}" dy="0"
+                    stdDeviation="{shadow_std_dev!r}"
+                    flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <rect x="80" y="80" width="300" height="180"
+        fill="#FFFFFF" filter="url(#glow)"/>
+  <rect x="480" y="80" width="300" height="180"
+        fill="#FFFFFF" filter="url(#shadow)"/>
+</svg>'''
+        root = ET.fromstring(svg)
+        self.assertEqual(project_filter_errors(root), [])
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            svg_path = Path(tmp_dir) / 'effect-boundary.svg'
+            svg_path.write_text(svg, encoding='utf-8')
+            checker_result = SVGQualityChecker().check_file(str(svg_path))
+            self.assertEqual(checker_result['errors'], [])
+            slide_xml, *_rest = convert_svg_to_slide_shapes(svg_path)
+        self.assertIn(
+            f'<a:glow rad="{OOXML_COORDINATE_MAX}">',
+            slide_xml,
+        )
+        self.assertIn(
+            f'<a:outerShdw blurRad="{OOXML_COORDINATE_MAX}" '
+            f'dist="{OOXML_COORDINATE_MAX}"',
+            slide_xml,
         )
 
     def test_imported_preset_preview_may_mirror_carrier_filter(self):
@@ -2258,6 +4565,13 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
         self.assertIn('stdDeviation="10"', glow_def)
         self.assertNotIn('feMorphology', glow_def)
 
+        zero_glow = effect_result(f'''<a:effectLst xmlns:a="{dml}">
+  <a:glow rad="0"><a:srgbClr val="2563EB"/></a:glow>
+</a:effectLst>''')
+        self.assertIsNotNone(zero_glow.filter_id)
+        self.assertEqual(dict(zero_glow.metadata), {})
+        self.assertIn('stdDeviation="0"', ''.join(zero_glow.defs))
+
         high_saturation = effect_result(f'''<a:effectLst xmlns:a="{dml}">
   <a:glow rad="95250"><a:srgbClr val="2563EB">
     <a:satMod val="175000"/>
@@ -2265,6 +4579,14 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
 </a:effectLst>''')
         self.assertIsNotNone(high_saturation.filter_id)
         self.assertEqual(dict(high_saturation.metadata), {})
+
+        system_color = effect_result(f'''<a:effectLst xmlns:a="{dml}">
+  <a:glow rad="9525"><a:sysClr val="windowText" lastClr="112233"/>
+  </a:glow>
+</a:effectLst>''')
+        self.assertIsNotNone(system_color.filter_id)
+        self.assertEqual(dict(system_color.metadata), {})
+        self.assertIn('flood-color="#112233"', ''.join(system_color.defs))
 
         unsupported_cases = {
             'innerShdw': (
@@ -2342,11 +4664,37 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
                 f'<a:effectLst xmlns:a="{dml}"><a:outerShdw '
                 'dist="38100"/></a:effectLst>'
             ), 'missing-color'),
+            'missing glow radius': ((
+                f'<a:effectLst xmlns:a="{dml}"><a:glow>'
+                '<a:srgbClr val="000000"/></a:glow></a:effectLst>'
+            ), 'missing-rad'),
+            'empty glow radius': ((
+                f'<a:effectLst xmlns:a="{dml}"><a:glow rad="">'
+                '<a:srgbClr val="000000"/></a:glow></a:effectLst>'
+            ), "rad=''"),
             'invalid srgb color': ((
                 f'<a:effectLst xmlns:a="{dml}"><a:outerShdw '
                 'dist="38100"><a:srgbClr val="bogus"/>'
                 '</a:outerShdw></a:effectLst>'
             ), 'invalid-color:srgbClr'),
+            'missing system color value': ((
+                f'<a:effectLst xmlns:a="{dml}"><a:glow rad="38100">'
+                '<a:sysClr lastClr="112233"/></a:glow></a:effectLst>'
+            ), 'invalid-color:sysClr'),
+            'empty system color value': ((
+                f'<a:effectLst xmlns:a="{dml}"><a:glow rad="38100">'
+                '<a:sysClr val="" lastClr="112233"/>'
+                '</a:glow></a:effectLst>'
+            ), 'invalid-color:sysClr'),
+            'missing system color fallback': ((
+                f'<a:effectLst xmlns:a="{dml}"><a:glow rad="38100">'
+                '<a:sysClr val="windowText"/></a:glow></a:effectLst>'
+            ), 'unresolvable-color:sysClr'),
+            'invalid system color fallback': ((
+                f'<a:effectLst xmlns:a="{dml}"><a:glow rad="38100">'
+                '<a:sysClr val="windowText" lastClr="bogus"/>'
+                '</a:glow></a:effectLst>'
+            ), 'unresolvable-color:sysClr'),
             'multiple colors': ((
                 f'<a:effectLst xmlns:a="{dml}"><a:outerShdw '
                 'dist="38100"><a:srgbClr val="000000"/>'
@@ -2441,6 +4789,21 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
                     f'<a:alpha val="{alpha}"/>',
                     round_trip_supported(alpha_glow),
                 )
+
+        saturated_alpha = effect_result(
+            f'<a:effectLst xmlns:a="{dml}"><a:glow rad="9525">'
+            '<a:srgbClr val="000000"><a:alphaMod val="200000"/>'
+            '<a:alphaOff val="-50000"/></a:srgbClr>'
+            '</a:glow></a:effectLst>'
+        )
+        self.assertIn(
+            'flood-opacity="0.5"',
+            ''.join(saturated_alpha.defs),
+        )
+        self.assertIn(
+            '<a:alpha val="50000"/>',
+            round_trip_supported(saturated_alpha),
+        )
 
         marked_svg = '''<svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 1280 720">
@@ -2563,6 +4926,429 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
                         'unsupported imported PPTX effect',
                     ):
                         convert_svg_to_slide_shapes(artifact_path)
+
+    def test_vertical_text_run_effect_import_fails_closed(self):
+        dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        effects = [
+            f'''<a:effectLst xmlns:a="{dml}">
+  <a:outerShdw blurRad="38100" dist="38100" dir="5400000">
+    <a:srgbClr val="000000"/>
+  </a:outerShdw>
+</a:effectLst>''',
+            f'<a:effectLst xmlns:a="{dml}"/>',
+            f'<a:effectDag xmlns:a="{dml}"/>',
+            None,
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root_dir = Path(tmp_dir)
+            pptx_path = root_dir / 'vertical-run-effects.pptx'
+            self._write_vertical_run_effect_fixture(pptx_path, effects)
+            imported = convert_pptx_to_svg(
+                pptx_path,
+                options=ConvertOptions(inheritance_mode='flat'),
+            )
+            self.assertEqual(len(imported.slides), 4)
+
+            effect_svg = imported.slides[0].svg
+            effect_root = ET.fromstring(effect_svg)
+            self.assertIn('甲', ''.join(effect_root.itertext()))
+            self.assertIn('乙', ''.join(effect_root.itertext()))
+            self.assertFalse(any(
+                elem.get('data-pptx-part') == 'txbody'
+                for elem in effect_root.iter()
+            ))
+            marked = [
+                elem
+                for elem in effect_root.iter()
+                if elem.get('data-pptx-effect-status') == 'unsupported'
+            ]
+            self.assertEqual(len(marked), 2)
+            self.assertEqual(
+                {elem.get('data-pptx-effect-reason') for elem in marked},
+                {'unsupported-run-effect-route:vertical-text'},
+            )
+            status_errors = project_effect_status_errors(effect_root)
+            self.assertEqual(len(status_errors), 1)
+            self.assertIn(
+                'unsupported-run-effect-route:vertical-text',
+                status_errors[0],
+            )
+            self._assert_checker_and_exporter_reject(
+                effect_svg,
+                'unsupported-run-effect-route:vertical-text',
+                'unsupported imported PPTX effect',
+            )
+
+            for artifact in imported.slides[1:]:
+                with self.subTest(slide=artifact.index):
+                    root = ET.fromstring(artifact.svg)
+                    self.assertEqual(project_effect_status_errors(root), [])
+                    self.assertFalse(any(
+                        elem.get('data-pptx-effect-status') is not None
+                        for elem in root.iter()
+                    ))
+                    svg_path = root_dir / f'vertical-{artifact.index}.svg'
+                    svg_path.write_text(artifact.svg, encoding='utf-8')
+                    checker_result = SVGQualityChecker().check_file(
+                        str(svg_path)
+                    )
+                    self.assertTrue(checker_result['passed'])
+                    convert_svg_to_slide_shapes(svg_path)
+
+    def test_compound_shape_and_run_effect_reasons_are_preserved(self):
+        reason_attr = 'data-pptx-effect-reason'
+        normalized = unsupported_effect_metadata(
+            'reason-b',
+            'reason-a',
+            'reason-b',
+        )
+        self.assertEqual(
+            json.loads(normalized[reason_attr]),
+            ['reason-a', 'reason-b'],
+        )
+        self.assertEqual(
+            unsupported_effect_metadata(normalized[reason_attr], 'reason-a'),
+            normalized,
+        )
+
+        dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        run_effect = f'''<a:effectLst xmlns:a="{dml}">
+  <a:glow rad="38100"><a:srgbClr val="2563EB"/></a:glow>
+</a:effectLst>'''
+        shape_effect = (
+            f'<a:effectLst xmlns:a="{dml}"><a:reflection/>'
+            '</a:effectLst>'
+        )
+        expected_reasons = [
+            'unsupported-effect:reflection',
+            'unsupported-run-effect-route:vertical-text',
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root_dir = Path(tmp_dir)
+            pptx_path = root_dir / 'compound-run-effects.pptx'
+            self._write_vertical_run_effect_fixture(
+                pptx_path,
+                [run_effect],
+                shape_effects=[shape_effect],
+            )
+            imported = convert_pptx_to_svg(
+                pptx_path,
+                options=ConvertOptions(inheritance_mode='flat'),
+            )
+            self.assertEqual(len(imported.slides), 1)
+            artifact = imported.slides[0]
+            root = ET.fromstring(artifact.svg)
+            marked = [
+                elem
+                for elem in root.iter()
+                if elem.get('data-pptx-effect-status') == 'unsupported'
+            ]
+            self.assertEqual(len(marked), 2)
+            self.assertEqual(
+                {
+                    tuple(json.loads(elem.get(reason_attr) or '[]'))
+                    for elem in marked
+                },
+                {tuple(expected_reasons)},
+            )
+            status_errors = project_effect_status_errors(root)
+            self.assertEqual(len(status_errors), 1)
+            for reason in expected_reasons:
+                self.assertIn(reason, status_errors[0])
+            self.assertNotIn('<filter', artifact.svg)
+            self._assert_checker_and_exporter_reject(
+                artifact.svg,
+                expected_reasons[0],
+                'unsupported imported PPTX effect',
+            )
+
+    def test_relationship_text_run_effect_import_fails_closed(self):
+        dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        run_effect = f'''<a:effectLst xmlns:a="{dml}">
+  <a:glow rad="38100"><a:srgbClr val="2563EB"/></a:glow>
+</a:effectLst>'''
+        cases = [
+            (run_effect, True),
+            (f'<a:effectLst xmlns:a="{dml}"/>', True),
+            (f'<a:effectDag xmlns:a="{dml}"/>', True),
+            (None, True),
+            (run_effect, False),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root_dir = Path(tmp_dir)
+            pptx_path = root_dir / 'relationship-run-effects.pptx'
+            self._write_relationship_run_effect_fixture(pptx_path, cases)
+            imported = convert_pptx_to_svg(
+                pptx_path,
+                options=ConvertOptions(inheritance_mode='flat'),
+            )
+            self.assertEqual(len(imported.slides), 5)
+
+            effect_svg = imported.slides[0].svg
+            effect_root = ET.fromstring(effect_svg)
+            self.assertIn('LINK 1', ''.join(effect_root.itertext()))
+            self.assertFalse(any(
+                elem.get('data-pptx-part') == 'txbody'
+                for elem in effect_root.iter()
+            ))
+            marked = [
+                elem
+                for elem in effect_root.iter()
+                if elem.get('data-pptx-effect-status') == 'unsupported'
+            ]
+            self.assertEqual(len(marked), 2)
+            self.assertEqual(
+                {elem.get('data-pptx-effect-reason') for elem in marked},
+                {'unsupported-run-effect-route:relationship-bearing-text'},
+            )
+            status_errors = project_effect_status_errors(effect_root)
+            self.assertEqual(len(status_errors), 1)
+            self.assertIn(
+                'unsupported-run-effect-route:relationship-bearing-text',
+                status_errors[0],
+            )
+            self._assert_checker_and_exporter_reject(
+                effect_svg,
+                'unsupported-run-effect-route:relationship-bearing-text',
+                'unsupported imported PPTX effect',
+            )
+
+            for artifact in imported.slides[1:4]:
+                with self.subTest(slide=artifact.index):
+                    plain_root = ET.fromstring(artifact.svg)
+                    self.assertIn(
+                        f'LINK {artifact.index}',
+                        ''.join(plain_root.itertext()),
+                    )
+                    self.assertFalse(any(
+                        elem.get('data-pptx-part') == 'txbody'
+                        for elem in plain_root.iter()
+                    ))
+                    self.assertEqual(
+                        project_effect_status_errors(plain_root),
+                        [],
+                    )
+                    self.assertFalse(any(
+                        elem.get('data-pptx-effect-status') is not None
+                        for elem in plain_root.iter()
+                    ))
+                    plain_path = (
+                        root_dir / f'relationship-{artifact.index}.svg'
+                    )
+                    plain_path.write_text(artifact.svg, encoding='utf-8')
+                    checker_result = SVGQualityChecker().check_file(
+                        str(plain_path)
+                    )
+                    self.assertTrue(checker_result['passed'])
+                    convert_svg_to_slide_shapes(plain_path)
+
+            native_svg = imported.slides[4].svg
+            native_root = ET.fromstring(native_svg)
+            self.assertTrue(any(
+                elem.get('data-pptx-part') == 'txbody'
+                for elem in native_root.iter()
+            ))
+            self.assertEqual(project_effect_status_errors(native_root), [])
+            native_path = root_dir / 'relationship-control.svg'
+            native_path.write_text(native_svg, encoding='utf-8')
+            native_xml = convert_svg_to_slide_shapes(native_path)[0]
+            self.assertEqual(native_xml.count('<a:glow'), 1)
+
+    def test_inherited_text_run_effect_import_fails_closed(self):
+        expected_reasons = {
+            1: 'unsupported-run-effect-route:inherited-text-style',
+            2: 'unsupported-run-effect-route:vertical-text',
+            3: 'unsupported-run-effect-route:relationship-bearing-text',
+        }
+
+        def assert_artifact(artifact) -> None:
+            reason = expected_reasons[artifact.index]
+            root = ET.fromstring(artifact.svg)
+            self.assertIn('INHERITED', ''.join(root.itertext()))
+            self.assertEqual(project_filter_errors(root), [])
+            marked = [
+                elem
+                for elem in root.iter()
+                if elem.get('data-pptx-effect-status') == 'unsupported'
+            ]
+            self.assertEqual(len(marked), 2)
+            self.assertEqual(
+                {
+                    elem.get('data-pptx-effect-reason')
+                    for elem in marked
+                },
+                {reason},
+            )
+            logical_shape = next(
+                elem
+                for elem in marked
+                if elem.tag.rsplit('}', 1)[-1] == 'g'
+            )
+            self.assertEqual(
+                logical_shape.get('data-name'),
+                'Content Placeholder 2',
+            )
+            title_shape = next(
+                elem
+                for elem in root.iter()
+                if elem.get('data-name') == 'Title 1'
+            )
+            self.assertIsNone(title_shape.get('data-pptx-effect-status'))
+            status_errors = project_effect_status_errors(root)
+            self.assertEqual(len(status_errors), 1)
+            self.assertIn(reason, status_errors[0])
+
+            metadata = [
+                elem
+                for elem in logical_shape.iter()
+                if elem.get('data-pptx-part') == 'txbody'
+            ]
+            if artifact.index == 1:
+                self.assertEqual(len(metadata), 1)
+                payload = base64.b64decode(
+                    (metadata[0].text or '').strip()
+                ).decode('utf-8')
+                self.assertNotIn('<a:effectLst', payload)
+            else:
+                self.assertEqual(metadata, [])
+
+            self._assert_checker_and_exporter_reject(
+                artifact.svg,
+                reason,
+                'unsupported imported PPTX effect',
+            )
+
+        for style_source in ('layout', 'master'):
+            with self.subTest(style_source=style_source):
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    pptx_path = (
+                        Path(tmp_dir) / f'{style_source}-run-effects.pptx'
+                    )
+                    self._write_inherited_run_effect_fixture(
+                        pptx_path,
+                        style_source=style_source,
+                    )
+                    imported = convert_pptx_to_svg(
+                        pptx_path,
+                        options=ConvertOptions(inheritance_mode='flat'),
+                    )
+                    self.assertEqual(len(imported.slides), 3)
+                    for artifact in imported.slides:
+                        with self.subTest(slide=artifact.index):
+                            assert_artifact(artifact)
+
+    def test_table_cell_run_effect_import_fails_closed(self):
+        cases = [
+            ('rPr:effectLst', False),
+            ('defRPr', False),
+            ('endParaRPr', False),
+            ('rPr:empty-effectLst', False),
+            ('rPr:empty-effectDag', False),
+            ('none', False),
+            ('rPr:effectLst', True),
+        ]
+        effect_slides = {1, 2, 3, 7}
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root_dir = Path(tmp_dir)
+            pptx_path = root_dir / 'table-run-effects.pptx'
+            self._write_table_run_effect_fixture(pptx_path, cases)
+            imported = convert_pptx_to_svg(
+                pptx_path,
+                options=ConvertOptions(inheritance_mode='flat'),
+            )
+            self.assertEqual(len(imported.slides), len(cases))
+
+            for artifact in imported.slides:
+                with self.subTest(slide=artifact.index):
+                    root = ET.fromstring(artifact.svg)
+                    group = next(
+                        elem
+                        for elem in root.iter()
+                        if (
+                            elem.tag.rsplit('}', 1)[-1] == 'g'
+                            and elem.get('data-name')
+                            == f'TABLE EFFECT TEXT {artifact.index}'
+                        )
+                    )
+                    self.assertIn(
+                        f'CELL {artifact.index}',
+                        ''.join(root.itertext()),
+                    )
+                    svg_path = root_dir / f'table-{artifact.index}.svg'
+                    svg_path.write_text(artifact.svg, encoding='utf-8')
+
+                    if artifact.index in effect_slides:
+                        self.assertIsNone(
+                            group.get('data-pptx-replace-with')
+                        )
+                        expected_status = (
+                            'unsupported-native-transform'
+                            if artifact.index == 7
+                            else 'unsupported-table-direct-formatting'
+                        )
+                        self.assertEqual(
+                            group.get('data-pptx-replacement-status'),
+                            expected_status,
+                        )
+                        self.assertEqual(
+                            group.get('data-pptx-effect-status'),
+                            'unsupported',
+                        )
+                        self.assertEqual(
+                            group.get('data-pptx-effect-reason'),
+                            'unsupported-run-effect-route:table-cell-text',
+                        )
+                        self.assertFalse(any(
+                            elem.tag.rsplit('}', 1)[-1] == 'metadata'
+                            and elem.get('type') == 'application/json'
+                            for elem in group
+                        ))
+                        status_errors = project_effect_status_errors(root)
+                        self.assertEqual(len(status_errors), 1)
+                        checker_result = SVGQualityChecker().check_file(
+                            str(svg_path)
+                        )
+                        self.assertFalse(checker_result['passed'])
+                        self.assertIn(
+                            'unsupported-run-effect-route:table-cell-text',
+                            '\n'.join(checker_result['errors']),
+                        )
+                        for native_objects in (False, True):
+                            with self.assertRaisesRegex(
+                                SvgNativeConversionError,
+                                'unsupported imported PPTX effect',
+                            ):
+                                convert_svg_to_slide_shapes(
+                                    svg_path,
+                                    native_objects=native_objects,
+                                )
+                        continue
+
+                    self.assertEqual(project_effect_status_errors(root), [])
+                    self.assertEqual(
+                        group.get('data-pptx-replace-with'),
+                        'table',
+                    )
+                    self.assertIsNone(
+                        group.get('data-pptx-replacement-status')
+                    )
+                    self.assertIsNone(group.get('data-pptx-effect-status'))
+                    self.assertTrue(any(
+                        elem.tag.rsplit('}', 1)[-1] == 'metadata'
+                        and elem.get('type') == 'application/json'
+                        for elem in group
+                    ))
+                    checker_result = SVGQualityChecker().check_file(
+                        str(svg_path)
+                    )
+                    self.assertTrue(checker_result['passed'])
+                    default_xml = convert_svg_to_slide_shapes(svg_path)[0]
+                    native_xml = convert_svg_to_slide_shapes(
+                        svg_path,
+                        native_objects=True,
+                    )[0]
+                    self.assertNotIn('<a:tbl>', default_xml)
+                    self.assertIn('<a:tbl>', native_xml)
 
     def test_picture_and_group_effect_import_is_explicit(self):
         dml = 'http://schemas.openxmlformats.org/drawingml/2006/main'
@@ -3643,6 +6429,48 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
             1,
         )
 
+    def test_native_placeholder_match_uses_effective_zero_index(self):
+        def slide_spec(idx: int) -> TemplateSlideSpec:
+            element = TemplateElementSpec(
+                element_id='title-slot',
+                order=1,
+                tag='g',
+                placeholder='title',
+                placeholder_idx=idx,
+            )
+            return TemplateSlideSpec(
+                slide_num=1,
+                svg_path=Path('01_cover.svg'),
+                master_key='master',
+                master_name='Master',
+                layout_key='layout',
+                layout_name='Layout',
+                elements=(element,),
+            )
+
+        source_placeholder = NativePlaceholderSpec(
+            semantic_role='title',
+            placeholder_type='title',
+            idx=None,
+        )
+        layout = NativeLayoutSpec(
+            key='layout',
+            name='Layout',
+            package_part='ppt/slideLayouts/slideLayout1.xml',
+            master_key='master',
+            placeholders=(source_placeholder,),
+        )
+
+        matches = match_native_placeholders(slide_spec(0), layout)
+        self.assertEqual(matches[0][1], source_placeholder)
+        self.assertIsNone(source_placeholder.idx)
+        self.assertEqual(source_placeholder.effective_idx, 0)
+        with self.assertRaisesRegex(
+            TemplateStructureError,
+            'title idx=1.*has no compatible source placeholder',
+        ):
+            match_native_placeholders(slide_spec(1), layout)
+
     def test_stale_compact_preset_is_not_a_structured_atom_or_carrier(self):
         fragment = render_preset_shape_fragment(
             'diamond',
@@ -4364,10 +7192,13 @@ class SVGQualityCheckerCompatibilityTests(unittest.TestCase):
             '<a:p><a:r><a:rPr><a:effectLst/><a:effectDag/></a:rPr>'
             '<a:t>AB</a:t></a:r></a:p>'
         )
+        local_text = txbody('<a:p><a:r><a:t>AB</a:t></a:r></a:p>')
 
-        self.assertTrue(_txbody_has_run_effects(inherited_list))
-        self.assertTrue(_txbody_has_run_effects(paragraph_end_dag))
-        self.assertFalse(_txbody_has_run_effects(empty_containers))
+        self.assertTrue(txbody_has_run_effects(inherited_list))
+        self.assertTrue(txbody_has_run_effects(paragraph_end_dag))
+        self.assertFalse(txbody_has_run_effects(empty_containers))
+        self.assertTrue(txbody_has_run_effects(local_text, inherited_list))
+        self.assertFalse(txbody_has_run_effects(local_text, empty_containers))
 
     def test_checker_does_not_trust_authored_runtime_txbody_snapshot(self):
         root = ET.fromstring(

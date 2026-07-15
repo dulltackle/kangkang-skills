@@ -167,15 +167,28 @@ when the referenced marker fits this native-arrow contract:
 | Concern | Required form |
 |---|---|
 | Reference | Exact local `url(#id)` to a `<marker>` in `<defs>` |
-| Orientation | `orient="auto"` |
-| Shape | A 3-vertex `<polygon>` / closed M/L-only path (triangle), 4-vertex `<polygon>` / closed M/L-only path (diamond), or one `<circle>` / `<ellipse>` (oval) |
-| Path grammar | One explicit `M`/`L` command per vertex followed by `Z`; do not use `H`, `V`, curves, or an implicit multi-point `L` command inside a marker path |
-| Color parity | Marker fill matches the parent line stroke; DrawingML arrows inherit the line color |
+| Orientation | `orient="auto"` or `orient="auto-start-reverse"`; the latter reverses `marker-start` while behaving like `auto` at `marker-end` |
+| Shape | One direct shape representing a DrawingML `triangle`, `stealth`, `arrow`, `diamond`, or `oval` line end: a 3-vertex `<polygon>` / closed path (triangle), a simple concave 4-vertex `<polygon>` / closed path (stealth), an open 3-vertex path (arrow), a simple convex 4-vertex `<polygon>` / closed path (diamond), or one `<circle>` / `<ellipse>` (oval) |
+| Path grammar | Use one explicit `M`/`L` command per vertex. Triangle, stealth, and diamond paths end in `Z`; arrow paths remain open after the third vertex. Do not use `H`, `V`, curves, or an implicit multi-point `L` command inside a marker path |
+| Color parity | Triangle, stealth, diamond, and oval use a fill matching the parent line stroke. The open arrow uses `fill="none"` and a stroke matching the parent line stroke. DrawingML line ends inherit the line color |
 
-The converter maps the three shapes to DrawingML triangle, diamond, and oval
-line ends. Prefer `<polygon>` for triangle/diamond markers because the vertex
-count is unambiguous. Other marker shapes do not have a native mapping and are
-dropped with a warning.
+The converter maps these five shapes to their corresponding DrawingML line-end
+types. Prefer `<polygon>` for the closed triangle, stealth, and diamond forms;
+the open arrow form requires `<path>`. Four-vertex shapes must be simple and
+non-degenerate: convex geometry maps to diamond and concave geometry maps to
+stealth. Checker and exporter preflight consume this same contract; other
+marker shapes have no native mapping and block export instead of being silently
+dropped. PPTX import likewise accepts only these five DrawingML line-end types
+(plus `none`); an unknown source value stops import instead of being relabeled
+as a supported shape. Optional DrawingML `w` and `len` values default to `med`;
+explicit values must be `sm`, `med`, or `lg`, and invalid source buckets stop
+import instead of being normalized to `med`.
+Each imported line contains at most one direct, empty `a:headEnd` and one direct,
+empty `a:tailEnd`, carrying only optional `type`, `w`, and `len`. Omitted `type`
+means `none`; an explicitly empty token, duplicate endpoint, unknown attribute,
+or child payload stops import instead of being ignored. A non-`none` endpoint
+also requires a visible resolved line paint; a `noFill` line/end combination
+stops import instead of producing a project-invalid invisible marker.
 
 ---
 
@@ -276,8 +289,14 @@ attributes, and no separate source-payload opt-in marker exists.
 | `data-pptx-geometry-kind="custom"` + `data-pptx-custgeom` | Custom-geometry carrier | Preserve the validated original `a:custGeom` subtree. If the visible path hash is unchanged, export restores formulas, handles, connection sites, text rectangle, and path list exactly; edited paths compile from current SVG geometry. |
 | `data-pptx-start/end-shape-id/site` | Connector logical `<g>` and carrier | Restore `a:stCxn` / `a:endCxn` after scoped shape-id allocation. A connector may retain one zero frame axis; it must not be expanded from visible stroke or marker bounds. |
 | `data-pptx-shape-style` | Native carrier | Preserve a relationship-free `p:style` independently of text, including shapes with no visible text. |
-| `data-pptx-effect-status="unsupported"` + `data-pptx-effect-reason` | Imported `p:sp` / `p:cxnSp` logical object and native carrier; imported `p:pic` carrier and logical object; imported `p:grpSp` logical group | Record why an encountered source `effectLst` / `effectDag` cannot enter the registered target-specific effect mapping without changing semantics. Checker and export stop with the recorded reason; these attributes are diagnostics, not a preserved effect payload or authoring syntax. |
+| `data-pptx-effect-status="unsupported"` + `data-pptx-effect-reason` | Imported `p:sp` / `p:cxnSp` logical object and native carrier; imported `p:pic` carrier and logical object; imported `p:grpSp` logical group; imported table `p:graphicFrame` logical group | Record why an encountered source object or text-run `effectLst` / `effectDag` cannot enter the registered target-specific effect mapping without changing semantics. Checker and export stop with the recorded reason; these attributes are diagnostics, not a preserved effect payload or authoring syntax. |
 | `metadata[data-pptx-part="txbody"]` | Logical shape `<g>` | Preserve unchanged `p:txBody`, including an empty text body. Content, whitespace, positioning, visible typography, or incompatible child-topology edits invalidate the payload. A source payload with run-level effects then blocks checker/export instead of losing those effects; an effect-free payload uses the normal SVG text fallback. |
+
+One effect reason remains its existing plain token. If one imported object has
+multiple independent unsupported reasons, both marker copies store the same
+deduplicated, lexicographically sorted compact JSON string array in
+`data-pptx-effect-reason`; adding a later reason must not overwrite an earlier
+one. This array is still diagnostic metadata, not an authoring surface.
 
 **Import/authoring representation split**:
 
@@ -695,6 +714,56 @@ preflight; neither substitutes an opaque default for unknown intent.
 plus alpha when a painted transparent layer must remain represented. Prefer
 descendant alpha over group opacity when isolated compositing matters (§2.2).
 
+On PPTX-to-SVG import, a non-line DrawingML fill-bearing container has at most
+one direct fill choice among `a:noFill`, `a:solidFill`, `a:gradFill`,
+`a:blipFill`, `a:pattFill`, and `a:grpFill`. Competing choices and
+foreign-namespace aliases stop import instead of being selected by
+implementation priority. Explicit `a:grpFill` also stops import until group
+fill inheritance has a registered SVG mapping; an omitted fill continues to
+use the owning container's inheritance/default contract.
+Every imported `a:noFill`, including line paint, is an attribute-free empty
+leaf. Attributes, child elements, or text payload stop import instead of being
+discarded while the paint is normalized to `none`.
+The general fill and line-paint import routes require an attribute-free
+`a:solidFill` to contain exactly one direct registered DrawingML color child
+with no interleaved text. Although Office can merge an omitted solid color from
+style/master inheritance and ultimately default it to `schemeColor(bg1)`, the
+local SVG mapping does not guess that external context: empty, malformed,
+ambiguous, or unresolvable solid fills stop import instead of being treated as
+an omitted fill or reduced to the first recognizable color.
+Imported `a:srgbClr` uses exactly one `val` attribute containing six ASCII
+hexadecimal digits. SVG/CSS conveniences such as three-digit shorthand, a
+leading `#`, alpha-bearing eight-digit tokens, extra attributes, and
+interleaved text stop import instead of being normalized into a different
+DrawingML token. Lowercase hexadecimal digits remain equivalent input and
+normalize to uppercase SVG paint.
+Imported `a:schemeClr` likewise has exactly one `val` attribute and accepts only
+the DrawingML scheme enum: `bg1`, `tx1`, `bg2`, `tx2`, `accent1..6`, `hlink`,
+`folHlink`, `phClr`, `dk1`, `lt1`, `dk2`, or `lt2`. Unknown/case-altered
+references, extra attributes, namespace aliases, and interleaved text stop
+import. A registered reference that cannot be resolved from the active theme
+or `phClr` placeholder context remains a resolution failure, not an unknown
+enum fallback.
+Imported `a:sysClr` requires a registered DrawingML system-color `val` and a
+six-digit `lastClr` fallback. The latter is optional in OOXML but mandatory for
+this portable mapping because the converter cannot reproduce the source
+machine's dynamic system palette. Missing/unknown system identities, malformed
+fallbacks, extra attributes, namespace aliases, and interleaved text stop
+import; a valid `lastClr` is normalized into static SVG paint, so this route is
+`Native-normalized` rather than system-color-preserving.
+Imported `a:prstClr` has exactly one `val` attribute selected from the complete
+190-value DrawingML preset-color enum, all of which have a registered static
+RGB mapping. Missing/unknown/case-altered values, extra attributes, namespace
+aliases, and interleaved text stop import instead of falling back to black or
+an adjacent CSS color name.
+Imported `a:hslClr` has exactly the required `hue`, `sat`, and `lum`
+attributes. The registered mapping accepts integer DrawingML units only:
+`hue` is `0..21599999` in 1/60000 degree, while `sat` and `lum` are
+`0..100000` in thousandths of a percent. Missing, malformed, percentage-literal,
+or out-of-range channels, extra attributes, namespace aliases, and interleaved
+text stop import instead of receiving zero defaults or being clamped into a
+different color.
+
 ---
 
 ### 6.3 Gradients and Paint Effects
@@ -718,6 +787,73 @@ Linear export preserves stops/alpha/direction but reduces coordinates to an
 angle. Radial export becomes a centered circular gradient and does not preserve
 `cx/cy/r/fx/fy`. Gradient strokes remain editable, but PPTX-to-SVG re-import may
 retain only the first stop. Stop alpha and element opacity multiply.
+Non-line PPTX gradient-fill import writes stop offsets with five decimal places,
+and export parses the shared unitless/percentage grammar before half-up
+quantization to 1/100000. Thus small positions and values such as `1%`
+round-trip without truncation or percentage reinterpretation. In that non-line
+import mapping, each `a:gs` requires an integer `pos` from `0` through `100000`.
+Missing, malformed, or out-of-range source positions stop import instead of
+being silently relocated to the start of the gradient.
+Source positions must be nondecreasing in document order; equal positions stay
+valid for hard transitions. Descending positions stop import instead of being
+silently clamped by SVG rendering.
+An explicit non-line imported `a:gradFill` requires exactly one attribute-free
+`a:gsLst` with at least two direct `a:gs` children and no other payload. Every
+stop must provide a resolvable color. Missing or duplicate lists, undersized or
+malformed lists, and unresolvable stops stop import instead of becoming an
+inherited fill or a partial gradient.
+Each imported `a:gs` has exactly the required `pos` attribute and exactly one
+direct registered DrawingML color child, with no interleaved text. Extra or
+namespaced attributes, missing/multiple/foreign color children, and text payload
+stop import instead of being reduced to the first recognizable color.
+The direct children of an imported non-line `a:gradFill` follow the closed
+DrawingML sequence `a:gsLst`, optional `a:lin` or `a:path`, then optional
+`a:tileRect`, with no text payload. Unknown children, foreign-namespace aliases,
+and out-of-order registered children stop import instead of being ignored.
+An imported non-line `a:lin@ang` may be omitted for the schema-defined zero
+default. When present, it must be an integer from `0` through `21599999`
+(1/60000 degree); malformed or out-of-range values stop import instead of
+silently becoming a horizontal gradient.
+The imported `a:lin` is a leaf with only optional `ang` and `scaled`
+attributes. Extra or namespaced attributes, child elements, and text payload
+stop import instead of being discarded.
+The normalized SVG endpoint mapping preserves `a:lin@scaled="1"` / `"true"`
+at every angle. The schema default (`scaled` omitted) and explicit `"0"` /
+`"false"` are accepted only at cardinal angles, where aspect-ratio scaling
+cannot change the direction. Other unscaled angles and malformed boolean values
+stop import instead of producing a direction that varies with shape geometry.
+An imported non-line `a:gradFill` contains at most one direct `a:lin` or
+`a:path` direction. Omitting both uses the schema-defined horizontal linear
+default; duplicate or mixed direction elements stop import instead of being
+selected by implementation priority.
+For the registered path-gradient approximation, omitted `a:path@path` uses the
+schema default `rect`; explicit `circle`, `rect`, and `shape` are normalized to
+the centered radial SVG form. Unknown or malformed enum values stop import
+instead of being mislabeled as a supported radial gradient.
+The imported `a:path` permits only its optional `path` attribute and zero or one
+direct `a:fillToRect` child. Extra or namespaced attributes, foreign children,
+and interleaved text payload stop import instead of being discarded.
+The local SVG gradient rotates with its containing geometry. Imported
+`a:gradFill@rotWithShape` may therefore be omitted for the documented Office
+base default or be the exact XML booleans `1` / `true`. Explicit `0` / `false`
+and malformed booleans stop import instead of detaching the gradient direction
+from the shape during rotation.
+The imported `a:gradFill` attribute set is closed to `flip` and
+`rotWithShape`; unknown, namespaced, or misspelled attributes stop import rather
+than being ignored as if their semantics were already supported.
+Project SVG has no gradient-tile flip mapping. Imported `a:gradFill@flip` may
+therefore be omitted for the documented Office `none` baseline or be exactly
+`none`; `x`, `y`, `xy`, malformed, and unknown values stop import instead of
+becoming an ordinary unflipped gradient.
+An imported `a:tileRect` may be absent or occur once as an empty/full-area
+relative rectangle. Explicit `l/t/r/b` values use strict DrawingML percentage
+syntax and must resolve to zero. Duplicate or malformed rectangles and non-zero
+tile offsets stop import because project SVG has no gradient tiling model.
+Within an imported `a:path`, zero or one leaf `a:fillToRect` is accepted. Its
+optional `l/t/r/b` edges must use the same strict DrawingML percentage syntax;
+the registered `Approximate` mapping validates but normalizes the focus rectangle
+to the centered radial SVG form. Duplicate or malformed focus rectangles stop
+import instead of being silently discarded.
 The quality checker and exporter preflight both validate definition location,
 references, gradient structure, and paint context from the same closed contract.
 
@@ -752,8 +888,12 @@ Filters are native-effect metadata, not a general pixel-filter surface.
 | Definition/reference | Direct `<defs><filter id="...">` child with unique id; direct `filter="url(#id)"` attribute, never inline style |
 | Public targets | `<rect>`, `<circle>`, `<path>`, `<text>` |
 | Required primitive | `feDropShadow` or `feGaussianBlur` |
+| Required parameters | Explicit `stdDeviation` on either effect primitive; explicit `dx`, `dy`, and `flood-opacity` on `feDropShadow`; explicit `flood-opacity` on `feFlood`; explicit `slope` on linear `feFuncA` |
 | Accepted helpers | `feOffset`, `feFlood`, `feComposite`, `feMerge`, `feMergeNode`, `feComponentTransfer`, linear `feFuncA` |
-| Numeric values | Finite unitless values; non-negative `stdDeviation`; finite `dx` / `dy`; `feFuncA slope` within `0..1` |
+| Alpha transfer | Linear `feFuncA` maps multiplicative `slope` only; `intercept` is unsupported |
+| Blur sampling | `feGaussianBlur edgeMode` is unsupported; native effects do not expose the SVG edge-sampling modes |
+| Primitive coordinates | Omit `primitiveUnits` or use `userSpaceOnUse`; `objectBoundingBox` coordinates are unsupported |
+| Numeric values | Finite unitless values; non-negative `stdDeviation`; finite `dx` / `dy`; `feFuncA slope` within `0..1`; mapped glow `rad = stdDeviation × 9525`, shadow `blurRad = stdDeviation × 2 × 9525`, and shadow `dist = hypot(dx,dy) × 9525` must round into DrawingML `0..27273042316900` |
 | Classification | Meaningful non-zero offset → one outer shadow; zero/no offset → one glow |
 | Fidelity | `Approximate`; one filter becomes one DrawingML effect |
 
@@ -780,21 +920,48 @@ Each supported source effect must contain exactly one resolvable DrawingML
 color choice. Malformed choices and valid color semantics outside the
 registered color/modifier subset also receive effect-status metadata; the
 importer never substitutes black or drops an unhandled modifier.
+DrawingML color alpha transforms are evaluated in document order. Each
+`alpha`, `alphaMod`, or `alphaOff` result saturates into `0..100%` before the
+next transform, and the importer writes that effective value to the SVG
+`flood-opacity` channel.
 Picture and group targets do not expose the public filter mapping: any source
 effect DAG or non-empty effect list on `p:pic/p:spPr` or `p:grpSp/p:grpSpPr`
 keeps the base object but receives effect-status metadata instead of attaching
 an invalid filter to `<image>` or ordinary `<g>`.
-Imported metadata-backed logical shapes preserve run-level effects only inside an
-unchanged `metadata[data-pptx-part="txbody"]` payload. If visible text,
-typography, or child topology invalidates that payload, checker and exporter
-stop when the source `rPr` / `defRPr` / `endParaRPr` contains a non-empty
-`effectLst` or `effectDag`; effect-free edited text keeps the normal fallback.
-This conditional guard is not a public run-effect authoring surface and does
-not cover the separate vertical-text output, relationship-bearing text bodies,
-or table-cell text bodies.
+Imported metadata-backed logical shapes preserve slide-local run-level effects
+only inside an unchanged `metadata[data-pptx-part="txbody"]` payload. If
+visible text, typography, or child topology invalidates that payload, checker
+and exporter stop when the source `rPr` / `defRPr` / `endParaRPr` contains a
+non-empty `effectLst` or `effectDag`; effect-free edited text keeps the normal
+fallback.
+Effects found in the inherited Layout/Master list-style chain are outside that
+slide-local payload. Horizontal import keeps the visible fallback and payload
+but stamps the logical shape and native carrier with
+`unsupported-run-effect-route:inherited-text-style`.
+The separate vertical-text output cannot carry that payload. When its source
+text body or inherited list-style chain contains the same non-empty run-effect
+containers, import keeps the normalized geometry and visible vertical text but
+stamps the logical shape and native carrier with the blocking §1.4 effect
+status; effect-free and empty effect containers keep the existing normalized
+fallback.
+Relationship-bearing text bodies also cannot carry the opaque payload across
+parts. When such a body or its inherited list-style chain contains a non-empty
+run effect, import keeps its rebuilt visible text but stamps the same two
+blocking object markers; relationship-bearing text without a run effect keeps
+the existing visual fallback.
+Table-cell text bodies use neither the opaque payload nor the public filter
+mapping. A non-empty run effect disables the native Table replacement payload,
+keeps the visible table fallback, and stamps its imported `p:graphicFrame`
+logical group with the blocking effect status. The existing replacement status
+still records any independent table fallback reason; empty effect containers
+and effect-free cells remain eligible for the closed native Table schema.
+If a shape has both an unsupported shape-level effect and one of these run-level
+fallback reasons, the canonical compound marker records both reasons.
+This conditional guard is not a public run-effect authoring surface.
 The quality checker and exporter preflight enforce the same definition,
-reference, primitive, target, and numeric-value contract; malformed values are
-never replaced by effect defaults during native export.
+reference, primitive, target, and numeric-value contract. Missing required
+geometry and malformed values are never replaced by effect defaults during
+native export.
 
 ```xml
 <defs>
@@ -945,6 +1112,48 @@ fidelity.
 | Gradient stroke | §6.3; re-import may flatten to first stop |
 | `marker-start` / `marker-end` | §1.1 native line end; type `Native-normalized`, size `Approximate` (`sm/med/lg`) |
 
+PPTX import formats normalized paint and text alpha with five decimal places,
+matching DrawingML's 1/100000 target precision. The smallest positive source
+alpha therefore remains non-zero and quantizes back instead of becoming fully
+transparent. Export uses one clamped half-up quantizer for every DrawingML
+`alpha`, `alphaMod`, and `alphaModFix` channel; it never truncates a decimal
+ratio one unit below its intended value.
+
+PPTX import accepts `a:ln@w` only as an integer DrawingML `ST_LineWidth` value
+from `0` through `20116800` EMU. Malformed, negative, or oversized source widths
+stop import instead of being dropped and replaced by a default SVG line width.
+The EMU-to-pixel token retains enough decimal precision for the smallest
+positive legal width to remain non-zero and quantize back to its source EMU.
+PPTX import accepts an omitted `a:ln@cmpd` or explicit `sng`. Other compound
+line values (`dbl`, `thickThin`, `thinThick`, `tri`) have no registered
+single-stroke SVG mapping and stop import instead of becoming an ordinary line.
+PPTX import likewise accepts an omitted `a:ln@algn` or explicit `ctr`.
+Inside-aligned (`in`) and unknown source values stop import because an ordinary
+SVG stroke is centered and cannot preserve the source outline boundary.
+An imported line contains at most one direct paint. The registered import
+choices are `a:noFill`, a resolvable `a:solidFill`, and `a:gradFill` normalized
+to its first resolvable stop. Ambiguous paint, unresolved registered paint, and
+pattern/image/group line paint stop import instead of becoming a default color.
+An explicit source `a:ln@cap` must be `flat`, `rnd`, or `sq`, which map to SVG
+`butt`, `round`, and `square`; unknown values stop import instead of falling
+back to the SVG default cap.
+An imported line has at most one direct `a:round`, `a:bevel`, or `a:miter`
+join. Round and bevel are empty; miter requires the project's fixed
+`lim="800000"`. Ambiguous joins, payload-bearing join elements, a missing
+limit, and other miter limits stop import rather than losing corner geometry.
+PPTX import maps only the registered DrawingML `prstDash` values; `solid`
+remains an intentional line with no SVG dash array, while an unknown source
+value stops import instead of being mistaken for `solid`. A line contains at
+most one direct `a:prstDash` or `a:custDash`; preset dash has exactly one `val`
+attribute and no payload. Duplicate, mixed, or payload-bearing dash definitions
+stop import instead of being resolved by document order.
+An imported `a:custDash` contains one or more direct, empty `a:ds` children;
+each stop has exactly `d` and `sp`, both positive OOXML integers. Missing or
+extra fields, foreign children, malformed numbers, and values outside the
+positive 32-bit integer range stop import instead of being skipped. Import
+formats converted dash lengths with enough decimal precision that a legal
+positive source value never becomes a zero SVG dash or gap.
+
 The dash grammar is closed: exact lowercase `none`, or at least two finite
 unitless numbers separated by whitespace or one comma. Generated SVG uses
 ordinary decimal spellings. A leading plus sign, exponent, trailing decimal
@@ -958,9 +1167,11 @@ Generated cap, join, and `vector-effect` values use the exact lowercase tokens
 in the table. Surrounding whitespace is compatible input and produces a
 recommendation; every other token is an error.
 
-Match marker fill to the parent stroke. Use markers for connectors and §6.10
-calculated geometry for a manual diagonal arrowhead. When exact grid spacing
-matters, use one multi-subpath path rather than a fixed-density preset pattern:
+Match marker paint to the parent stroke using the shape-specific channel from
+§1.1: fill for closed/oval line ends and stroke for the open arrow. Use markers
+for connectors and §6.10 calculated geometry for a manual diagonal arrowhead.
+When exact grid spacing matters, use one multi-subpath path rather than a
+fixed-density preset pattern:
 
 ```xml
 <path d="M40 0V120 M80 0V120 M0 40H120 M0 80H120"
@@ -1324,11 +1535,15 @@ Before release export, rasterize the affected object from the source PPTX or
 rebuild its effect with supported explicit geometry; baking the effect-less
 analysis SVG alone cannot recover the source appearance. This diagnostic path
 covers `p:sp`, `p:cxnSp`, `p:pic`, and `p:grpSp` source effects. Text-run source
-effects do not use effect-status metadata; the metadata-backed logical-shape
-guard in §6.4 preserves them unchanged or blocks a lossy edit. Other text-body
-routes remain outside that guard and are not claimed as preserved. Handled
-object effects must never become a different effect or disappear without a
-diagnostic.
+effects follow the route-specific §6.4 contract: unchanged metadata-backed
+horizontal text preserves slide-local effects in its native `txBody`, while a
+lossy edit blocks from that payload and inherited list-style effects receive a
+separate blocking marker; vertical and relationship-bearing shape-text routes
+keep their visible fallback and stamp the logical shape plus carrier with
+effect-status; table-cell text keeps the visible table fallback, disables
+native Table replacement, and stamps the imported `p:graphicFrame` group.
+Handled object or text-run effects must never become a different effect or
+disappear without a diagnostic.
 
 ---
 
@@ -1524,8 +1739,11 @@ boolean `bold`, `italic`, `underline`, and `strike`, plus optional `color`,
 `font_size`, one-typeface `font_family`, `lang`, and `alt_lang`. Unknown fields,
 wrong types, empty run lists, multi-typeface `font_family`, and unsupported
 colors fail fast. PPTX import requires exact physical row/grid topology and
-normalizes source presentation-only run XML outside this closed schema, but
-relationship-bearing text, extensions, structural line breaks, fields, tabs,
+normalizes source presentation-only run XML outside this closed schema only
+when it contains no non-empty `rPr` / `defRPr` / `endParaRPr` `effectLst` or
+`effectDag`. A table-cell run effect follows the blocking effect contract above
+instead of entering either the native payload or an effect-free fallback.
+Relationship-bearing text, extensions, structural line breaks, fields, tabs,
 bullets, malformed run topology, and unsupported text-body structure remain
 fallback-only.
 Per-side cell borders use `borders.left|right|top|bottom`, where each value is

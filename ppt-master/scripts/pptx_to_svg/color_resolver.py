@@ -11,6 +11,7 @@ a:clrScheme.
 from __future__ import annotations
 
 import colorsys
+import re
 from xml.etree import ElementTree as ET
 
 from .emu_units import NS, percent_to_ratio
@@ -21,7 +22,7 @@ from .ooxml_loader import PartRef
 # Preset color names (DrawingML <a:prstClr val="...">)
 # ---------------------------------------------------------------------------
 
-# Source: ECMA-376 ST_PresetColorVal (subset — full list has ~140 entries).
+# Source: complete ECMA-376 ST_PresetColorVal enumeration (190 values).
 PRST_COLORS = {
     "aliceBlue": "F0F8FF", "antiqueWhite": "FAEBD7", "aqua": "00FFFF",
     "aquamarine": "7FFFD4", "azure": "F0FFFF", "beige": "F5F5DC",
@@ -100,6 +101,59 @@ SCHEME_ALIASES = {
     "bg1": "lt1", "bg2": "lt2",
     "tx1": "dk1", "tx2": "dk2",
 }
+_SRGB_HEX_RE = re.compile(r"[0-9A-Fa-f]{6}")
+_OOXML_INTEGER_RE = re.compile(r"[+-]?[0-9]+")
+_SCHEME_COLOR_VALUES = {
+    "bg1",
+    "tx1",
+    "bg2",
+    "tx2",
+    "accent1",
+    "accent2",
+    "accent3",
+    "accent4",
+    "accent5",
+    "accent6",
+    "hlink",
+    "folHlink",
+    "phClr",
+    "dk1",
+    "lt1",
+    "dk2",
+    "lt2",
+}
+_SYSTEM_COLOR_VALUES = {
+    "scrollBar",
+    "background",
+    "activeCaption",
+    "inactiveCaption",
+    "menu",
+    "window",
+    "windowFrame",
+    "menuText",
+    "windowText",
+    "captionText",
+    "activeBorder",
+    "inactiveBorder",
+    "appWorkspace",
+    "highlight",
+    "highlightText",
+    "btnFace",
+    "btnShadow",
+    "grayText",
+    "btnText",
+    "inactiveCaptionText",
+    "btnHighlight",
+    "3dDkShadow",
+    "3dLight",
+    "infoText",
+    "infoBk",
+    "hotLight",
+    "gradientActiveCaption",
+    "gradientInactiveCaption",
+    "menuHighlight",
+    "menuBar",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +218,43 @@ COLOR_TAGS = ("srgbClr", "schemeClr", "sysClr", "prstClr",
               "hslClr", "scrgbClr")
 
 
+def validate_no_fill(elem: ET.Element) -> None:
+    """Require the empty DrawingML a:noFill leaf contract."""
+    if elem.attrib or list(elem) or (elem.text or "").strip():
+        raise ValueError("Invalid DrawingML noFill structure")
+
+
+def resolve_solid_fill_color(
+    elem: ET.Element,
+    palette: ColorPalette | None,
+    *,
+    placeholder_hex: str | None = None,
+) -> tuple[str, float]:
+    """Resolve one explicit color from a closed DrawingML solid fill."""
+    children = list(elem)
+    color_tags = {f"{{{NS['a']}}}{name}" for name in COLOR_TAGS}
+    if not elem.attrib and not children and not (elem.text or "").strip():
+        raise ValueError(
+            "DrawingML solid fill requires one explicit color"
+        )
+    if (
+        elem.attrib
+        or len(children) != 1
+        or children[0].tag not in color_tags
+        or (elem.text or "").strip()
+        or (children[0].tail or "").strip()
+    ):
+        raise ValueError("Invalid DrawingML solid fill structure")
+    hex_, alpha = resolve_color(
+        children[0],
+        palette,
+        placeholder_hex=placeholder_hex,
+    )
+    if hex_ is None:
+        raise ValueError("DrawingML solid fill color cannot be resolved")
+    return hex_, alpha
+
+
 def find_color_elem(parent: ET.Element | None) -> ET.Element | None:
     """Return the first child color element (any of the 6 OOXML color tags)."""
     if parent is None:
@@ -200,27 +291,19 @@ def resolve_color(
     alpha: float = 1.0
 
     if tag == "srgbClr":
-        val = color_elem.attrib.get("val", "")
-        base_hex = _normalize_hex(val)
+        base_hex = _srgb_hex_value(color_elem)
     elif tag == "schemeClr":
-        name = color_elem.attrib.get("val", "")
+        name = _scheme_color_name(color_elem)
         if name == "phClr":
             base_hex = _normalize_hex(placeholder_hex) if placeholder_hex else None
         elif palette is not None:
             base_hex = palette.resolve_scheme(name)
     elif tag == "sysClr":
-        last = color_elem.attrib.get("lastClr") or color_elem.attrib.get("val")
-        base_hex = _normalize_hex(last) if last else None
+        base_hex = _system_color_fallback(color_elem)
     elif tag == "prstClr":
-        name = color_elem.attrib.get("val", "")
-        base_hex = PRST_COLORS.get(name)
+        base_hex = _preset_color_hex(color_elem)
     elif tag == "hslClr":
-        # DrawingML hue is in 1/60000 deg ([0, 21_600_000) maps to [0°, 360°));
-        # _hsl_to_hex expects a fraction in [0, 1), so divide by 60000 * 360.
-        h = float(color_elem.attrib.get("hue", "0")) / 21_600_000.0
-        s = float(color_elem.attrib.get("sat", "0")) / 100000.0
-        lum = float(color_elem.attrib.get("lum", "0")) / 100000.0
-        base_hex = _hsl_to_hex(h, s, lum)
+        base_hex = _hsl_color_hex(color_elem)
     elif tag == "scrgbClr":
         # 0..100000 per channel
         r = float(color_elem.attrib.get("r", "0")) / 100000.0
@@ -234,6 +317,138 @@ def resolve_color(
     # Apply modifiers (children of the color element).
     base_hex, alpha = _apply_modifiers(base_hex, color_elem)
     return f"#{base_hex}", alpha
+
+
+def _srgb_hex_value(color_elem: ET.Element) -> str:
+    """Parse the closed six-digit DrawingML sRGB base token."""
+    children = list(color_elem)
+    if (
+        color_elem.tag != f"{{{NS['a']}}}srgbClr"
+        or set(color_elem.attrib) != {"val"}
+        or (color_elem.text or "").strip()
+        or any((child.tail or "").strip() for child in children)
+    ):
+        raise ValueError("Invalid DrawingML sRGB color structure")
+    raw = color_elem.attrib["val"]
+    if _SRGB_HEX_RE.fullmatch(raw) is None:
+        raise ValueError(f"Invalid DrawingML sRGB color value: {raw!r}")
+    return raw.upper()
+
+
+def _scheme_color_name(color_elem: ET.Element) -> str:
+    """Parse one closed DrawingML scheme-color reference."""
+    children = list(color_elem)
+    if (
+        color_elem.tag != f"{{{NS['a']}}}schemeClr"
+        or set(color_elem.attrib) != {"val"}
+        or (color_elem.text or "").strip()
+        or any((child.tail or "").strip() for child in children)
+    ):
+        raise ValueError("Invalid DrawingML scheme color structure")
+    name = color_elem.attrib["val"]
+    if name not in _SCHEME_COLOR_VALUES:
+        raise ValueError(f"Invalid DrawingML scheme color value: {name!r}")
+    return name
+
+
+def _system_color_fallback(color_elem: ET.Element) -> str:
+    """Parse a registered system color with a portable six-digit fallback."""
+    children = list(color_elem)
+    if (
+        color_elem.tag != f"{{{NS['a']}}}sysClr"
+        or set(color_elem.attrib) - {"val", "lastClr"}
+        or "val" not in color_elem.attrib
+        or (color_elem.text or "").strip()
+        or any((child.tail or "").strip() for child in children)
+    ):
+        raise ValueError("Invalid DrawingML system color structure")
+    name = color_elem.attrib["val"]
+    if name not in _SYSTEM_COLOR_VALUES:
+        raise ValueError(f"Invalid DrawingML system color value: {name!r}")
+    fallback = color_elem.get("lastClr")
+    if fallback is None:
+        raise ValueError(
+            "DrawingML system color requires a lastClr fallback"
+        )
+    if _SRGB_HEX_RE.fullmatch(fallback) is None:
+        raise ValueError(
+            f"Invalid DrawingML system color fallback: {fallback!r}"
+        )
+    return fallback.upper()
+
+
+def _preset_color_hex(color_elem: ET.Element) -> str:
+    """Resolve one exact value from the complete DrawingML preset enum."""
+    children = list(color_elem)
+    if (
+        color_elem.tag != f"{{{NS['a']}}}prstClr"
+        or set(color_elem.attrib) != {"val"}
+        or (color_elem.text or "").strip()
+        or any((child.tail or "").strip() for child in children)
+    ):
+        raise ValueError("Invalid DrawingML preset color structure")
+    name = color_elem.attrib["val"]
+    hex_ = PRST_COLORS.get(name)
+    if hex_ is None:
+        raise ValueError(f"Invalid DrawingML preset color value: {name!r}")
+    return hex_
+
+
+def _hsl_color_hex(color_elem: ET.Element) -> str:
+    """Resolve one closed DrawingML HSL base color."""
+    children = list(color_elem)
+    if (
+        color_elem.tag != f"{{{NS['a']}}}hslClr"
+        or set(color_elem.attrib) != {"hue", "sat", "lum"}
+        or (color_elem.text or "").strip()
+        or any((child.tail or "").strip() for child in children)
+    ):
+        raise ValueError("Invalid DrawingML HSL color structure")
+    hue = _bounded_integer_attribute(
+        color_elem,
+        "hue",
+        minimum=0,
+        maximum=21_599_999,
+        label="HSL color",
+    )
+    saturation = _bounded_integer_attribute(
+        color_elem,
+        "sat",
+        minimum=0,
+        maximum=100000,
+        label="HSL color",
+    )
+    luminance = _bounded_integer_attribute(
+        color_elem,
+        "lum",
+        minimum=0,
+        maximum=100000,
+        label="HSL color",
+    )
+    return _hsl_to_hex(
+        hue / 21_600_000.0,
+        saturation / 100000.0,
+        luminance / 100000.0,
+    )
+
+
+def _bounded_integer_attribute(
+    elem: ET.Element,
+    attr: str,
+    *,
+    minimum: int,
+    maximum: int,
+    label: str,
+) -> int:
+    """Parse one required bounded DrawingML integer attribute."""
+    raw = elem.attrib[attr]
+    token = raw.strip()
+    if _OOXML_INTEGER_RE.fullmatch(token) is None:
+        raise ValueError(f"Invalid DrawingML {label} {attr}: {raw!r}")
+    value = int(token)
+    if not minimum <= value <= maximum:
+        raise ValueError(f"Invalid DrawingML {label} {attr}: {raw!r}")
+    return value
 
 
 def _apply_modifiers(hex_color: str, color_elem: ET.Element) -> tuple[str, float]:
@@ -279,7 +494,7 @@ def _apply_modifiers(hex_color: str, color_elem: ET.Element) -> tuple[str, float
         elif tag == "alpha":
             alpha = max(0.0, min(1.0, val_ratio))
         elif tag == "alphaMod":
-            alpha *= val_ratio
+            alpha = max(0.0, min(1.0, alpha * val_ratio))
         elif tag == "alphaOff":
             alpha = max(0.0, min(1.0, alpha + val_ratio))
         elif tag == "gray":

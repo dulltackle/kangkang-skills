@@ -16,7 +16,7 @@ from pptx_effects import unsupported_effect_metadata
 from pptx_shapes.formula import OOXML_COORDINATE_MAX
 
 from .color_resolver import COLOR_TAGS, ColorPalette, resolve_color
-from .emu_units import NS, emu_to_px, fmt_num
+from .emu_units import NS, emu_to_px, fmt_num, format_ooxml_alpha
 
 
 _OOXML_INTEGER_RE = re.compile(r"[+-]?\d+")
@@ -218,6 +218,8 @@ def _validate_color(
         if resolved is None or _OOXML_HEX_COLOR_RE.fullmatch(resolved) is None:
             raise ValueError(f"unresolvable-color:{color_name}")
     elif color_name == "sysClr":
+        if not (color.get("val") or "").strip():
+            raise ValueError(f"invalid-color:{color_name}")
         raw = color.get("lastClr") or ""
         if _OOXML_HEX_COLOR_RE.fullmatch(raw) is None:
             raise ValueError(f"unresolvable-color:{color_name}")
@@ -345,18 +347,22 @@ def _outer_shadow(
     return (
         f'<feDropShadow dx="{dx_token}" dy="{dy_token}" '
         f'stdDeviation="{fmt_num(std, 8)}" '
-        f'flood-color="{color}" flood-opacity="{fmt_num(alpha, 5)}"/>'
+        f'flood-color="{color}" '
+        f'flood-opacity="{format_ooxml_alpha(alpha)}"/>'
     )
 
 
 def _glow(elem: ET.Element, palette: ColorPalette | None) -> str:
+    if elem.get("rad") is None:
+        raise ValueError("missing-rad")
     rad = _blur_radius(elem, "rad")
     color, alpha = _color_alpha(elem, palette)
     # svg_to_pptx maps stdDeviation directly back to a:glow@rad.
     std = rad
     return (
         f'<feGaussianBlur in="SourceAlpha" stdDeviation="{fmt_num(std, 8)}" result="blurred"/>'
-        f'<feFlood flood-color="{color}" flood-opacity="{fmt_num(alpha, 5)}" result="flood"/>'
+        f'<feFlood flood-color="{color}" '
+        f'flood-opacity="{format_ooxml_alpha(alpha)}" result="flood"/>'
         f'<feComposite in="flood" in2="blurred" operator="in" result="glow"/>'
         f'<feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>'
     )

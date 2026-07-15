@@ -35,7 +35,12 @@ from pptx_shapes import (
     svg_native_fallback_markup_fingerprint,
     svg_text_fingerprint,
 )
-from pptx_effects import EFFECT_REASON_ATTR, EFFECT_STATUS_ATTR
+from pptx_effects import (
+    EFFECT_REASON_ATTR,
+    EFFECT_STATUS_ATTR,
+    txbody_has_run_effects,
+    unsupported_effect_metadata,
+)
 
 from .color_resolver import ColorPalette, find_color_elem, resolve_color
 from .chart_to_svg import CHART_URI, CHARTEX_URI, extract_native_chart_payload
@@ -338,12 +343,31 @@ def _convert_shape(node: ShapeNode, ctx: AssemblyContext, *, top_level: bool) ->
             blip_image = _clip_blip_image(blip_result.svg, geom, ctx)
             ctx.media.update(blip_result.media)
 
-    # Geometry (fill is "none" when blipFill is present, so only stroke draws)
-    geom_xml = _build_geometry_xml(node, sp_pr, ctx, geom=geom)
-
     # Text body (a:txBody)
     tx_body = node.xml.find("p:txBody", NS)
     is_vertical = is_vertical_txbody(tx_body, node.xfrm)
+    local_has_run_effects = txbody_has_run_effects(tx_body)
+    inherited_has_run_effects = txbody_has_run_effects(
+        *node.inherited_lst_styles
+    )
+    has_run_effects = local_has_run_effects or inherited_has_run_effects
+    if geom is not None and has_run_effects:
+        if is_vertical:
+            geom.attrs.update(unsupported_effect_metadata(
+                "unsupported-run-effect-route:vertical-text"
+            ))
+        elif tx_body is not None and has_relationship_attributes(tx_body):
+            geom.attrs.update(unsupported_effect_metadata(
+                "unsupported-run-effect-route:relationship-bearing-text"
+            ))
+        elif inherited_has_run_effects:
+            geom.attrs.update(unsupported_effect_metadata(
+                "unsupported-run-effect-route:inherited-text-style"
+            ))
+
+    # Geometry (fill is "none" when blipFill is present, so only stroke draws)
+    geom_xml = _build_geometry_xml(node, sp_pr, ctx, geom=geom)
+
     text_default_fill = _resolve_text_style_default(node, ctx)
     if tx_body is not None and is_vertical:
         text_result = convert_vertical_txbody(
@@ -509,7 +533,15 @@ def _build_geometry_xml(node: ShapeNode, sp_pr: ET.Element | None,
     ctx.defs.extend(fill.defs)
     ctx.defs.extend(stroke.defs)
     ctx.defs.extend(effect.defs)
-    geom.attrs.update(dict(effect.metadata))
+    effect_attrs = dict(effect.metadata)
+    effect_reason = effect_attrs.get(EFFECT_REASON_ATTR)
+    existing_reason = geom.attrs.get(EFFECT_REASON_ATTR)
+    if effect_reason is not None and existing_reason is not None:
+        effect_attrs.update(unsupported_effect_metadata(
+            existing_reason,
+            effect_reason,
+        ))
+    geom.attrs.update(effect_attrs)
 
     attrs = {**fill.attrs, **stroke.attrs}
     for key, value in style_defaults.items():
@@ -886,6 +918,10 @@ def _render_graphic_table(
             'data-pptx-replacement-status="'
             f'{_xml_escape(result.native_status)}"'
         )
+    if result.effect_reason:
+        replacement_attrs.extend(_metadata_group_attrs(
+            unsupported_effect_metadata(result.effect_reason)
+        ))
     return result.svg, replacement_attrs, payload_metadata
 
 
