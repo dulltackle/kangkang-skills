@@ -137,13 +137,25 @@ The exporter writes these solid fills as real Master/Layout/Slide `p:bg`, not se
 
 ## 2. Design Parameter Confirmation (Mandatory Step)
 
-Before the first SVG page, output a confirmation listing: canvas dimensions, body font size, color scheme (primary/secondary/accent HEX), font plan, and the live-preview URL reported by the launcher. If the preview launch failed, state that failure before generating SVGs instead of silently proceeding. Prevents spec/execution drift.
+Before the first SVG page, output a confirmation listing: the compact communication intent + desired audience outcome, canvas dimensions, body font size, color scheme (primary/secondary/accent HEX), font plan, and the live-preview URL reported by the launcher. If the preview launch failed, state that failure before generating SVGs instead of silently proceeding. Prevents purpose/spec/execution drift.
 
 ### 2.1 Per-page spec_lock re-read (Mandatory)
 
 > Long decks drift off the declared palette/icons mid-deck due to context compression. `spec_lock.md` is the canonical execution reference — re-read it per page to bypass model memory.
 
-**Hard rule**: Before generating **each** SVG page, `read_file <project_path>/spec_lock.md`. Use only values from this file, not from memory. If context was auto-compacted, also `read_file <project_path>/design_spec.md` for the current page's §IX brief.
+**Hard rule**: Before generating **each** SVG page, `read_file <project_path>/spec_lock.md`. Use only values from this file, not from memory. Re-read the global `communication` section along with the technical locks. The current page's `design_spec.md §IX` brief must be in immediate context; if context was auto-compacted or the brief is not immediately available, re-read `design_spec.md` for that page before drawing.
+
+**Per-page communication trace**: Read the current §IX `Core message` and `Audience move` before choosing composition. The page must advance at least one purpose named in `communication.communication_intent` and move the audience toward `communication.audience_outcome`; `communication.core_message` remains the deck-wide north star. A page that cannot state this movement is an upstream outline defect — surface `warning: P<NN> has no communication move` instead of compensating with decorative layout. Do not invent a new purpose, ask, or outcome at execution time. Structural pages may advance the contract by establishing relevance / tension / decision frame or by completing the final commitment; they are not exempt from having a reason to exist.
+
+**Per-page reading-mode check**: Read `communication.consumption_mode` before choosing the page's composition. Apply it together with the authored §IX block texture and `page_rhythm`:
+
+| `consumption_mode` | Page execution |
+|---|---|
+| `text` | Make the visible page independently understandable. Preserve complete prose, explicit labels / captions / sources, tables, and necessary detail; use bullets only for genuinely parallel or ordered items. |
+| `balanced` | Keep the primary claim and its evidence on the page; let notes add interpretation and transitions. Mix prose, structured evidence, and necessary lists according to their semantic relationship. |
+| `presentation` | Make one claim and one dominant visual expression legible at projection distance. Keep visible copy concise; put explanation and transitions in notes instead of creating paragraph dumps or compressed bullet prose. |
+
+The §IX wording and sourced facts remain authoritative. Do not rewrite, drop, or invent content to force a mode at execution time. When the authored texture materially conflicts with the lock, render the least-destructive faithful composition and surface `warning: P<NN> content texture conflicts with consumption_mode <value>` as an upstream outline issue; do not encode this subjective judgment in the checker.
 
 **Per-block expression**: render each `design_spec.md §IX Content` block in its written texture — a full-sentence block as wrapped prose, a fragment/label block as bullets/keywords. **Never split a full-sentence block into a bullet list** — splitting loses the information that the block was continuous reasoning, not a set of parallel points; not because a bullet lays out easier, and not because an inherited template slot is shaped as a list. If a block carries no clear texture, infer the mode from its wording and the page layout.
 
@@ -555,6 +567,14 @@ After all SVG pages are finalized, enter Logic Construction Phase and write the 
 **Pure spoken narration**: notes are read aloud verbatim by `notes_to_audio.py` (TTS). Write only what should be spoken. No visible markers, no labeled meta-lines, no enumerated key-point lists, no duration annotations — anything you write outside the heading will be vocalized.
 
 **Per-page structure**: `# <number>_<page_title>` heading (the `#` heading line is the only thing stripped before TTS), pages separated by `---`. Body is 2–5 natural sentences carrying the page's core message. Page-to-page transitions live inside the opening sentence as natural prose ("接下来……" / "Having framed X, let's turn to Y") — no bracketed `[过渡]` / `[Transition]` tags.
+
+**Reading-mode note burden**:
+
+| `consumption_mode` | Notes emphasis |
+|---|---|
+| `text` | Add interpretation or transition without reading the already self-contained page aloud. |
+| `balanced` | Connect the visible claim and evidence, explain the trade-off, and bridge to the next page. |
+| `presentation` | Carry the reasoning, context, and supporting detail intentionally omitted from the sparse projected surface. |
 
 **Concrete examples** — same shape applies to any language; just write naturally in that language.
 
