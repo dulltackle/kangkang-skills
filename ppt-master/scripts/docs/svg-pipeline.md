@@ -63,7 +63,7 @@ check and export rerender the locked registry to validate that group, so the
 compact form has no hidden carrier, preview wrapper, or serialized preview
 fingerprint. `pptx_to_svg.py` continues to emit the expanded carrier/preview
 evidence required for import and round-trip decisions. The normative boundary
-is owned by [`shared-standards.md`](../../references/shared-standards.md), with
+is owned by [`shared-standards-core.md`](../../references/shared-standards-core.md) §1.5, with
 authoring guidance in
 [`native-shape-authoring.md`](../../references/native-shape-authoring.md).
 
@@ -165,6 +165,19 @@ fields remain inline. Source `p:sldLayout@showMasterSp` and
 Checker, template-structure validation, and export hydrate both store layers in
 memory; legacy inline payload and v1 payload-only stores remain readable.
 
+The published `ppt-master.template-execution-manifest.v1` roster points to one
+compact `ppt-master.template-text-slots.v2-min` sidecar per prototype. Each text
+slot contains only `selector`, `role`, `current_text`, `text_segments`, and
+`tspan_count`; a top-level tool hash covers its selectors and immutable
+text/tspan topology and attributes. A current-page mirror bundle still includes
+the complete prototype SVG. Page projection recomputes the hash and projected
+fields against that prototype, then strips the hash from model context. The
+model chooses semantics and edits only existing visible text values, while
+checker and structured export validate output attributes, text/tspan topology,
+and referenced-resource hashes against the prototype. Runtime page projection
+accepts legacy v1 text-slot sidecars and reduces them to v2-min without
+rewriting the workspace.
+
 The output routes reusable vectors once to `icons/imported/`, bitmaps to
 `images/`, and other referenced files to `templates/assets/`. The JSON report
 reports payload occurrence, native-record, unique-byte, and compressed-store
@@ -226,13 +239,28 @@ Do not confuse this tool with `extract_svg_assets.py`:
 
 ## Recommended Pipeline
 
-Run these steps in order:
+Run these steps one at a time. Wait for each command to exit successfully before
+starting the next command.
 
 ```bash
 python3 scripts/total_md_split.py <project_path>
+```
+
+After `total_md_split.py` exits successfully, run:
+
+```bash
 python3 scripts/finalize_svg.py <project_path>
+```
+
+After `finalize_svg.py` exits successfully, run:
+
+```bash
 python3 scripts/svg_to_pptx.py <project_path>
 ```
+
+Do not start another post-processing command while the current command is still
+running. The canonical gates and success criteria are owned by
+[`generate-pptx.md`](../../workflows/generate-pptx.md) Step 7.
 
 ## `finalize_svg.py`
 
@@ -264,9 +292,12 @@ python3 scripts/svg_to_pptx.py <project_path> -t none
 python3 scripts/svg_to_pptx.py <project_path> --auto-advance 3
 python3 scripts/svg_to_pptx.py <project_path> --animation mixed --animation-duration 0.8
 python3 scripts/svg_to_pptx.py <project_path> --no-merge   # strict line-fidelity mode (see below)
-python3 scripts/notes_to_audio.py <project_path> --voice zh-CN-XiaoxiaoNeural
 python3 scripts/svg_to_pptx.py <project_path> --recorded-narration audio
 ```
+
+For generated-project narration, follow the
+[`generate-audio`](../../workflows/stages/generate-audio.md) stage. It owns voice
+selection, audio generation, and the narrated re-export workflow.
 
 Behavior:
 - Default output (default-flow mode, no `-o`):
@@ -471,9 +502,11 @@ Replaces `<use data-icon="chunk-filled/name" .../>`, `<use data-icon="tabler-fil
 
 ## SVG Compatibility Contract
 
-The canonical SVG authoring and native-mapping contract lives exclusively in
-[`shared-standards.md`](../../references/shared-standards.md). This tool guide
-does not repeat accepted syntax, rejected constructs, or conditional limits.
+The always-on SVG authoring contract lives in
+[`shared-standards-core.md`](../../references/shared-standards-core.md), with
+advanced effects, native data objects, and structured PPTX metadata owned by
+their conditionally loaded modules. This tool guide does not repeat accepted
+syntax, rejected constructs, or conditional limits.
 
 `svg_quality_checker.py` validates source SVG before finalization.
 `finalize_svg.py` and native export apply the preprocessing required by that

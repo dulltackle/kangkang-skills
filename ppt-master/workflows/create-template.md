@@ -16,7 +16,7 @@ Create one reusable template workspace under either the **global template librar
 
 **Hard rule — one workspace routing contract**: Output scope changes only the workspace parent and index registration. Both scopes use required `templates/`, optional `images/` / `icons/`, and optional on-demand `exports/`, with the same relative asset references and validation command. Create Template must not create an optional directory or placeholder file solely to retain an empty path. An initialized project may already contain empty `images/`, `icons/`, or `exports/` scaffolding; leave it untouched, do not count it as template output, and omit the path from completion unless this workflow wrote or adopted a real file there. Do not maintain a library-only self-contained-flat package branch or a project-only thin-bundle branch.
 
-> **Boundary against template-fill and in-place structure edits**: Create Template does not fill content into a PPTX, add Master/Layout structure to an existing PPTX/SVG, or directly output the user's final generated deck. It authors a separate reusable workspace; an optional PPTX is review evidence only. To generate a deck, return the workspace root to main Step 3 and author new SVG pages from it. A project-scoped workspace is already installed at that project's Step 3 path and is consumed in place.
+> **Boundary against template-fill and in-place structure edits**: Create Template does not fill content into a PPTX, add Master/Layout structure to an existing PPTX/SVG, or directly output the user's final generated deck. It authors a separate reusable workspace; an optional PPTX is review evidence only. To generate a deck, return the workspace root to [`generate-pptx`](./generate-pptx.md) Step 3 and author new SVG pages from it. A project-scoped workspace is already installed at that project's Step 3 path and is consumed in place.
 
 ## Child Workflow Dispatch
 
@@ -32,7 +32,7 @@ Select Create Brand only for identity-only intent. Select Create Layout only whe
 
 See [`templates/README.md`](../templates/README.md) for the shared kind and
 workspace model. Downstream template application and fusion remain owned by
-[`SKILL.md`](../SKILL.md) Step 3.
+[`generate-pptx.md`](./generate-pptx.md) Step 3.
 
 ## Output scope — library (default) vs project
 
@@ -525,11 +525,15 @@ one operation. It emits source-ordered page SVGs, unused-Layout definition
 SVGs, `icons/imported/`, referenced `images/` / `templates/assets/`, and one
 deduplicated `templates/native_payloads.json.gz` store when supported native
 payload or repeated restoration metadata exists. It also writes
-`templates/template_execution_manifest.json`, a compact model-readable prototype
+`templates/template_execution_manifest.json` with schema
+`ppt-master.template-execution-manifest.v1`, a compact model-readable prototype
 roster and grouped source-import warning summary. Each prototype points to one
-`templates/template_execution/*.text-slots.json` sidecar containing its exact
-mirror text selectors, segments, attributes, topology hashes, bounds, and font
-stacks. Template SVGs and imported
+`templates/template_execution/*.text-slots.json` sidecar with schema
+`ppt-master.template-text-slots.v2-min`. Each slot contains only
+`selector`, `role`, `current_text`, `text_segments`, and `tspan_count`; the complete
+prototype remains authoritative. Page-context verifies the top-level tool hash
+and strips it before model output; validators/export own attribute and topology
+checks. Template SVGs and imported
 vectors keep content-hash payload references plus short
 `data-pptx-native-ref` attribute-record ids. Structural Master/Layout,
 placeholder, layer, and editable-object fields remain inline. The command does
@@ -575,7 +579,7 @@ Slide-local/slot object's initial authoring hash still matches. Fixed layers are
 unsupported or edited objects keep the current SVG fallback and are reported
 rather than silently replaced by stale metadata. Do not reproduce the preset
 syntax here; its single authority is
-[`shared-standards.md`](../references/shared-standards.md), with selection and
+[`shared-standards-core.md`](../references/shared-standards-core.md), with selection and
 usage guidance in the native-shape reference.
 
 Downstream, a mirror-created workspace supports three separately confirmed reuse scopes. `mirror` and `layout` use `pptx_structure.mode: structured`; `page_layouts` selects one complete authoring prototype per page, `pptx_masters` / `pptx_layouts` declare unique reusable definitions, and `page_pptx_layouts` assigns generated pages. Strict preserves the selected prototype contract. Adaptive keeps its Master and may explicitly create and assign a new Layout key/name while authoring the page that needs it. `mirror` additionally preserves literal visuals/text topology; `layout` allows project-controlled reflow/re-skinning. `style` uses `mode: flat` and takes only the workspace's design language. A retained Layout may remain unassigned while still registering through its definition SVG. No scope forces a future generated deck to keep the source page count or order.
@@ -604,7 +608,7 @@ Mirror mode does not simplify the visual target or synthesize layer ownership. T
 
 **Expected outputs from this step** (full spec → [template-designer.md](../references/template-designer.md)):
 
-1. `design_spec.md` — **package-specific rules only**. A deck writes an application-bearing Template Overview, Color Scheme, Signature Design Elements, and Page Roster with content policies; Typography / Assets / Placeholder Overrides are conditional. A layout writes only structure-owned Signature Design Elements and Page Roster; its frontmatter `summary` carries concise selection context, and it omits the deck-only Template Overview plus every identity section. The Page Roster must match the actual SVG files on disk. Declare portable brief frontmatter; `register_template.py` consumes it only in library scope. **Do not** restate generic SVG constraints, layout pattern libraries, font-size ratio bands, the canonical placeholder table, or content methodology — those are sourced from `shared-standards.md` / `design_spec_reference.md` / `strategist.md` and are already in the downstream reader's context. Full scope rule and skeleton: [template-designer.md §1](../references/template-designer.md#1-must-generate-design_specmd).
+1. `design_spec.md` — **package-specific rules only**. A deck writes an application-bearing Template Overview, Color Scheme, Signature Design Elements, and Page Roster with content policies; Typography / Assets / Placeholder Overrides are conditional. A layout writes only structure-owned Signature Design Elements and Page Roster; its frontmatter `summary` carries concise selection context, and it omits the deck-only Template Overview plus every identity section. The Page Roster must match the actual SVG files on disk. Declare portable brief frontmatter; `register_template.py` consumes it only in library scope. **Do not** restate generic SVG constraints, layout pattern libraries, font-size ratio bands, the canonical placeholder table, or content methodology — those are sourced from `shared-standards-core.md` / `pptx-structure-interface.md` / `strategist.md` and are already in the downstream reader's context. Full scope rule and skeleton: [template-designer.md §1](../references/template-designer.md#1-must-generate-design_specmd).
 2. Page roster — see [Page Roster](../references/template-designer.md#page-roster) for `standard` / `fidelity` / `mirror` mode rosters, variant naming, and TOC handling
 3. Placeholder vocabulary — pages should adopt the conventional names (`{{TITLE}}`, `{{CONTENT_AREA}}`, ...) when they fit. Full reference: [Placeholder Reference](../references/template-designer.md#4-placeholder-reference-canonical-convention-overridable-per-template). When a template style legitimately needs different vocabulary (consulting → `{{KEY_MESSAGE}}`, branded cover → `{{BRAND_LOGO}}`), declare a `placeholders:` block in `design_spec.md` frontmatter so the registrar and quality checker treat it as the template's authoritative contract. **Avoid** one-off indexed families such as `{{CHAPTER_01_TITLE}}` — use the indexed TOC pattern instead.
    - `{{...}}` placeholders are the authoring vocabulary used to generate final slide content. Each emitted SVG also carries the native structure contract: root Master/Layout key/name, direct atomic Master/Layout elements, and direct slot `<g>` elements with explicit design-zone bounds plus exactly one compatible carrier. A validated compact canonical authored-preset `<g>` counts as one semantic atom or one `object` carrier; ordinary groups do not. Composite regions use only the explicit `object` + `proxy` downgrade. Minimal structural `data-pptx-role` hints are added only when specialized metadata cannot express required behavior. Both strict and adaptive downstream set `mode: structured` and require complete `page_layouts`, `page_pptx_layouts`, `pptx_masters`, and `pptx_layouts` from planning onward.
@@ -690,7 +694,7 @@ This checker validates the authoring contract, not the compiled OOXML package. T
 - [ ] `standard` / `fidelity` output SVGs and their Master/Layout/slot contracts were newly authored without preserving or distilling source topology
 - [ ] Every additional authored Master represents a distinct reusable design family, not one Layout or an equivalent duplicate; every declared Master owns at least one emitted Layout and every declared Layout has at least one emitted prototype
 - [ ] Mirror output preserves source slide order, Master/Layout identity and parentage, placeholder facts, and ownership; fixed-layer group expansion is mechanical and pixel-equivalent, and the Source Preservation Map lists every source slide
-- [ ] Mirror materialization wrote the compact `templates/template_execution_manifest.json`; each prototype is listed once and links one `template_execution/*.text-slots.json` sidecar, every sidecar slot records selector/current segments/tspan attributes/topology hash/bounds/font stack, and source-import diagnostics are summarized separately from downstream generation issues
+- [ ] Mirror materialization wrote one compact `ppt-master.template-execution-manifest.v1` roster and one linked `ppt-master.template-text-slots.v2-min` sidecar per prototype; each slot has only `selector`, `role`, `current_text`, `text_segments`, and `tspan_count`; page-context verifies and strips the tool hash, while validation/export check the complete prototype
 - [ ] Mirror roots preserve source inherited-shape visibility with canonical lowercase `data-pptx-show-master-shapes` and `data-pptx-show-inherited-shapes`; same-key Layouts agree on the former, while each Slide retains its own latter value
 - [ ] Mirror preflight covered the complete source graph; each unused Layout has one `layout_<layout_key>.svg` definition prototype and each otherwise-unused Master is retained through at least one such Layout
 - [ ] For `standard` / `fidelity`, no duplicate-Layout-contract warning remains; mirror may keep equivalent source Layout identities when the preservation map explains them
@@ -770,7 +774,7 @@ Outputs by kind (the JSON index is the single source of truth — READMEs descri
 
 The completion card's file roster is collected by globbing `templates/*.svg` in the workspace. Legacy flat packages still use their root `*.svg` roster.
 
-The index file is a **discovery index** — it lets the AI answer "what templates are available?" by listing names and workspace-root paths. It is **not** consulted to trigger Step 3 (SKILL.md). Step 3 triggers on an explicit workspace-root path supplied by the user, regardless of whether that path is registered. An unregistered workspace still works when the user gives its path; it just will not appear in discovery listings.
+The index file is a **discovery index** — it lets the AI answer "what templates are available?" by listing names and workspace-root paths. It is **not** consulted to trigger [`generate-pptx`](./generate-pptx.md) Step 3. Step 3 triggers on an explicit workspace-root path supplied by the user, regardless of whether that path is registered. An unregistered workspace still works when the user gives its path; it just will not appear in discovery listings.
 
 > **Recommended for new templates**: declare a YAML frontmatter block at the top of `design_spec.md`. The registrar prefers it over prose extraction:
 >
@@ -878,7 +882,7 @@ The next Generate PPTX Step 3 input is the exact `<template_workspace>/` root in
 
 ## Notes
 
-1. **SVG technical constraints**: See [shared-standards.md](../references/shared-standards.md) — do not restate them in the template's `design_spec.md`
+1. **SVG technical constraints**: Create Layout/Create Deck load [shared-standards-core.md](../references/shared-standards-core.md) plus [pptx-structure-interface.md](../references/pptx-structure-interface.md), and load [svg-effects.md](../references/svg-effects.md) only when the authored design uses those effects. Create Brand authors no SVG and loads none of these SVG modules. Do not restate the contracts in the template's `design_spec.md`.
 2. **Color consistency**: Create Deck SVG files must use the same color scheme as `design_spec.md §II Color Scheme`; Create Layout owns no identity colors, and Create Brand owns no SVG files
 3. **Native-object mapping**: Treat Theme/Master/Layout/Placeholder as compiled PowerPoint objects, not template kinds. Layout owns topology and placement, Brand owns identity values/assets, and Deck adds the reusable application contract.
 4. **Placeholder convention**: `{{}}` format only; default names listed in [Placeholder Reference](../references/template-designer.md#4-placeholder-reference-canonical-convention-overridable-per-template). Override per template via `placeholders:` frontmatter when needed.

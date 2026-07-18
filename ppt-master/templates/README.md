@@ -34,8 +34,9 @@ which keeps the fixed route name and dispatches exactly one child workflow:
 [`Create Layout`](../workflows/create-template/create-layout.md), or
 [`Create Deck`](../workflows/create-template/create-deck.md).
 
-The indexes are discovery aids only. Step 3 activates a template only from an
-explicit workspace-root path supplied by the user.
+The indexes are discovery aids only. [`generate-pptx`](../workflows/generate-pptx.md)
+Step 3 activates a template only from an explicit workspace-root path supplied
+by the user or an exact validated Create Template handoff.
 
 ## Orthogonal contracts
 
@@ -66,23 +67,25 @@ initialized project:
 
 Empty optional directories are omitted. Template SVGs reference bitmaps through
 `../images/<name>` and imported vectors through `data-icon="imported/<name>"`.
-Step 3 consumes `templates/`, `images/`, and `icons/` and ignores `exports/`.
-Compatible legacy-flat packages remain readable; directory shape alone does not
-indicate legacy Master/Layout semantics.
+The conditional [`apply-template-workspace`](../workflows/stages/apply-template-workspace.md)
+stage owns installation and fusion: it consumes `templates/`, `images/`, and
+`icons/` and ignores `exports/`. Compatible legacy-flat packages remain
+readable; directory shape alone does not indicate legacy Master/Layout semantics.
 
 ## Design specification references
 
-[`design_spec_reference.md`](./design_spec_reference.md) is the project-level
-Strategist reference for the generated presentation's full specification and
-content outline. Reusable template `design_spec.md` files are deliberately
-smaller: they contain portable metadata and only the identity, structure, or
-application rules owned by that package. General SVG/PPT rules remain
-centralized in
-[`shared-standards.md`](../references/shared-standards.md).
+[`schemas/design_spec.schema.json`](./schemas/design_spec.schema.json) and
+[`scaffolds/design_spec.md`](./scaffolds/design_spec.md) own the machine
+structure and starting artifact; [`design_spec_reference.md`](./design_spec_reference.md)
+is their compact authoring index. Reusable template `design_spec.md` files are
+deliberately smaller: they contain portable metadata and only the identity,
+structure, or application rules owned by that package. General SVG rules live
+in [`shared-standards-core.md`](../references/shared-standards-core.md), with
+effects and PowerPoint interfaces loaded only when triggered.
 
 ## Visualization Templates
 
-The `charts/` directory contains 57 standardized visualization templates. For backward compatibility, the directory name remains `charts/`, but its scope includes charts, infographics, process diagrams, relationship diagrams, strategic frameworks, and system architecture diagrams:
+The `charts/` directory contains the registered visualization templates. For backward compatibility, the directory name remains `charts/`, but its scope includes charts, infographics, process diagrams, relationship diagrams, strategic frameworks, and system architecture diagrams:
 
 - KPI Cards
 - Bar Chart / Stacked Bar Chart
