@@ -70,7 +70,7 @@ Structured section value shapes:
 - P01: 03_content
 ```
 
-`page_charts` values must exist as keys in `charts/charts_index.json`; a `no-template-match` result stays out of both Design Spec §VII and `page_charts`, while its custom fallback remains in the page's §IX block.
+Project each §VII `Page | Template | Usage` row's first two fields into `page_charts`; Usage stays in the Design Spec. This is a page-local reference, not a type/geometry lock. Keys must exist in `charts/charts_index.json`; no-match stays in §IX.
 
 Typography projection is role-for-role, not a lossy summary:
 
@@ -128,5 +128,5 @@ Field meaning and selection logic stay in the owning Strategist modules. Executo
 - Confirmed core palette roles and every declared typography family/size role remain stable cross-page anchors.
 - Page-local tints, gradient stops, shadow/glow paints, transparency composites, and one-off export-safe display families may be authored from context without adding a lock row.
 - Executor may adjust one occurrence within its declared size role's anchor `±2px` while preserving hierarchy and readability; intermediate values are realization choices, not new lock rows.
-- When a contextual value becomes a recurring semantic role, or one undeclared display size reaches its third occurrence, add the descriptive color/family/size role and regenerate page-context before later pages use it. Structural typography outside its applicable anchor band returns upstream immediately.
+- When a contextual value becomes a recurring semantic role, or one undeclared display size reaches its third occurrence, add the descriptive role, read back and validate affected planning fragments, then reuse it. Structural typography outside its applicable anchor band returns upstream immediately.
 - Do not expand the lock merely to make an informational checker comparison empty. A lock edit should express reuse or identity, not enumerate incidental literals.
