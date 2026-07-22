@@ -93,17 +93,18 @@ Use named lock roles literally when that role applies, and use optional `Templat
 
 **Execution anchors and contextual values**:
 
-- Icons MUST come from `icons.inventory`; library MUST equal `icons.library`
+- Icons may use any SVG already prepared under `<project_path>/icons/`. `icons.library` records the Strategist's primary bundled style choice and `icons.inventory` records its planned selection; neither is an execution whitelist over project-local assets.
 - Core color roles retain their meaning. Derive tints, shades, alpha, gradients, and effects; preserve natural asset colors; and use sparse page-local accents for differentiation/ornament. They must not become a competing or recurring palette.
 - Resolve structural families by role: exact `<role>_family` first, then `title_family` for title roles or `body_family` for other unoverridden roles, then legacy `font_family`. Never flatten declared role overrides. A sparse export-safe accent family may style short non-structural display/ornament only—never title/body/data/annotation. Recurrence requires upstream selection.
-- Font sizes use the named `typography` role values as deck-wide anchors. Map every structural or feature text item to a declared role before drawing; never inherit a template placeholder size. Start from the anchor, then use composition and content fit to adjust that occurrence by at most `±2`px. Keep same-page peers consistent and preserve the role hierarchy; bounded adjustment does not create a new role.
+- Font sizes use the named `typography` role values as deck-wide anchors. Map every structural text item to a declared role before drawing; never inherit a template placeholder size. Start from the anchor, then use composition and content fit to adjust that occurrence by at most `±2`px. Keep same-page peers consistent and preserve the role hierarchy; bounded adjustment does not create a new role.
 - **Core message ≥ `body`**: map the page's primary claim to declared `lead` / `subtitle`, never below the current body treatment. Footnotes, page numbers, and credits use declared `footnote` / `annotation`; do not invent a smaller role.
-- **Write unitless px, with at most two decimals.** Use only the mapped role's anchor or a value within its `±2`px band; do not substitute familiar pt-style numbers or emit long precision tails.
-- **Outside-band recovery**: reflow geometry and use the declared role band locally. If the page needs a new semantic role, a size outside anchor `±2`px, or a hierarchy change, stop and return to Strategist to repair the Design Spec and `spec_lock.md`, then regenerate page-context. Never flatten a justified distinction or add a role merely to silence the checker. Generated `svg_output/` values outside every declared band are blocking errors; mirror pages preserve exact source typography as inherited input.
+- **Write unitless px, with at most two decimals.** Structural and mapped-role text uses only its anchor or a value within its `±2`px band; the sparse display-size exception is defined separately below. Do not substitute familiar pt-style numbers or emit long precision tails.
+- **Sparse display-size exception**: a short non-structural Hero/Display element may use one undeclared size outside all anchor bands at most twice across the deck without a lock row. The third occurrence makes that size recurring: stop and return to Strategist to name the role in the Design Spec and `spec_lock.md`, then regenerate page-context. This exception never applies to titles, body copy, subtitles, annotations, footnotes, captions, data labels, or card copy, and nearby sizes must not be introduced to imitate one recurring treatment.
+- **Outside-band recovery**: for structural text, reflow geometry and use the declared role band locally. For a sparse display occurrence, keep the unitless value and verify that its deck-wide count remains at most two. Never flatten a justified distinction or add a role merely to silence the checker. Mirror pages preserve exact source typography as inherited input.
 - Images MUST reference files listed under `images`; no invented filenames
 - Formula PNGs are images with `Acquire Via: formula`; place a `Rendered` file only from its listed path, use the normal placeholder for `Needs-Manual`, and never recreate the formula as text.
 
-Return upstream before any derived/accent identity becomes recurring or structural, or before typography needs a new semantic role or an outside-band size, then regenerate context. Local garnish and same-role `±2`px adjustments need no lock row. Never expand the lock to silence a comparison. Icons, images, structural fonts, role anchors, and resources keep their inventory/role rules.
+Return upstream before any derived/accent identity becomes recurring or structural, or when an undeclared display size reaches its third occurrence, then regenerate context. Local garnish, same-role `±2`px adjustments, and at most two sparse display-size occurrences need no lock row. Never expand the lock to silence a comparison. New icon acquisition, images, structural fonts, role anchors, and resources keep their preparation/role rules.
 
 **Per-page layout rhythm — `page_rhythm` section**:
 
@@ -196,11 +197,11 @@ Examples: `01_封面.svg` / `02_目录.svg` / `03_核心优势.svg`; `01_cover.s
 
 ## 4. Icon Usage
 
-Strategist chooses the library and inventory; Executor only implements. Library details and one-library rule: [`../templates/icons/README.md`](../templates/icons/README.md). This section defines placeholder syntax.
+Strategist chooses at most one primary bundled stylistic library and may select `simple-icons` alone or alongside it; Executor implements from the complete prepared project-local pool. Library details and selection rules: [`../templates/icons/README.md`](../templates/icons/README.md). This section defines placeholder syntax.
 
-> **Resolution is project-first.** Strategist copied the chosen icons into `<project_path>/icons/<lib>/` (via `icon_sync.py`); `finalize_svg.py embed-icons` embeds from there, falling back to the global library per-icon. Custom SVGs must already exist in the prepared project inventory under `<project_path>/icons/<lib>/`. Reference only icons in `spec_lock.md icons.inventory`.
+> **Prepared-project boundary.** Any SVG already under `<project_path>/icons/<lib>/` is valid execution material, whether selected from a bundled library or supplied by the user, a template, or an import workflow. New authoring must resolve there. The global fallback in `finalize_svg.py embed-icons` is legacy compatibility, not permission for Executor to discover or use an unprepared global icon.
 
-> **Icon identifiers are case-sensitive filenames.** For bundled libraries, copy the verified lowercase basename exactly (`tabler-outline/award`, never `tabler-outline/Award`) into `spec_lock.md` and every `data-icon` value. Custom icon identifiers preserve the custom file's exact case; the pipeline never silently lowercases names.
+> **Icon identifiers are case-sensitive filenames.** Every `data-icon` value must use the exact project-local relative basename (`tabler-outline/award`, never `tabler-outline/Award`). Strategist records its planned bundled choices in `spec_lock.md`; Executor need not add other already-prepared project-local icons to that inventory. Custom identifiers preserve the custom file's exact case; the pipeline never silently lowercases names.
 
 **Built-in icons — Placeholder method (recommended)**:
 
@@ -233,14 +234,14 @@ Strategist chooses the library and inventory; Executor only implements. Library 
 >
 > Icons are auto-embedded by `finalize_svg.py` — no need to run `embed_icons.py` manually.
 
-**Locked-id verification only**: verify the exact project-local file already named in `icons.inventory`:
+**Project-local verification**: verify the exact prepared file before use:
 ```bash
 test -f "<project_path>/icons/<lib>/<name>.svg"
 ```
 
-**Missing locked icon** → return to Strategist's inventory / `icon_sync.py` gate. Do not search the global library, select an alternative, copy a candidate, or edit the lock in Executor.
+**Missing project-local icon** → return to Strategist's preparation / `icon_sync.py` gate. Do not search the global library, select an alternative, or copy a candidate in Executor.
 
-**Hard rule — icon inventory**: use only the Design Spec's approved inventory. Mixing stylistic libraries within one deck is FORBIDDEN.
+**Hard rule — prepared assets**: Executor may freely combine project-local icons, regardless of namespace or style. It may not acquire a new icon or treat a globally resolvable file as prepared material.
 
 ---
 
@@ -250,7 +251,7 @@ Structural typography anchors come from `spec_lock.md typography`. Use an exact 
 
 **Missing required field — `typography.font_family`** → stop and return to Generate Step 4 / [`strategist.md`](strategist.md) §6.2 to repair `spec_lock.md`; do not infer a stack from `design_spec.md`.
 
-**Hard rule**: every SVG `font-family` stack MUST resolve to pre-installed exported Latin / EA typefaces (Microsoft YaHei / SimHei / SimSun / Arial / Calibri / Segoe UI / Times New Roman / Georgia / Consolas / Courier New / Impact / Arial Black). PPTX has no runtime fallback — missing fonts degrade to Calibri.
+**Hard rule**: every SVG `font-family` stack MUST resolve to a pre-installed exported Latin / EA typeface; use the Strategist §g safe set for locked roles and §2.1 for sparse display exceptions. PPTX has no runtime fallback — missing fonts degrade to Calibri.
 
 ---
 
