@@ -4,7 +4,7 @@ description: Shared post-processing stage for per-slide narration audio and opti
 
 # Generate Audio Stage
 
-> Shared narration stage. Run from the Generate PPTX route after notes/export readiness, or from the Enhance Native PPTX narration module after its notes step. Produces one audio file per slide via `edge-tts` by default, or a cloud TTS provider (`elevenlabs` / `minimax` / `qwen` / `cosyvoice`) when the user chooses high-quality narration or a cloned voice. The caller owns final PPTX integration.
+> Shared narration stage. Run from the Generate PPTX route after notes/export readiness, or from the Enhance Native PPTX narration module after its notes step. By default, `edge-tts` produces one audio/SRT pair per slide from the same streaming request. Cloud TTS providers (`elevenlabs` / `minimax` / `qwen` / `cosyvoice`) currently produce audio only. The caller owns final PPTX integration.
 
 This stage is **context-independent**: it reads `notes/*.md` and queries the selected TTS voice catalog, so either owning route may invoke it in a fresh session. It does not choose the top-level route and does not patch slide design.
 
@@ -12,9 +12,10 @@ This stage is **context-independent**: it reads `notes/*.md` and queries the sel
 
 - Per-page narration files exist at `notes/*.md`. In Generate PPTX, split `notes/total.md` during Step 7.1. In Enhance Native PPTX, the notes module writes numeric files such as `001.md`.
 - Default mode: `edge-tts` is installed (`python3 -m pip install edge-tts`).
-- The stage is page-level only: one notes file becomes one audio file. Do not use a single long audio track or attempt automatic long-audio splitting.
+- The stage is page-level only: with edge, one notes file becomes `audio/<stem>.mp3` plus `notes/subtitles/<stem>.srt`; with a cloud provider, it becomes one audio file. Do not use a single long audio track or attempt automatic long-audio splitting.
 - PPT narration assets must be PowerPoint-reliable audio: `m4a` (AAC), `mp3`, or `wav`. The built-in TTS path defaults to `mp3`; provider formats such as `pcm`, `opus`, or `flac` must be transcoded before embedding.
 - PowerPoint recorded narration export requires `ffprobe` so slide timings can be written from actual audio duration.
+- Optional post-export video calibration requires `ffmpeg` plus `numpy`; it runs only when the caller supplies the finished PowerPoint video.
 - High-quality cloud mode: provider API key is set before use:
   - ElevenLabs: `ELEVENLABS_API_KEY`
   - MiniMax: `MINIMAX_API_KEY`
@@ -142,21 +143,82 @@ python3 skills/ppt-master/scripts/notes_to_audio.py <project_path> \
   --provider cosyvoice --voice-id <chosen-voice> \
   --cosyvoice-model cosyvoice-v3-flash
 
-# 2A. Generate PPTX caller only: re-export with audio embedded
+# 2A. Derive click-free narration timings from the existing custom animation
+python3 skills/ppt-master/scripts/narration_sync.py animations <project_path> \
+  --narration-padding 0.5 --force
+
+# 2B. Re-export with audio embedded
 python3 skills/ppt-master/scripts/svg_to_pptx.py <project_path> \
-  --recorded-narration audio
+  --no-merge --recorded-narration audio --narration-padding 0.5
+
+# Optional: use the canonical presentation animation instead
+python3 skills/ppt-master/scripts/svg_to_pptx.py <project_path> \
+  --no-merge --recorded-narration audio --narration-padding 0.5 \
+  --animation-config animations.json
+
+# Optional: export narration with no object or page-transition animation
+python3 skills/ppt-master/scripts/svg_to_pptx.py <project_path> \
+  --no-merge --recorded-narration audio --narration-padding 0.5 \
+  --no-animations
+
+# 2C. Merge page-local SRT against timing values read from the final PPTX
+python3 skills/ppt-master/scripts/narration_sync.py subtitles <project_path> \
+  --pptx <final_narrated_pptx> --force
+
+# 2D. After PowerPoint exports the video, align the frozen narration text
+# against the finished video's actual audio track
+python3 skills/ppt-master/scripts/video_subtitles.py <project_path> \
+  --video <powerpoint_exported_video> --language <language> --force
 ```
 
 If `notes_to_audio.py` errors with a missing dependency or missing provider API key, fix the prerequisite and re-run — do NOT swallow the error.
+
+The edge command writes each MP3 and its internal page SRT from the same `edge-tts` stream. Every cue is the service's native `SentenceBoundary` text, offset, and duration; the audio stage does not re-segment it or edit the notes. Each SRT uses a page-local timeline whose origin is `00:00:00,000`, including any leading silence before the first cue. Cloud-provider commands currently write audio only.
+
+**Narration animation ownership**: `animations.json` must already exist and remains read-only. The audio stage deep-copies it to `narration_animations.json`, preserves transitions, effects, durations, order, and explicit `effect: none`, then changes only the derived trigger/delay values needed for click-free narration playback. It first resolves the sequence from `animations.json` and page SRT. When a sparse sidecar cannot identify every effective group, it reads only the affected SVG page as a read-only fallback; it never edits SVG, notes, or `animations.json`. Without a timing plan, ordered animated groups map to ordered sentence cues and unmatched groups keep their canonical relative delay.
+
+**Narrated export animation selection**: `--recorded-narration` defaults to `<project_path>/narration_animations.json` and fails with a repair hint when that file is missing. Pass `--animation-config animations.json` to keep the canonical presentation animation, or `--no-animations` to disable both object animations and page-transition motion while preserving narration audio and recorded slide-advance timings. Non-narrated export keeps its existing optional `<project_path>/animations.json` default.
+
+An existing `<project_path>/narration_timing.json` remains an optional explicit mapping for ambiguous pages. It is fingerprinted to the ordered SRT set; `cue` is the 1-based sentence cue, and omitted `cue` keeps that group's canonical relative delay.
+
+Get the exact fingerprint value with:
+
+```bash
+python3 skills/ppt-master/scripts/narration_sync.py fingerprint <project_path>
+```
+
+```json
+{
+  "version": 1,
+  "srt_sha256": "<sha256 of the ordered page-local SRT set>",
+  "narration_padding": 0.5,
+  "slides": {
+    "01_title": {
+      "groups": [
+        { "id": "page-title", "cue": 1 },
+        { "id": "supporting-visual" }
+      ]
+    }
+  }
+}
+```
+
+`narration_sync.py subtitles` may still write `<project_path>/notes/subtitles/total.srt` as a PPTX-timeline diagnostic. It is not the delivery subtitle for a finished video.
+
+After PowerPoint exports the video, `video_subtitles.py` takes the exact narration text frozen in the page SRT set and force-aligns it against the finished video's actual audio track with `stable-ts`. Long delivery cues may be split for display at this final stage. This writes a same-stem external SRT without changing the MP4, notes, page SRT, or animation files.
+
+This stage keeps subtitles as external SRT files. It does not embed subtitles into PPTX or export MP4 directly.
 
 **Caller integration**:
 
 | Caller | After audio generation |
 |---|---|
-| Generate PPTX | When embedding was confirmed, run `svg_to_pptx.py --recorded-narration audio` as shown above |
+| Generate PPTX | With Edge SRT and an existing `animations.json`, derive `narration_animations.json`, export with `--recorded-narration audio` (derived animation by default; canonical or no-animation modes remain explicit), and generate the delivery SRT only after PowerPoint exports the video. |
 | Enhance Native PPTX | Return to [`native-enhance-pptx`](../native-enhance-pptx.md) Step 9; its `apply` command owns audio relationships, timings, transitions, and the enhanced export |
 
 For Generate PPTX, `--recorded-narration audio` prepares PowerPoint's recorded timings and narrations: every slide must have a matching supported audio file, every duration must be readable by `ffprobe`, and object animations must not use `--animation-trigger on-click`. Use `after-previous` or `with-previous` for narrated/video export. Narration changes the slide-advance layer only: the resolved page-transition effect remains unchanged, `-t none` remains visually transition-free, and narration advance disables click while using audio duration plus padding. The re-export is saved as `exports/<project_name>_<timestamp>_narrated.pptx`, telling it apart from silent exports.
+
+**Narrated SVG export**: keep `--no-merge` on the final synchronized export. Separate SVG line frames preserve authored coordinates; default paragraph merging can make PowerPoint recalculate multiline text geometry and introduce visible offsets.
 
 ---
 
@@ -165,6 +227,9 @@ For Generate PPTX, `--recorded-narration audio` prepares PowerPoint's recorded t
 Output one summary block listing:
 
 - Number of audio files generated and their location (`<project_path>/audio/*`).
+- For edge, number of matching page-local SRT files and their location (`<project_path>/notes/subtitles/*`).
+- For Generate PPTX with Edge SRT, derived narration animation group count and `narration_animations.json` path.
+- When a finished video was supplied, the final aligned sidecar SRT path.
 - The provider, voice, and rate/settings actually used.
 - The caller-owned integration result: narrated SVG export path, enhanced native PPTX path, or “audio only”.
 - For Generate PPTX when embedding was skipped, one-line hint: `python3 skills/ppt-master/scripts/svg_to_pptx.py <project_path> --recorded-narration audio`.
