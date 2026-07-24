@@ -19,7 +19,7 @@ description: Optional post-processing stage for per-slide and per-object animati
 | User only wants the default deck (page transitions, no element builds) | Do not run; normal `svg_to_pptx.py` export is enough |
 | User only wants deck-wide page transitions, auto-advance, or per-element entrance animation | Do not run; apply [`animations.md`](../../references/animations.md) with exporter flags such as `-a auto` |
 | `svg_output/*.svg` is missing | Complete the main Executor phase first |
-| This stage is triggered and `animations.json` is present | Validate and edit it; do not overwrite unless the user asks |
+| `animations.json` exists | Resolve regeneration versus modification through the §1 intent gate before changing it |
 
 ---
 
@@ -52,7 +52,15 @@ python3 skills/ppt-master/scripts/animation_config.py scaffold <project_path>
 
 Scaffold output also excludes chrome and includes a `defaults` stub.
 
-If it already exists:
+**Existing sidecar intent gate**:
+
+| User intent | Action |
+|---|---|
+| Explicit regeneration / rewrite / replacement | Read the current semantic context and real group ids, then replace `animations.json`; the previous choreography is not a constraint |
+| Explicit adjustment / tuning / repair | Validate first, then preserve and edit the existing choreography |
+| Ambiguous generation request | Ask whether to regenerate from scratch or modify the current animation; do not choose on the user's behalf |
+
+When the existing sidecar will be modified:
 
 ```bash
 python3 skills/ppt-master/scripts/animation_config.py validate <project_path>
@@ -86,11 +94,11 @@ python3 skills/ppt-master/scripts/animation_config.py validate <project_path>
 | Page animation defaults | `defaults.animation` or `slides.<slide>.animation` | Control the default entrance behavior for animated groups on a slide |
 | Object overrides | `slides.<slide>.groups.<group_id>` | Control order, effect, delay, or duration for a real SVG group |
 
-**Per-page motion brief**: for each slide, decide transition effect, transition duration, object reveal sequence, object effects, and timing. Use `design_spec.md` for slide role, `spec_lock.md` for rhythm, speaker notes for narration order, and SVG group ids for target validity.
+**Per-page motion brief**: for each slide, first decide what communication job motion should perform—or that it should perform none—then decide transition effect, transition duration, object reveal sequence, object effects, and timing. Use `design_spec.md` for slide role, `spec_lock.md` for rhythm and visual style, speaker notes for narration order, and SVG group ids for target validity.
 
 **Title reveal decision**: when present, treat the page title as a first-class object in the per-page reveal plan, never an afterthought. Consciously choose one of — static (`effect: none`), immediate entrance, delayed entrance, entrance after the page's hero visual, synchronous with related content, or, when narration is part of the workflow, narration-cued — driven by the user's request, slide role, transition, and narration order. This stage uses the effect (§3.2), order, duration, and timing fields already defined below; narration-cued timing is realized later by the audio stage. It does not preset which choice a title uses. A real title must not drop out of the plan merely because its id resembles a legacy chrome name: use the documented sidecar override (§2 / §4) when animation is intended. Explicit structural or static markers remain authoritative; if they incorrectly mark a title that should animate, repair the SVG semantics before continuing.
 
-**Hard rule**: a custom animation pass must not only edit group effects. It must also decide whether each slide should inherit the default transition or need a slide-specific `transition` override.
+**Hard rule**: a custom animation pass must not only edit group effects. It must also decide whether each slide should inherit the default transition or need a slide-specific `transition` override. Inheritance is a complete decision; do not create slide-specific transitions to satisfy a variation quota.
 
 **Timing guidance**: prefer content-aware durations when the deck has varied slide rhythm or object importance. Uniform timing is acceptable when it matches the user's requested style or the deck's pacing.
 
@@ -105,6 +113,25 @@ python3 skills/ppt-master/scripts/animation_config.py validate <project_path>
 | Key insight / final takeaway | 0.30-0.50s | 0.50-0.80s | 0.25-0.45s |
 
 **Duration guidance**: use shorter timing for repeated scan content, longer timing for conceptual pivots, section transitions, hero diagrams, and final takeaways.
+
+**Reference — not a constraint: motion judgment.** Supported effects are a
+vocabulary, not assignments. Decide from content and narration before using
+layout geometry:
+
+| Decision question | Evidence to consider |
+|---|---|
+| What communication job exists? | Reveal, sequence, causality, transition, contrast, emphasis, atmosphere, or none |
+| What tone should motion preserve? | Communication objective, consumption mode, visual style, page role, and emotional register |
+| What should the audience encounter first? | Audience move, speaker-note order, focal claim, and dependency between objects |
+| Does direction carry meaning? | Reading flow and spatial position may refine a direction only after the content relationship justifies motion |
+| What should remain coherent across the deck? | Reuse can support recurring semantic roles; variation is optional and follows a real change in content or tone |
+
+If motion adds no clarity or intended feeling, inherit the page default or
+choose `none`, `appear`, or `fade`. A left/right layout, vertical stack, hero
+image, or quote does not by itself require a directional, zoom, dissolve, or
+other special effect. `auto`, `mixed`, `random`, directional, and patterned
+effects remain available when the user request or the AI's content judgment
+supports them; never use them to satisfy an effect-variety quota.
 
 ### 3.1 Supported Page Transitions
 
@@ -135,9 +162,16 @@ python3 skills/ppt-master/scripts/animation_config.py validate <project_path>
 | `appear` | Visibility flip without motion |
 | `fade` | Neutral entrance |
 | `fly` | Fly in from bottom |
+| `fly_left` | Fly in from left |
+| `fly_right` | Fly in from right |
+| `fly_top` | Fly in from top |
 | `cut` | Legacy compatibility key; preserve its registered tuple exactly |
 | `zoom` | Scale/zoom entrance |
-| `wipe` | Wipe entrance |
+| `wipe` | Legacy wipe tuple; keep for compatibility |
+| `wipe_left` | Left wipe entrance |
+| `wipe_right` | Right wipe entrance |
+| `wipe_up` | Upward wipe entrance |
+| `wipe_down` | Downward wipe entrance |
 | `split` | Split/barn entrance |
 | `blinds` | Horizontal blinds |
 | `checkerboard` | Checkerboard reveal |
@@ -282,6 +316,27 @@ Generated export performs semantic read-back per slide, comparing row order, tri
 
 Direct-PPTX routes are preserve-only for object animation: they compare the source object-animation fingerprint before and after allowed edits, run structural package validation, and do not write, normalize, or claim ownership of effects. See [`pptx-animations.md`](../../scripts/docs/pptx-animations.md) for the exact compatibility and OOXML contract.
 
+### 5.1 Optional Video Motion Handoff
+
+When a downstream video renderer will enhance the deck, export with
+`--conversion-trace` and derive its motion plan from that resolved trace:
+
+```bash
+python3 skills/ppt-master/scripts/video_motion_plan.py \
+  <project_path>/validation/<output_stem>.trace.json \
+  -o <project_path>/validation/video_motion_plan.json \
+  --style adaptive \
+  --force
+```
+
+For narrated output, the source trace must come from the final
+`--recorded-narration` export. The video plan inherits object identity, source
+effect, semantic direction, order, duration, native bounds, and final timing
+anchors. Video-only optimization may refine easing, travel distance, opacity,
+scale, mask feather, blur, motion blur, and overshoot; it must not replace the
+source effect or reduce the choreography to delay values. See
+[`video-motion-plan.md`](../../scripts/docs/video-motion-plan.md).
+
 ---
 
 ## ✅ Customize Animations Complete
@@ -295,3 +350,4 @@ Direct-PPTX routes are preserve-only for object animation: they compare the sour
 - [x] `animation_config.py validate` passed
 - [x] PPTX re-export completed with custom animation overrides
 - [x] Generated animation semantic read-back and package validation passed
+- [x] If video enhancement was requested, its motion plan was derived from the final resolved conversion trace
