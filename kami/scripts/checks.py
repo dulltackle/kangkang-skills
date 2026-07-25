@@ -34,7 +34,7 @@ MARKDOWN_RESIDUE_MARKERS = (
     ("markdown thematic break", MARKDOWN_THEMATIC_BREAK),
     ("unconverted bold marker", re.compile(r"\*\*")),
     ("unconverted inline-code marker", re.compile(r"`")),
-    # Em dash is banned in every deliverable (writing.md, anti-patterns #27).
+    # Em dash is banned in every deliverable (writing.md, anti-patterns #28).
     # It keeps leaking past the prose-level rule, so it is a machine gate here.
     ("em dash (banned punctuation)", re.compile("\u2014")),
 )

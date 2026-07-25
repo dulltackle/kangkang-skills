@@ -81,17 +81,14 @@ The "no second chromatic color" rule has exactly one approved exception: the bre
 
 **Why**: WeasyPrint's alpha compositing for padding vs glyph areas produces a visible double rectangle on zoom. See `production.md` Part 4 Pitfall #1.
 
-Ink Blue `#1B365D` over parchment `#f5f4ed`:
+Ink Blue `#1B365D` over parchment `#f5f4ed` resolves to two registered tokens, and those are the only two the document templates use (the public site keeps a `.tag.brush` gradient in `styles.css` for its own design-system showcase):
 
-| rgba alpha | Solid hex |
-|---|---|
-| 0.08 | `#EEF2F7` |
-| 0.14 | `#E4ECF5` |
-| **0.18** | **`#E4ECF5`** ← default tag |
-| 0.22 | `#D0DCE9` |
-| 0.30 | `#D6E1EE` |
+| Token | Hex | Use |
+|---|---|---|
+| `--tag-bg` | `#E4ECF5` | the default tag swatch |
+| `--brand-tint` | `#EEF2F7` | the lightest fill, when a tag must recede |
 
-The default tag swatch `#E4ECF5` is registered as the `--tag-bg` token in `tokens.json`, so its 15 template definitions stay under the sync guard.
+Use the token, never a hand-mixed `rgba()`. A tint outside these two is a new token: add it to `tokens.json` first, or `scripts/tokens.py` will fail the sync guard across the templates that define it.
 
 ---
 
@@ -179,13 +176,13 @@ Print documents are **tighter** than English web body. English web typically run
 | CJK screen body | 1.55-1.65 | 中日文 serif 在 slide scale (27-33px) 下比 print x1.33 更需松行高 |
 
 **Forbidden**:
-- 1.60+ - loose feel, web rhythm, not print
+- 1.60+ on a print body - loose feel, web rhythm, not print. The CJK screen-body row above is the one exception, and only at slide scale.
 - 1.00-1.05 - lines collide except at extreme display sizes
 
 ### Letter-spacing
 
 - Body text: **0**
-- Chinese and Japanese body text with TsangerJinKai02: **0.1–0.2pt** to compensate for the font's natural density; section titles and Mincho samples: **0**
+- Chinese and Japanese body text with TsangerJinKai02: **0.3pt**, the baseline every shipped CN/JA template uses (`long-doc.html`, `one-pager.html`, `slides-weasy.html`); section titles and Mincho samples: **0**
 - Chinese lede text (14–22pt) with TsangerJinKai02: **0.03–0.06em** to open up large-body paragraphs without breaking density; EN and JA lede: **0** (only TsangerJinKai02 needs density compensation)
 - Chinese and Japanese display text (24pt+): **0.2–1pt** optical spacing for visual breathing room at large sizes; scale with font size
 - English headings may use subtle optical tightening when needed; keep it localized, never inherited by body copy
@@ -239,9 +236,8 @@ Print uses mm/pt; slides (screen) use px. The scale relationships differ:
 
 **Key rules**:
 - Slide padding-top: 72-80px (print is 96-120px; slides are more compact)
-- Slide letter-spacing = print value / 2 (8px tracking "falls apart" on screen; halve it)
 - Macro scale (font size, padding): multiply print pt values by ~1.6
-- Micro scale (letter-spacing, border, radius): multiply by ~0.6
+- Micro scale (display tracking, border, radius): halve the print value. Wide display tracking falls apart at slide scale; body letter-spacing stays at the print baseline.
 
 ---
 
@@ -289,36 +285,26 @@ Radius scale: 4pt -> 6pt -> 8pt (default) -> 12pt -> 16pt -> 24pt -> 32pt (hero 
 
 ### Tags
 
-Three tiers from weak to strong visual weight:
+Two tiers, both on registered tokens. A gradient tag oversells itself at this size; if the reader's eye lands on the tag's background shape before the text inside, the tag is too strong.
 
-**Lightest solid** (default, most restrained):
+**Default**:
 ```css
 .tag {
-  background: #EEF2F7;      /* 0.08 solid equivalent */
+  background: var(--tag-bg);   /* #E4ECF5 */
   color: var(--brand);
   font-size: 9pt;
   font-weight: 600;
-  padding: 1pt 5pt;
-  border-radius: 2pt;
+  padding: 1pt 6pt;
+  border-radius: 4pt;
   letter-spacing: 0.4pt;
   text-transform: uppercase;
 }
 ```
 
-**Standard solid** (when more contrast needed):
+**Recede** (dense pages, or several tags in one row):
 ```css
 .tag {
-  background: #E4ECF5;      /* 0.18 solid equivalent */
-  color: var(--brand);
-  padding: 1pt 6pt;
-  border-radius: 4pt;
-}
-```
-
-**Gradient brush** (only when "hand-painted" feel is required - use sparingly):
-```css
-.tag {
-  background: linear-gradient(to right, #D6E1EE, #E4ECF5 70%, #EEF2F7);
+  background: var(--brand-tint);   /* #EEF2F7 */
   color: var(--brand);
   padding: 1pt 5pt;
   border-radius: 2pt;
@@ -448,7 +434,9 @@ Key numbers side-by-side (one-pager header, resume top, portfolio cover):
 .metric-label { font-size: 9pt; color: var(--olive); white-space: nowrap; }
 ```
 
-Metric labels never wrap. The value and label share a baseline (`align-items: baseline`); a label that wraps to a second line dangles below that baseline and reads broken. Keep every label short enough for one line and set `white-space: nowrap`, so an over-long label is caught as overflow during QA instead of silently wrapping. Fix by shortening the words, not by letting it wrap.
+This inline form is the print one, and it holds only because print labels are fixed short strings that never wrap. The value and label share a baseline; a label that wraps to a second line dangles below it and reads broken. Keep every label short enough for one line and set `white-space: nowrap`, so an over-long label surfaces as overflow during QA instead of silently wrapping. Fix by shortening the words, not by letting it wrap.
+
+On screen the labels are translated, retitled, and read at 375px, so a landing-page metric stacks instead (`flex-direction: column`). Same for slides. `production.md` pitfall #20 owns that call.
 
 ### Section Header (`.kami-section-header`)
 
@@ -972,12 +960,7 @@ If the user provides a real PPTX or brand template and explicitly asks to preser
 ### Core principles
 
 1. `letter-spacing` matters more than `font-size` for CJK density
-2. 2×2 layouts use `table`, not grid
-3. No section divider slides
-4. No white card panels on parchment; use border lines to divide
-5. Callout pins to bottom; whitespace above is the design
-6. Each bullet fits one line
-7. Shrink page first before adding more content
+2. No white card panels on parchment; use border lines to divide
 
 ### Marp variant
 
@@ -1013,7 +996,7 @@ Marp-specific syntax to know:
 
 Constraints that bite if you arrive from the WeasyPrint slides:
 
-- The page unit is `section`, not `.slide`. CSS that targets `.slide` will not match. The theme already declares `section { width: 280mm; height: 158mm; position: relative; }`, so `.co { position: absolute; bottom: 12mm }` still pins to the bottom of the current slide.
+- The page unit is `section`, not `.slide`. CSS that targets `.slide` will not match. The theme already declares `section { width: 280mm; height: 158mm; position: relative; }`, so the theme's `.co { position: absolute; bottom: 18mm }` still pins to the bottom of the current slide.
 - Markdown blocks inside `<div>` wrappers need surrounding blank lines for Marp to parse them as Markdown. The sample deck shows the pattern for `.c2` and `table.t2x2`.
 - `paginate: true` injects a page number via the `section::after` pseudo-element. Do not also place a `.page-num` element by hand; you will get two numbers.
 
@@ -1394,18 +1377,9 @@ Data dashboards built in the Kami idiom (analytics boards, sales views, status p
 
 Mermaid text is turned into Kami-styled diagrams via beautiful-mermaid plus
 `scripts/mermaid_normalize.py`. The theme maps beautiful-mermaid's seven color
-roles onto the canonical palette (single source: `references/mermaid-theme.json`,
-kept in sync with `tokens.json`):
-
-| role | token | hex |
-|------|-------|-----|
-| `bg` | `--parchment` | `#f5f4ed` |
-| `fg` | `--near-black` | `#141413` |
-| `line` | `--olive` | `#504e49` |
-| `accent` | `--brand` | `#1B365D` |
-| `muted` | `--stone` | `#6b6a64` |
-| `surface` | `--ivory` | `#faf9f5` |
-| `border` | `--border` | `#e8e6dc` |
+roles onto the canonical palette. `references/mermaid-theme.json` is the single
+source, kept in sync with `tokens.json`; `references/mermaid.md` «The Kami theme»
+prints the role-to-token mapping in readable form.
 
 Same invariants as every other surface: parchment canvas, one chromatic accent
 (ink-blue marks the focal element only), warm neutrals for everything else, serif
