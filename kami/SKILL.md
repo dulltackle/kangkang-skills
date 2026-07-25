@@ -361,8 +361,11 @@ python3 scripts/build.py --check-placeholders path/to/filled.html
 python3 scripts/build.py --check-markdown path/to/filled.pdf
 python3 scripts/build.py --check-content content.json path/to/filled.html
 python3 scripts/build.py --check-visual path/to/filled.pdf
+python3 scripts/build.py --check-fonts path/to/filled.pdf   # which family actually drew the CJK text
+python3 scripts/build.py --check-style path/to/filled.html  # template rules against the produced document
 python3 scripts/build.py --check-resume-balance path/to/resume.pdf
-python3 scripts/build.py --check-density              # page whitespace scanner (skips cover)
+python3 scripts/build.py --check-density path/to/filled.pdf  # page whitespace (one-page docs included)
+python3 scripts/build.py --check-density              # repo sweep (skips cover and template skeletons)
 python3 scripts/build.py --check-rhythm slides slides-en   # warn on monotonous slide sequences
 python3 scripts/build.py --check            # lint + token/theme + public-site fact checks
 python3 scripts/build_metadata.py --check   # Claude/Codex plugin mirror + marketplace drift check
@@ -370,7 +373,9 @@ python3 scripts/build_metadata.py --check   # Claude/Codex plugin mirror + marke
 
 > **Screen verify**: `--check-density` is a print gate. For ANY browser-delivered surface (landing page, docs page, dashboard, testimonial wall, article index), screenshotting the rendered page at 375px and 1280px in every locale is a hard step before declaring done, not an on-request extra: scan for line widows, sparse blocks, and single-line-surface wraps, and report the result. Do not wait for the user to ask "does it work on mobile". See `references/design.md` Section 12 «Responsive screenshot verification».
 
-> **Perceptual verify (PDF deliverables)**: geometry checks cannot see a fallback glyph or an arrow crossing a label. Before shipping a filled PDF, run `python3 scripts/build.py --check-visual path/to/filled.pdf`, then view every exported page image against the printed checklist. One hit means a whole-document sweep for that class of issue. If your host cannot view images, send the image paths and checklist to the user instead of skipping the pass.
+> **Perceptual verify (PDF deliverables)**: geometry checks cannot see a fallback glyph or an arrow crossing a label. Before shipping a filled PDF, run `python3 scripts/build.py --check-visual path/to/filled.pdf`, then view every exported page image against the printed checklist. One hit means a whole-document sweep for that class of issue. If your host cannot view images, send the image paths and checklist to the user instead of skipping the pass. `--check-visual` runs the font gate for you and prints its verdict above the checklist.
+
+> **Font verify (CJK deliverables)**: a missing CJK serif produces no fallback boxes. It silently substitutes a sans that still reads, so the page passes an eyeball pass while carrying typography the parchment metrics were never tuned for, and the result reads heavy and flat without anything looking obviously broken. `--check-fonts` settles it from the rendered PDF's own span table: it names the family that drew the body ideographs and fails on a sans substitution or on text split across two families. Never report a CJK document as visually verified without it, and never assume a sandbox has the fonts: the commercial TsangerJinKai02 files never ship inside the skill package.
 
 Source templates intentionally keep `{{...}}` fields. Run placeholder checks on completed documents, not on the template library.
 
@@ -385,11 +390,11 @@ A task is done when the user receives, in the closing message:
 1. The path of every deliverable, in every promised format (Step 4.5).
 2. Which checks ran and their results, including the page-count contract.
 3. Every remaining `[DATA NEEDED]` gap, listed explicitly. Never declare done with an unreported gap.
-4. The visual verdict, stated honestly by surface: for PDFs the `--check-visual` pass status; for screen surfaces the 375px/1280px screenshot result; when rendering could not be inspected, say "build verified, visuals unconfirmed", not "done".
+4. The visual verdict, stated honestly by surface: for PDFs the `--check-visual` pass status (which includes the font gate); for screen surfaces the 375px/1280px screenshot result; when rendering could not be inspected, say "build verified, visuals unconfirmed", not "done".
 
 ## Fonts
 
-Only when a CJK build shows fallback glyphs, or a render fails on a missing font: run `bash scripts/ensure-fonts.sh`, then read `references/production.md` Part 1 «Fonts» for the stacks, the fallback chains, and where the recovered files land.
+When `--check-fonts` reports a sans substitution or a split family, or a render fails on a missing font: run `bash scripts/ensure-fonts.sh`, then read `references/production.md` Part 1 «Fonts» for the stacks, the fallback chains, and where the recovered files land. Waiting for visible fallback glyphs is not a strategy; the common failure has none.
 
 Two facts worth carrying here: the commercial TsangerJinKai02 files stay in the repo for local preview and CDN fallback but never go inside a Claude Desktop skill ZIP, and `Source Han Serif KR` is the real family name inside the OTFs, so it must stay in the KO chain for offline fontconfig to resolve it.
 

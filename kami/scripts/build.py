@@ -32,6 +32,8 @@ Usage:
     python3 scripts/build.py --check-content content.json            # content IR schema validation
     python3 scripts/build.py --check-content content.json filled.html # + coverage into the document
     python3 scripts/build.py --check-visual path/to/doc.pdf          # page PNGs + perceptual checklist
+    python3 scripts/build.py --check-fonts path/to/doc.pdf           # which family actually drew the CJK text
+    python3 scripts/build.py --check-style path/to/filled.html       # template rules against a produced document
 """
 from __future__ import annotations
 
@@ -51,6 +53,7 @@ from lint import (
     check_all,
     check_cross_template_consistency,
     check_off_palette,
+    check_style,
     scan_file,
 )
 from optional_deps import MissingDepError
@@ -66,7 +69,7 @@ from shared import (
 )
 from site_facts import check_site_facts
 from tokens import sync_check
-from verify import show_fonts, verify_all
+from verify import check_fonts, show_fonts, verify_all
 from visual import check_visual
 
 # name -> (source, max_pages). max_pages=0 means no hard check.
@@ -209,6 +212,8 @@ def main(argv: list[str]) -> int:
         "--check-markdown": check_markdown_residue,
         "--check-content": check_content,
         "--check-visual": check_visual,
+        "--check-fonts": check_fonts,
+        "--check-style": check_style,
     }
     handler = path_checks.get(args[0])
     if handler is not None:

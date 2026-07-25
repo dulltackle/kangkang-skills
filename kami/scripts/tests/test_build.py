@@ -46,8 +46,10 @@ from checks import (  # noqa: E402
     _rhythm_issues,
     check_markdown_residue,
     check_placeholders,
+    scan_density,
 )
 from lint import (  # noqa: E402
+    _emphasis_container_findings,
     _extract_root_vars,
     _off_palette_findings,
     _pair_names,
@@ -80,7 +82,11 @@ from site_facts import (  # noqa: E402
     site_structure_issues,
 )
 from tokens import _mermaid_theme_drift  # noqa: E402
-from verify import RECOGNIZABLE_FALLBACK_FONT_MARKERS  # noqa: E402
+from verify import (  # noqa: E402
+    RECOGNIZABLE_FALLBACK_FONT_MARKERS,
+    _classify_cjk_font,
+    _font_family_key,
+)
 
 
 # --------------------------- helpers ---------------------------
@@ -547,6 +553,112 @@ def test_font_fallback_markers_recognize_pt_serif() -> None:
     check("font fallback markers recognize PT-Serif",
           fallback_present,
           f"markers: {RECOGNIZABLE_FALLBACK_FONT_MARKERS}")
+
+
+def test_font_family_key_collapses_weight_variants() -> None:
+    """One family at two weights must not read as two typefaces.
+
+    Bold CJK body text is a separate BaseFont entry (TsangerJinKai02 plus
+    TsangerJinKai02-Medium, or the W04/W05 pair). Without collapsing, the
+    mixed-family rule would fail every correctly rendered bilingual document.
+    """
+    pairs = [
+        ("TsangerJinKai02", "TsangerJinKai02-Medium"),
+        ("TsangerJinKai02-W04", "TsangerJinKai02-W05"),
+        ("Source-Han-Serif-K", "Source-Han-Serif-K-Mediu"),
+        ("NotoSerifCJKsc-Regular", "NotoSerifCJKsc-Bold"),
+    ]
+    offenders = [f"{a} != {b}" for a, b in pairs if _font_family_key(a) != _font_family_key(b)]
+    check("font family key collapses weight variants",
+          not offenders,
+          f"offenders: {', '.join(offenders)}")
+    check("font family key still separates real families",
+          _font_family_key("Songti-SC") != _font_family_key("Hiragino-Mincho-ProN-Lig"))
+
+
+def test_classify_cjk_font_separates_serif_from_the_rest() -> None:
+    """The gate exists because a sans substitution shows no fallback boxes.
+
+    A missing CJK serif is invisible to an eyeball pass: the page still reads,
+    just with the wrong stroke density against metrics tuned for serif. The
+    classifier is what turns that into a failure.
+    """
+    cases = {
+        "ABCDEF+TsangerJinKai02-W04": "primary",
+        "Songti-SC": "serif",
+        "NotoSerifCJKsc-Regular": "serif",
+        "Noto Serif CJK SC": "serif",
+        "PingFang-SC": "other",
+        "NotoSansCJKsc-Regular": "other",
+        "SourceHanSansSC-Regular": "other",
+    }
+    offenders = [
+        f"{name} -> {_classify_cjk_font(name)} (want {want})"
+        for name, want in cases.items()
+        if _classify_cjk_font(name) != want
+    ]
+    check("CJK font classifier separates primary and serif from everything else",
+          not offenders,
+          f"offenders: {', '.join(offenders)}")
+
+
+def test_emphasis_container_mix_counts_distinct_fills() -> None:
+    """Drift is several emphasis languages on a page, not one used repeatedly.
+
+    Templates reuse a single fill across several raised components, which must
+    stay clean. A generated document that invents a white rounded card for one
+    passage and a tinted rounded block for the next must fail.
+    """
+    one_fill = """<!doctype html>
+<html><head><style>
+:root { --ivory: #faf9f5; --brand: #1B365D; }
+.callout { background: var(--ivory); border-radius: 3pt; padding: 10pt; }
+.takeaway { background: #faf9f5; border-radius: 4pt; padding: 10pt; }
+.role { background: #E4ECF5; border-radius: 2pt; padding: 1pt 5pt; float: right; }
+</style></head><body></body></html>
+"""
+    two_fills = """<!doctype html>
+<html><head><style>
+:root { --ivory: #faf9f5; --tag-bg: #E4ECF5; }
+.qa-card { background: var(--ivory); border-radius: 8pt; padding: 10pt 14pt; }
+.boundary { background: var(--tag-bg); border-radius: 6pt; padding: 8pt 12pt; }
+</style></head><body></body></html>
+"""
+    clean = write_temp_html(one_fill)
+    drifted = write_temp_html(two_fills)
+    try:
+        check("one emphasis fill (plus an inline chip) is not drift",
+              not _emphasis_container_findings(clean),
+              f"findings: {[f.excerpt for f in _emphasis_container_findings(clean)]}")
+        found = _emphasis_container_findings(drifted)
+        check("two different emphasis fills are flagged",
+              len(found) == 1 and found[0].rule == "emphasis-container-mix",
+              f"findings: {[f.rule for f in found] or '(none)'}")
+    finally:
+        clean.unlink(missing_ok=True)
+        drifted.unlink(missing_ok=True)
+
+
+def test_density_scans_the_only_page_of_a_single_page_pdf() -> None:
+    """Page 1 is cover-exempt, which left one-page documents wholly unscanned.
+
+    one-pager and letter render to a single page, so the cover exemption meant
+    the only layout gate that reads a rendered page never looked at them.
+    """
+    single = REPO_ROOT / "assets" / "examples" / "one-pager.pdf"
+    if not single.exists():
+        check("single-page density fixture exists", False, f"missing {single}")
+        return
+    default_scan = silently(scan_density, [str(single)])
+    explicit_scan = silently(scan_density, [str(single)], scan_single_page=True)
+    if default_scan is None or explicit_scan is None:
+        return  # PyMuPDF absent; the density suite is skipped wholesale
+    check("single-page PDF is exempt in the repo-wide sweep",
+          sum(default_scan[:2]) == 0,
+          f"scan: {default_scan}")
+    check("single-page PDF is scanned when passed explicitly",
+          sum(explicit_scan[:2]) > 0,
+          f"scan: {explicit_scan} (one-pager.pdf is a placeholder skeleton, so it is sparse)")
 
 
 def test_chinese_slides_mono_has_cjk_fallback() -> None:

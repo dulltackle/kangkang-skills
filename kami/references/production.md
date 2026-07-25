@@ -430,8 +430,15 @@ pdftoppm -png -r 300 out.pdf inspect
 ### Did the font actually load?
 
 ```bash
-pdffonts output.pdf
+python3 scripts/build.py --check-fonts output.pdf   # verdict, from the PDF's span table
+pdffonts output.pdf                                 # raw font table, if you want to look yourself
 ```
+
+`--check-fonts` reads which family drew the body ideographs and fails on two
+states `pdffonts` will not tell you apart: a sans substitution (the page reads
+fine and looks cheap), and CJK text split across two families (per-glyph
+fontconfig fallback, which breaks single words down the middle). Prefer it over
+reading the font table by eye, and never sign off a CJK deliverable without it.
 
 If the output shows `DejaVuSerif` / `Bitstream Vera` - your specified font didn't load, fell through to system ultimate fallback. Expected: `Charter`, `Georgia`, `TsangerJinKai02`, or a Japanese Mincho face such as `YuMincho`, `Hiragino-Mincho`, `Noto-Serif-CJK-JP`, or `Source-Han-Serif-JP`.
 
@@ -594,6 +601,31 @@ brew install --cask font-source-han-serif-sc
 apt install fonts-noto-cjk
 mkdir -p ~/.fonts && cp *.ttf ~/.fonts/ && fc-cache -f
 ```
+
+### 4.1 (P1) Latin-first font stack splits CJK inside inline SVG
+
+**Symptom**: labels inside an embedded SVG render in two typefaces at once,
+often mid-word (`提交` in one face, `请` in another). The stack names a CJK
+family, and a rendered PDF still shows two.
+
+**Root cause**: for SVG text, a leading Latin serif (`Charter, Georgia, ...`)
+ends the CSS stack walk. Characters it has no glyph for go to fontconfig
+per glyph rather than continuing down the declared list, so the CJK families
+written after it never get their turn and each ideograph lands wherever
+fontconfig prefers (`Hiragino-Mincho` for some, `Songti-SC` for others).
+
+**Fix**: in SVG `text` rules, put the CJK families first and let Latin faces
+trail. `@font-face` fonts do resolve inside inline SVG, so `TsangerJinKai02`
+leading the stack draws both scripts from one family:
+
+```css
+/* wrong: CJK after Latin, splits per glyph */
+text { font-family: Charter, Georgia, "TsangerJinKai02", "Songti SC", serif; }
+/* right: one family draws the whole label */
+text { font-family: "TsangerJinKai02", "Source Han Serif SC", "Songti SC", Charter, Georgia, serif; }
+```
+
+`--check-fonts` catches this state; a page render at normal size usually does not.
 
 ### 5. (P2) CJK and Latin crowding (Chinese mode only)
 

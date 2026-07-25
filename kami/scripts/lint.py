@@ -25,6 +25,7 @@ from shared import (
     TEMPLATES,
     TOKENS_FILE,
     iter_template_files,
+    rel_to_root,
 )
 from tokens import ROOT_BLOCK, parse_root_vars
 
@@ -340,6 +341,143 @@ def check_off_palette(verbose: bool = False) -> int:
     for f in findings:
         print(f"  {f.file.relative_to(ROOT)}:{f.line}  {f.excerpt}")
     return 1
+
+
+# ---------- filled-document style drift ----------
+#
+# check_all and check_off_palette scan assets/templates: the shapes the project
+# ships. Nothing scanned the other half of the workflow, the document an agent
+# produces by copying a template and editing it. That copy is where the design
+# system actually erodes, because every rule the template encodes lives in CSS
+# comments an editing pass is free to ignore. These checks read a filled file
+# with the template rules applied.
+
+STYLE_BLOCK_RE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.DOTALL | re.IGNORECASE)
+CSS_RULE_RE = re.compile(r"([^{}]+)\{([^{}]*)\}", re.DOTALL)
+BACKGROUND_DECL = re.compile(r"background(?:-color)?\s*:\s*([^;]+)", re.IGNORECASE)
+PADDING_DECL = re.compile(r"padding\s*:", re.IGNORECASE)
+RADIUS_DECL = re.compile(r"border-radius\s*:", re.IGNORECASE)
+EMPTY_BACKGROUNDS = ("transparent", "none", "inherit", "initial", "unset")
+INLINE_OR_FLOAT_DECL = re.compile(r"float\s*:\s*(left|right)|display\s*:\s*inline", re.IGNORECASE)
+
+# Two component classes are filled and rounded by definition and say nothing
+# about how the page raises a passage: chips and code. Scanning the shipped
+# templates with no exemptions at all, these are the only selectors that need
+# one; every other hit (.callout, .takeaway, .exec-summary, .analyst-box,
+# .risk-item, .team-culture, .os-highlight) is a real emphasis container and
+# must be counted. Keep this list at what that scan justified.
+EMPHASIS_EXEMPT_SELECTORS = ("tag", "chip", "badge", "code", "pre", "kbd")
+
+
+def _css_source(path: Path) -> str:
+    """Return the CSS to analyze: <style> blocks for HTML, whole file for CSS."""
+    raw = _strip_css_block_comments(path.read_text(encoding="utf-8", errors="replace"))
+    if path.suffix.lower() == ".css":
+        return raw
+    blocks = STYLE_BLOCK_RE.findall(raw)
+    return "\n".join(blocks)
+
+
+def _resolve_css_value(value: str, root_vars: dict[str, str]) -> str:
+    """Resolve one level of var() against the document's own :root, normalized.
+
+    Two selectors reaching the same fill through different spellings
+    (`var(--ivory)` and `#faf9f5`) are one design decision, not two, so the
+    count must compare resolved colors rather than source text.
+    """
+    resolved = value.strip().lower()
+    match = re.search(r"var\(\s*(--[\w-]+)", resolved)
+    if match:
+        resolved = root_vars.get(match.group(1), match.group(1)).strip().lower()
+    return re.sub(r"\s+", "", resolved)
+
+
+def _emphasis_container_findings(path: Path) -> list[Finding]:
+    """Flag a document that fills its emphasis blocks in more than one color.
+
+    A template reuses one fill across every raised block (long-doc runs three
+    components off `--ivory`; resume runs two off `--brand-tint`), so the page
+    reads as one system used repeatedly. Drift looks different: a generated
+    document invents a white rounded card for the question, then a tinted
+    rounded block for the caveat, and the page now carries two unrelated
+    container languages plus the template's own left-rule callout. Counting
+    distinct resolved fills separates "one form, used often" from "several
+    forms, invented as the document went along".
+
+    Inline and floated rules are chips (tags, role pills), not block emphasis.
+    """
+    css = _css_source(path)
+    if not css.strip():
+        return []
+    root_vars = parse_root_vars(css)
+    fills: dict[str, tuple[str, int]] = {}
+    for match in CSS_RULE_RE.finditer(css):
+        selector = " ".join(match.group(1).split())
+        body = match.group(2)
+        if any(token in selector.lower() for token in EMPHASIS_EXEMPT_SELECTORS):
+            continue
+        if INLINE_OR_FLOAT_DECL.search(body):
+            continue
+        bg = BACKGROUND_DECL.search(body)
+        if not bg:
+            continue
+        value = bg.group(1).strip().lower()
+        if any(empty in value for empty in EMPTY_BACKGROUNDS):
+            continue
+        if not (PADDING_DECL.search(body) and RADIUS_DECL.search(body)):
+            continue
+        resolved = _resolve_css_value(value, root_vars)
+        line = css.count("\n", 0, match.start(1)) + 1
+        fills.setdefault(resolved, (selector, line))
+
+    if len(fills) < 2:
+        return []
+    detail = ", ".join(f"{sel} ({fill})" for fill, (sel, _) in fills.items())
+    last_line = max(line for _, line in fills.values())
+    return [Finding(path, last_line, "emphasis-container-mix",
+                    f"{len(fills)} different emphasis fills in one document ({detail}); "
+                    "a page raises passages one way, reused, not a new container per idea")]
+
+
+def check_style(paths: list[str]) -> int:
+    """CLI: --check-style filled.html [more.html ...]
+
+    Applies the template rule set to a produced document. Same rules, other end
+    of the pipeline.
+    """
+    files = [p for p in paths if not p.startswith("-")]
+    if not files:
+        print("ERROR: usage: --check-style path/to/filled.html [more.html ...]")
+        return 2
+
+    allowed = _load_token_values()
+    failures = 0
+    scanned = 0
+    for raw in files:
+        path = Path(raw)
+        if not path.is_absolute():
+            path = ROOT / path
+        if not path.exists():
+            print(f"ERROR: {raw}: file not found")
+            failures += 1
+            continue
+        scanned += 1
+        rel = rel_to_root(path)
+        findings = scan_file(path)
+        findings.extend(_off_palette_findings(path, allowed))
+        findings.extend(_emphasis_container_findings(path))
+        if not findings:
+            print(f"OK: {rel}: no style drift")
+            continue
+        failures += 1
+        print(f"ERROR: {rel}: {len(findings)} style finding(s)")
+        for f in findings:
+            print(f"  {rel}:{f.line}  [{f.rule}] {f.excerpt}")
+
+    if scanned == 0:
+        print("ERROR: no documents scanned")
+        return 2
+    return 0 if failures == 0 else 1
 
 
 # ---------- cross-template consistency ----------

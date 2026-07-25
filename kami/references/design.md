@@ -105,7 +105,7 @@ font-family: Charter, Georgia, Palatino,
 
 /* Chinese */
 font-family: "TsangerJinKai02",
-             "Source Han Serif SC", "Noto Serif CJK SC",
+             "Source Han Serif SC", "Source Han Serif CN", "Noto Serif CJK SC", "Noto Serif SC",
              "Songti SC", "STSong",
              Georgia, serif;
 
