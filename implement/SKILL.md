@@ -12,4 +12,4 @@ Run typechecking regularly, single test files regularly, and the full test suite
 
 Once done, use /open-code-review to review the work.
 
-Commit your work to the current branch.
+Use /to-commit to commit your work to the current branch.
