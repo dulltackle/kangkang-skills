@@ -350,8 +350,8 @@ Resume visual rule: header and section titles carry the only structural rules. T
 | Headline            | serif 500, line-height 1.10-1.30                               |
 | Reading body        | serif 400, 9.5-10pt, 1.55 (CN pins `--sans: var(--serif)`)     |
 | Emphasize a number  | `color: var(--brand)`, no bold                                 |
-| Raise a passage     | `one-pager` `.callout`: brand left rule, no fill, no radius     |
-| Quote               | same left rule + olive color                                   |
+| Raise a passage     | `.callout`: ivory fill + 2pt brand left rule + 3pt radius        |
+| Quote               | same 2pt left rule + olive, no fill (fill is what makes a callout) |
 | Code                | `long-doc` `pre` / `code`: ivory fill, 4pt / 2pt radius, no border |
 | Key figures         | `one-pager` `.metric`: baseline row, transparent, not a card    |
 | Buttons             | `landing-page` `.btn-primary` / `.btn-ghost` (screen only)      |

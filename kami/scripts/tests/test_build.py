@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import builtins
+import hashlib
 import importlib.util
 import inspect
 import io
@@ -64,6 +65,7 @@ from lint import (  # noqa: E402
     scan_file,
     scan_text,
 )
+from optional_deps import MissingDepError, require_pymupdf  # noqa: E402
 from shared import (  # noqa: E402
     DIAGRAM_TEMPLATES,
     HTML_TEMPLATES,
@@ -235,6 +237,31 @@ def test_dist_package_contents() -> None:
     check("dist/kami.zip keeps required runtime skill files",
           not missing_required,
           f"missing entries: {', '.join(missing_required)}")
+
+    # Structure alone cannot tell a current package from a stale one. The
+    # plugin mirror has `build_metadata.py --check`; the ZIP had no equivalent,
+    # so editing a source file and forgetting `package-skill.sh` left every
+    # check green while the archive Claude Desktop users download stayed on the
+    # old content. Compare what is inside against what it was built from.
+    stale: list[str] = []
+    absent: list[str] = []
+    with zipfile.ZipFile(archive) as zf:
+        for name in zf.namelist():
+            if name.endswith("/"):
+                continue
+            source = REPO_ROOT / name.removeprefix(f"{PACKAGE_ROOT_NAME}/")
+            if not source.exists():
+                absent.append(name)
+                continue
+            if hashlib.sha256(zf.read(name)).digest() != hashlib.sha256(source.read_bytes()).digest():
+                stale.append(name)
+    check("dist/kami.zip matches the sources it was built from",
+          not stale,
+          f"{len(stale)} stale entr(ies): {', '.join(sorted(stale)[:5])}"
+          " -- run `bash scripts/package-skill.sh`")
+    check("dist/kami.zip carries no entry missing from the repo",
+          not absent,
+          f"entries with no source: {', '.join(sorted(absent)[:5])}")
 
 
 def test_plugin_metadata_generated() -> None:
@@ -719,21 +746,41 @@ def test_density_scans_the_only_page_of_a_single_page_pdf() -> None:
 
     one-pager and letter render to a single page, so the cover exemption meant
     the only layout gate that reads a rendered page never looked at them.
+
+    The fixture is built here rather than read from assets/examples, which is
+    gitignored build output: pointing a test at it passes locally and fails on
+    a fresh checkout. Synthesising the page also pins the expected verdict,
+    since the emptiness ratio is chosen rather than inherited from whatever the
+    template currently renders.
     """
-    single = REPO_ROOT / "assets" / "examples" / "one-pager.pdf"
-    if not single.exists():
-        check("single-page density fixture exists", False, f"missing {single}")
-        return
-    default_scan = silently(scan_density, [str(single)])
-    explicit_scan = silently(scan_density, [str(single)], scan_single_page=True)
+    try:
+        fitz = require_pymupdf()
+    except MissingDepError:
+        return  # PyMuPDF absent (the lint-and-test CI job); density suite skipped
+
+    with tempfile.TemporaryDirectory() as tmp:
+        single = Path(tmp) / "one-page.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)  # A4 in points
+        parchment = tuple(channel / 255 for channel in PARCHMENT_RGB)
+        page.draw_rect(fitz.Rect(0, 0, 595, 842), color=parchment, fill=parchment)
+        # Ink across the top third only, leaving ~64% trailing whitespace: past
+        # the sparse threshold, so a scanned page must be reported.
+        page.draw_rect(fitz.Rect(50, 50, 545, 300), color=(0.1, 0.1, 0.1), fill=(0.1, 0.1, 0.1))
+        doc.save(str(single))
+        doc.close()
+
+        default_scan = silently(scan_density, [str(single)])
+        explicit_scan = silently(scan_density, [str(single)], scan_single_page=True)
+
     if default_scan is None or explicit_scan is None:
-        return  # PyMuPDF absent; the density suite is skipped wholesale
+        return
     check("single-page PDF is exempt in the repo-wide sweep",
           sum(default_scan[:2]) == 0,
           f"scan: {default_scan}")
     check("single-page PDF is scanned when passed explicitly",
           sum(explicit_scan[:2]) > 0,
-          f"scan: {explicit_scan} (one-pager.pdf is a placeholder skeleton, so it is sparse)")
+          f"scan: {explicit_scan} (fixture leaves ~64% of the page empty)")
 
 
 def test_chinese_slides_mono_has_cjk_fallback() -> None:

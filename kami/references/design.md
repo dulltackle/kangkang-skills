@@ -851,8 +851,8 @@ ends up carrying three unrelated emphasis languages on one page.
 | Big headline | serif 500, size by level, line-height 1.10-1.30 |
 | Reading body | serif 400, 9.5-10pt, line-height 1.55. Every locale: CN templates pin `--sans: var(--serif)`, so one page carries one typeface |
 | Emphasize a number | `color: var(--brand)`, no bold |
-| Raise a passage above body text | `one-pager` `.callout`: brand left rule, no fill, no radius. One emphasis form per page, reused |
-| Quote someone | same left rule, olive text |
+| Raise a passage above body text | `.callout`: ivory fill + 2pt brand left rule + 3pt radius. Identical in one-pager, long-doc and equity-report; only padding tightens on denser pages. One emphasis form per page, reused |
+| Quote someone | `long-doc` `blockquote` / `.quote`: same 2pt left rule, olive text, but no fill. The rule is shared; the fill is what separates a quotation from a raised passage |
 | Show code | `long-doc` `pre` / `code`: ivory fill, 4pt / 2pt radius, no border |
 | Show key figures | `one-pager` `.metric`: baseline row, transparent, no container. Numbers carry themselves; a filled card around them is the most common drift |
 | Start a section | `long-doc` `h2`: serif, no left bar. `changelog` `h2` carries the bar because release notes need scannable group heads, and it is the exception |
