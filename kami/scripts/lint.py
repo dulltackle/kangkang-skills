@@ -81,8 +81,17 @@ def _strip_css_block_comments(text: str) -> str:
 
 
 def scan_file(path: Path) -> list[Finding]:
+    return scan_text(path.read_text(encoding="utf-8", errors="replace"), path)
+
+
+def scan_text(raw_text: str, path: Path, line_offset: int = 0) -> list[Finding]:
+    """Run the per-line and per-block rules over `raw_text`.
+
+    Split out of scan_file so a CSS snippet that lives inside a Markdown fence
+    can be scanned with the same rules as a template, reporting line numbers
+    back in the enclosing document via `line_offset`.
+    """
     findings: list[Finding] = []
-    raw_text = path.read_text(encoding="utf-8", errors="replace")
     text = _strip_css_block_comments(raw_text)
     lines = text.splitlines()
 
@@ -116,45 +125,45 @@ def scan_file(path: Path) -> list[Finding]:
             continue
 
         if RGBA_BG_DIRECT.search(raw):
-            findings.append(Finding(path, i, "rgba-background",
+            findings.append(Finding(path, line_offset + i, "rgba-background",
                                     "rgba() used directly on background (tag double-rectangle bug)"))
 
         bg_var = BG_VAR_USE.search(raw)
         if bg_var and bg_var.group(1) in rgba_vars:
-            findings.append(Finding(path, i, "rgba-background",
+            findings.append(Finding(path, line_offset + i, "rgba-background",
                                     f"background: var(--{bg_var.group(1)}) resolves to rgba() (tag double-rectangle bug)"))
 
         if RGBA_BORDER_DIRECT.search(raw):
-            findings.append(Finding(path, i, "rgba-border",
+            findings.append(Finding(path, line_offset + i, "rgba-border",
                                     "rgba() used on border (violates solid-color invariant)"))
 
         border_var = BORDER_VAR_USE.search(raw)
         if border_var and border_var.group(1) in rgba_vars:
-            findings.append(Finding(path, i, "rgba-border",
+            findings.append(Finding(path, line_offset + i, "rgba-border",
                                     f"border: var(--{border_var.group(1)}) resolves to rgba() (solid-color invariant)"))
 
         if is_en and UNICODE_ARROW.search(raw):
             # skip CSS comment lines (/* ... */) and the arrow-in-CSS-content patterns
             stripped = raw.lstrip()
             if not stripped.startswith("/*") and not stripped.startswith("*") and "content:" not in raw:
-                findings.append(Finding(path, i, "arrow-unicode-in-en",
+                findings.append(Finding(path, line_offset + i, "arrow-unicode-in-en",
                                         "to (U+2192) in English template; use 'to' or '->' per patterns Section 2"))
 
         m = LINE_HEIGHT_LOOSE.search(raw)
         if m:
-            findings.append(Finding(path, i, "line-height-too-loose",
+            findings.append(Finding(path, line_offset + i, "line-height-too-loose",
                                     f"{m.group(0)} exceeds 1.55 ceiling"))
 
         for hex_match in HEX_ANY.finditer(raw):
             h = hex_match.group(0).lower()
             if h in COOL_GRAY_BLOCKLIST:
-                findings.append(Finding(path, i, "cool-gray",
+                findings.append(Finding(path, line_offset + i, "cool-gray",
                                         f"{h} is a cool / neutral gray, use warm undertone"))
 
         if not is_screen and not is_python:
             for rule, pattern in MERMAID_UNSAFE.items():
                 if pattern.search(raw):
-                    findings.append(Finding(path, i, rule,
+                    findings.append(Finding(path, line_offset + i, rule,
                         "un-normalized Mermaid SVG (run scripts/mermaid_normalize.py before embedding)"))
 
     # Pass 3: thin-border-radius block scan (pitfall #2 double-ring).
@@ -182,7 +191,7 @@ def scan_file(path: Path) -> list[Finding]:
                     found = True
                     break
         if found:
-            findings.append(Finding(path, i + 1, "thin-border-radius",
+            findings.append(Finding(path, line_offset + i + 1, "thin-border-radius",
                 "thin border (<1pt) with border-radius -- pitfall #2 double-ring risk"))
     return findings
 
@@ -242,6 +251,16 @@ def _blank_block(text: str, regex: re.Pattern[str]) -> str:
     return regex.sub(repl, text)
 
 
+def _load_token_names() -> set[str]:
+    """Return the set of registered token names (`--brand`, ...)."""
+    if not TOKENS_FILE.exists():
+        return set()
+    try:
+        return set(json.loads(TOKENS_FILE.read_text(encoding="utf-8")))
+    except json.JSONDecodeError:
+        return set()
+
+
 def _load_token_values() -> set[str]:
     """Return the set of canonical token hex values (lowercased)."""
     if not TOKENS_FILE.exists():
@@ -253,8 +272,16 @@ def _load_token_values() -> set[str]:
     return {v.lower() for v in data.values() if isinstance(v, str) and v.startswith("#")}
 
 
-def _off_palette_findings(path: Path, allowed: set[str]) -> list[Finding]:
-    raw = path.read_text(encoding="utf-8", errors="replace")
+def _off_palette_findings(
+    path: Path, allowed: set[str], raw: str | None = None, line_offset: int = 0
+) -> list[Finding]:
+    """Flag hex literals outside the registered palette.
+
+    `raw` and `line_offset` let a caller pass a snippet lifted out of a larger
+    document (a Markdown fence) and still get line numbers into that document.
+    """
+    if raw is None:
+        raw = path.read_text(encoding="utf-8", errors="replace")
     text = _strip_css_block_comments(raw)
     text = _blank_block(text, ROOT_BLOCK)
     text = _blank_block(text, SVG_BLOCK_RE)
@@ -266,7 +293,7 @@ def _off_palette_findings(path: Path, allowed: set[str]) -> list[Finding]:
                 continue
             if h in COOL_GRAY_BLOCKLIST:
                 continue  # reported by the cool-gray rule in scan_file
-            findings.append(Finding(path, i, "off-palette",
+            findings.append(Finding(path, line_offset + i, "off-palette",
                                     f"{h} is not a registered token; single-accent palette violated"))
     return findings
 
@@ -476,6 +503,125 @@ def check_style(paths: list[str]) -> int:
 
     if scanned == 0:
         print("ERROR: no documents scanned")
+        return 2
+    return 0 if failures == 0 else 1
+
+
+# ---------- documented-snippet drift ----------
+#
+# The reference docs teach by example, and an agent copies those examples more
+# readily than it reads the templates. Nothing checked them, so CHEATSHEET.md
+# shipped a `.card` recipe that pairs a 0.5pt border with an 8pt radius (the
+# double-ring pitfall the linter fails templates for) against `--border-cream`,
+# a token that no longer exists. Every snippet the docs hand out is scanned
+# with the same rules the templates answer to, and every var() it names must
+# resolve to something real.
+
+FENCE_RE = re.compile(r"^```(css|html)\s*$(.*?)^```\s*$", re.DOTALL | re.MULTILINE)
+VAR_USE_RE = re.compile(r"var\(\s*(--[\w-]+)")
+# A doc teaches by contrast: the wrong line sits next to the right one, tagged
+# in a comment. Blank the tagged line so the rule fires on the fix, not the bug
+# it is warning about.
+NEGATIVE_EXAMPLE_LINE = re.compile(
+    r"^.*/\*\s*(avoid|wrong|bad|never|don't|do not)\s*\*/.*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Any SVG markup: colors inside SVG answer to the diagram palette, not the
+# print token set, and _off_palette_findings already blanks <svg> blocks in
+# templates. A doc snippet showing <defs> without its <svg> wrapper gets the
+# same treatment rather than a different verdict for the same markup.
+SVG_MARKUP_HINT = re.compile(r"<(svg|defs|pattern|circle|path|rect|polyline|marker)\b", re.IGNORECASE)
+# The white-paper variant is a documented product feature (production.md Part 1).
+DOC_SANCTIONED_HEXES = {"#ffffff", "#fff"}
+# A bare `--name: #hex;` line declares a token rather than spending a literal.
+# Templates get the same pass: _off_palette_findings blanks their :root block.
+# The palette chapter documents screen tokens too, which tokens.json (print
+# only) does not own, so scanning declarations would fail the chapter for
+# doing its job.
+TOKEN_DECL_LINE = re.compile(r"^\s*--[\w-]+\s*:\s*[^;]+;.*$", re.MULTILINE)
+
+
+def _documented_snippets(text: str) -> list[tuple[int, str]]:
+    """Return [(first line number of the snippet body, snippet), ...]."""
+    return [
+        (text.count("\n", 0, m.start(2)) + 1, m.group(2))
+        for m in FENCE_RE.finditer(text)
+    ]
+
+
+def _undefined_token_findings(
+    path: Path, snippet: str, line_offset: int, defined: set[str]
+) -> list[Finding]:
+    """Flag var() references a reader cannot resolve.
+
+    A snippet may define its own variables inline, so anything the snippet
+    itself declares counts as defined.
+    """
+    local = set(re.findall(r"(--[\w-]+)\s*:", snippet))
+    findings: list[Finding] = []
+    for i, line in enumerate(snippet.splitlines(), start=1):
+        for m in VAR_USE_RE.finditer(line):
+            name = m.group(1)
+            if name in defined or name in local:
+                continue
+            findings.append(Finding(path, line_offset + i, "undefined-token",
+                                    f"{name} is not a registered token and is not defined in the snippet"))
+    return findings
+
+
+def check_docs(paths: list[str]) -> int:
+    """CLI: --check-docs [doc.md ...]
+
+    Scans the CSS and HTML snippets the reference docs teach from. With no
+    arguments it walks every doc that carries snippets.
+    """
+    targets = [p for p in paths if not p.startswith("-")]
+    if not targets:
+        candidates = [ROOT / "CHEATSHEET.md", ROOT / "SKILL.md", ROOT / "AGENTS.md"]
+        candidates += sorted((ROOT / "references").glob("*.md"))
+        targets = [str(p) for p in candidates if p.exists()]
+
+    # A snippet may legitimately name any token the shipped templates define,
+    # not just the print palette: landing pages carry their own screen tokens
+    # (--warm-sand, --dark-surface) that tokens.json deliberately does not own.
+    defined = set(_load_token_names())
+    for template in sorted(TEMPLATES.glob("*.html")):
+        defined |= set(parse_root_vars(template.read_text(encoding="utf-8", errors="replace")))
+    allowed = _load_token_values() | DOC_SANCTIONED_HEXES
+    failures = 0
+    scanned = 0
+    for raw_path in targets:
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = ROOT / path
+        if not path.exists():
+            print(f"ERROR: {raw_path}: file not found")
+            failures += 1
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        snippets = _documented_snippets(text)
+        if not snippets:
+            continue
+        scanned += 1
+        rel = rel_to_root(path)
+        findings: list[Finding] = []
+        for line_offset, raw_snippet in snippets:
+            snippet = _blank_block(raw_snippet, NEGATIVE_EXAMPLE_LINE)
+            findings.extend(scan_text(snippet, path, line_offset))
+            if not SVG_MARKUP_HINT.search(snippet):
+                spent = _blank_block(snippet, TOKEN_DECL_LINE)
+                findings.extend(_off_palette_findings(path, allowed, spent, line_offset))
+            findings.extend(_undefined_token_findings(path, snippet, line_offset, defined))
+        if not findings:
+            print(f"OK: {rel}: {len(snippets)} snippet(s) clean")
+            continue
+        failures += 1
+        print(f"ERROR: {rel}: {len(findings)} finding(s) across {len(snippets)} snippet(s)")
+        for f in sorted(findings, key=lambda f: f.line):
+            print(f"  {rel}:{f.line}  [{f.rule}] {f.excerpt}")
+
+    if scanned == 0:
+        print("ERROR: no documents with snippets scanned")
         return 2
     return 0 if failures == 0 else 1
 

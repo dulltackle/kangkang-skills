@@ -15,7 +15,7 @@ Usage:
     python3 scripts/build.py                      # build all examples (HTML + diagrams + PPTX)
     python3 scripts/build.py resume               # build one template, print pages + fonts
     python3 scripts/build.py landing-page         # check one browser-only static template
-    python3 scripts/build.py --check              # lint + token/theme + public-site fact checks
+    python3 scripts/build.py --check              # lint + token/theme + doc-snippet + public-site fact checks
     python3 scripts/build.py --check -v           # verbose (show each scanned file)
     python3 scripts/build.py --sync               # check CSS token drift across templates
     python3 scripts/build.py --verify             # build all + page count + font checks
@@ -34,6 +34,7 @@ Usage:
     python3 scripts/build.py --check-visual path/to/doc.pdf          # page PNGs + perceptual checklist
     python3 scripts/build.py --check-fonts path/to/doc.pdf           # which family actually drew the CJK text
     python3 scripts/build.py --check-style path/to/filled.html       # template rules against a produced document
+    python3 scripts/build.py --check-docs                            # lint the CSS snippets the reference docs teach from
 """
 from __future__ import annotations
 
@@ -52,6 +53,7 @@ from content import check_content
 from lint import (
     check_all,
     check_cross_template_consistency,
+    check_docs,
     check_off_palette,
     check_style,
     scan_file,
@@ -188,8 +190,9 @@ def main(argv: list[str]) -> int:
         sync_result = sync_check(verbose)
         cross_result = check_cross_template_consistency(verbose)
         palette_result = check_off_palette(verbose)
+        docs_result = check_docs([])
         site_result = check_site_facts(verbose)
-        return max(css_result, sync_result, cross_result, palette_result, site_result)
+        return max(css_result, sync_result, cross_result, palette_result, docs_result, site_result)
     if args[0] == "--sync":
         unexpected = _unexpected_arg(args[1:], {"-v", "--verbose"})
         if unexpected:
@@ -214,6 +217,7 @@ def main(argv: list[str]) -> int:
         "--check-visual": check_visual,
         "--check-fonts": check_fonts,
         "--check-style": check_style,
+        "--check-docs": check_docs,
     }
     handler = path_checks.get(args[0])
     if handler is not None:

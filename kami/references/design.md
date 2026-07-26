@@ -248,18 +248,44 @@ Print uses mm/pt; slides (screen) use px. The scale relationships differ:
 ```css
 .card {
   background: var(--ivory);
-  border: 0.5pt solid var(--border-cream);
-  border-radius: 8pt;
+  border-radius: 4pt;
   padding: 16pt 20pt;
 }
 
-.card-featured {
-  border-radius: 16pt;
-  box-shadow: 0 4pt 24pt rgba(0,0,0,0.05);   /* whisper shadow */
+.card-accent {                              /* when a card must be marked out */
+  border-left: 1.4pt solid var(--brand);
 }
 ```
 
-Radius scale: 4pt -> 6pt -> 8pt (default) -> 12pt -> 16pt -> 24pt -> 32pt (hero containers).
+A lifted surface is carried by the fill, not by an outline: `--ivory` against
+`--parchment` is the whole gesture. Do not add a closed hairline border. Below
+1pt a closed border plus a radius renders as a double ring in WeasyPrint
+(`production.md` pitfall #2), and `scripts/lint.py` fails templates for it.
+When a card needs more weight than its fill, mark one edge (`equity-report`
+`.analyst-box`) rather than ringing all four.
+
+Print radius: 2pt for chips, 4pt for blocks (cards, code, tables). Larger steps
+(8pt and up) belong to screen surfaces only, where `landing-page.html` sets its
+own scale; on a printed page they read as a web component dropped into a
+document.
+
+### The brand left rule
+
+One gesture, three weights. The weight tracks what the rule is doing, not the
+size of the type next to it (the 2.5pt tier spans 10pt to 32pt headings):
+
+| Weight | Role | Where it ships |
+|---|---|---|
+| 2.5pt | Structural divide: a heading that opens a section or document | `changelog` `h2`, `long-doc` `h1` / `.toc h2`, `letter` `.subject`, `portfolio` titles |
+| 2pt | Aside: a passage lifted out of the reading flow | `.callout` and `.quote` across one-pager, long-doc, equity-report |
+| 1.4pt | Edge of a filled block, where the fill already carries the weight | `equity-report` `.analyst-box`, `long-doc` `.exec-summary` |
+
+Pick the tier by role, then leave the number alone. A fourth value is not a new
+idea, it is drift: the same `.callout` sitting at two widths is what teaches a
+reader of these templates that the number is theirs to choose. Most documents
+need only the 2pt tier; the structural weight is for templates that are scanned
+for boundaries rather than read straight through, and heads in a normal document
+carry their hierarchy through type alone.
 
 ### Buttons
 
@@ -346,8 +372,7 @@ ul.dash li::marker { color: var(--brand); }
 ```css
 .code-block {
   background: var(--ivory);
-  border: 0.5pt solid var(--border-cream);
-  border-radius: 6pt;
+  border-radius: 4pt;              /* fill only; no border, see «Cards» */
   padding: 10pt 14pt;
   font-family: var(--mono);
   font-size: 9pt;
@@ -468,7 +493,7 @@ Lightweight section opener for content slides. Has an eyebrow and a horizontal r
 }
 .kami-section-header .rule {
   height: 1px;
-  background: var(--border-warm);
+  background: var(--border);
   margin-bottom: 36px;             /* gap below rule >= 36px (>= 2x the gap above) */
 }
 .kami-section-header h1 {
@@ -489,7 +514,7 @@ For displaying pseudocode or code snippets in slides. More structured than a pla
 ```css
 .kami-code-card {
   background: var(--ivory);
-  border: 1px solid var(--border-cream);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 20px 24px;
   overflow: hidden;
@@ -731,10 +756,10 @@ For **button** hover/focus states.
 
 ```css
 /* Button default */
-box-shadow: 0 0 0 1pt var(--ring-warm);
+box-shadow: 0 0 0 1px var(--border);
 
 /* Button hover/active */
-box-shadow: 0 0 0 1pt var(--ring-deep);
+box-shadow: 0 0 0 1px var(--brand);
 ```
 
 **Do not use for card hover**: ring shadow is a border replacement. Layering it over an existing border creates three-layer visual stacking (border + ring + offset), which feels digital, not paper-like.
@@ -817,22 +842,27 @@ hand-fill page numerals; any pagination-affecting edit will make them drift.
 
 When you're not sure "what should I use":
 
+The answer is almost always a component a template already ships. Copy that one
+and edit its content; assembling a new container from a recipe is how a document
+ends up carrying three unrelated emphasis languages on one page.
+
 | Need | Use |
 |---|---|
 | Big headline | serif 500, size by level, line-height 1.10-1.30 |
-| Reading body (EN) | serif 400, 9.5-10pt, line-height 1.55 |
-| Reading body (CN) | sans 400, 9.5-10pt, line-height 1.55 |
+| Reading body | serif 400, 9.5-10pt, line-height 1.55. Every locale: CN templates pin `--sans: var(--serif)`, so one page carries one typeface |
 | Emphasize a number | `color: var(--brand)`, no bold |
-| Divide two sections | 2.5pt brand left bar, or 0.5pt warm-gray dotted |
-| Quote someone | 2pt brand left border + olive color |
-| Show code | ivory background + 0.5pt border + 6pt radius + mono |
-| Primary vs secondary button | Primary = brand fill + ivory text; Secondary = warm-sand + dark-warm |
-| Highlight one card in a list | `border: 0.5pt solid var(--brand)` or `border-left: 3pt solid var(--brand)` |
-| Start a chapter | serif heading + 2.5pt brand left bar |
-| Cover page | Display-size heading + right-aligned author/date + heavy whitespace |
-| Data card | ivory background + 8pt radius + serif big number + sans small label |
+| Raise a passage above body text | `one-pager` `.callout`: brand left rule, no fill, no radius. One emphasis form per page, reused |
+| Quote someone | same left rule, olive text |
+| Show code | `long-doc` `pre` / `code`: ivory fill, 4pt / 2pt radius, no border |
+| Show key figures | `one-pager` `.metric`: baseline row, transparent, no container. Numbers carry themselves; a filled card around them is the most common drift |
+| Start a section | `long-doc` `h2`: serif, no left bar. `changelog` `h2` carries the bar because release notes need scannable group heads, and it is the exception |
+| Mark out one item in a list | one edge, `border-left: 1.4pt solid var(--brand)` (`equity-report` `.analyst-box`) |
+| Cover page | `long-doc` cover: display heading, right-aligned author/date, heavy whitespace |
+| Buttons (screen only) | `landing-page` `.btn-primary` / `.btn-ghost`. Print documents have no buttons |
 
-Not on this table -> return to first principles: **serif carries authority, sans carries utility, warm gray carries rhythm, ink-blue carries focus**.
+Nothing here fits -> return to first principles: **serif carries authority,
+sans carries utility, warm gray carries rhythm, ink-blue carries focus**. Then
+add the smallest thing that works, and prefer an existing class over a new one.
 
 ---
 
@@ -863,7 +893,7 @@ Global parameters for the slide body:
 ```css
 body {
   font-size: 13pt;
-  line-height: 1.65;
+  line-height: 1.55;
   letter-spacing: 0.3pt;   /* CJK: critical for breathing room */
 }
 ```

@@ -49,15 +49,20 @@ from checks import (  # noqa: E402
     scan_density,
 )
 from lint import (  # noqa: E402
+    NEGATIVE_EXAMPLE_LINE,
+    _blank_block,
+    _documented_snippets,
     _emphasis_container_findings,
     _extract_root_vars,
     _off_palette_findings,
     _pair_names,
     _root_token_findings,
+    _undefined_token_findings,
     check_all,
     check_cross_template_consistency,
     check_off_palette,
     scan_file,
+    scan_text,
 )
 from shared import (  # noqa: E402
     DIAGRAM_TEMPLATES,
@@ -553,6 +558,76 @@ def test_font_fallback_markers_recognize_pt_serif() -> None:
     check("font fallback markers recognize PT-Serif",
           fallback_present,
           f"markers: {RECOGNIZABLE_FALLBACK_FONT_MARKERS}")
+
+
+def test_brand_left_rule_uses_one_of_three_weights() -> None:
+    """The brand left rule is one gesture at three weights, picked by role.
+
+    design.md «The brand left rule» assigns 2.5pt to a structural divide, 2pt
+    to an aside, and 1.4pt to the edge of a filled block. A fourth value is not
+    a new idea, it is drift: the same `.callout` shipping at 1.8pt in one-pager
+    and 2pt in long-doc is what teaches a reader of these templates that the
+    number is theirs to pick, and inventing rules is exactly the drift the
+    generated documents show.
+    """
+    allowed = {"2.5", "2", "1.4"}
+    pattern = re.compile(r"border-left:\s*([\d.]+)pt solid var\(--brand\)")
+    offenders: list[str] = []
+    for path in sorted(TEMPLATES.glob("*.html")):
+        for weight in pattern.findall(path.read_text(encoding="utf-8")):
+            if weight not in allowed:
+                offenders.append(f"{path.name}: {weight}pt")
+    check("brand left rule uses one of the three registered weights",
+          not offenders,
+          f"offenders: {', '.join(offenders)}")
+
+
+def test_documented_snippets_answer_to_template_rules() -> None:
+    """A doc snippet is copied more readily than a template is read.
+
+    CHEATSHEET.md shipped a `.card` recipe pairing a 0.5pt border with an 8pt
+    radius (the double-ring pitfall templates are failed for) against
+    `--border-cream`, a token that no longer exists anywhere. Both survived
+    because nothing scanned the docs.
+    """
+    bad = """```css
+.card {
+  background: var(--ivory);
+  border: 0.5pt solid var(--border-cream);
+  border-radius: 8pt;
+}
+```
+"""
+    p = write_temp_html(bad, suffix=".md")
+    try:
+        rules = set()
+        for line_offset, snippet in _documented_snippets(p.read_text(encoding="utf-8")):
+            rules |= {f.rule for f in scan_text(snippet, p, line_offset)}
+            rules |= {f.rule for f in _undefined_token_findings(p, snippet, line_offset, {"--ivory"})}
+        check("doc snippet scan catches the thin-border-radius recipe",
+              "thin-border-radius" in rules, f"rules: {rules or '(none)'}")
+        check("doc snippet scan catches a var() with no definition",
+              "undefined-token" in rules, f"rules: {rules or '(none)'}")
+    finally:
+        p.unlink(missing_ok=True)
+
+
+def test_documented_snippets_skip_tagged_counter_examples() -> None:
+    """Docs teach by contrast; the line tagged `/* avoid */` is the lesson."""
+    contrast = """```css
+/* avoid */ .tag { background: rgba(27, 54, 93, 0.18); }
+/* use   */ .tag { background: var(--tag-bg); }
+```
+"""
+    p = write_temp_html(contrast, suffix=".md")
+    try:
+        rules = set()
+        for line_offset, raw in _documented_snippets(p.read_text(encoding="utf-8")):
+            rules |= {f.rule for f in scan_text(_blank_block(raw, NEGATIVE_EXAMPLE_LINE), p, line_offset)}
+        check("a line tagged as the wrong way is not reported as a violation",
+              "rgba-background" not in rules, f"rules: {rules or '(none)'}")
+    finally:
+        p.unlink(missing_ok=True)
 
 
 def test_font_family_key_collapses_weight_variants() -> None:
