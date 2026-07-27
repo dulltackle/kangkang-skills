@@ -1,0 +1,5 @@
+interface:
+  display_name: "To Commit"
+  short_description: "Commit a ticket and tick its criteria"
+policy:
+  allow_implicit_invocation: false
