@@ -3,6 +3,8 @@ name: to-commit
 description: Commit a completed ticket as one Conventional-Commit, verifying each acceptance criterion before checking it off. Invoked by /implement at the end of a ticket session.
 ---
 
+# To Commit
+
 Commit the current session's work as **one commit for the ticket** being implemented.
 
 The issue tracker should have been provided to you — run /setup-matt-pocock-skills if not.
