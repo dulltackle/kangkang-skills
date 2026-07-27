@@ -55,6 +55,14 @@ which commands to use depends on which tracker this repo configured.
    and tell the user which criteria are holding it open. For GitHub/GitLab this is
    also where the step-5 checkbox write-back happens.
 
+   **Do not let a closed ticket outrun the code.** Closing claims the work is
+   delivered; a commit that never left this machine can still be rewritten or
+   dropped. Check reachability with `git branch -r --contains <sha>` — empty output
+   means local-only. If it is local-only, ask whether to push now: on yes, push and
+   then close; on no, do the write-back, leave the ticket open, and say it will
+   close once pushed. This gate is for GitHub/GitLab only — a local-markdown
+   ticket rides in the same commit as the code, so the two can never disagree.
+
 <commit-template>
 
 <type>(<scope>): <imperative summary derived from the ticket title>
