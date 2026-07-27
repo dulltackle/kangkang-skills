@@ -21,9 +21,17 @@ The whole value of this skill is that an `[x]` on a ticket can be trusted. A mis
 noticed and complained about; a wrong tick is a lie that sits on the ticket forever and nobody
 re-checks. So the standing rule is **when in doubt, don't tick — and say why**.
 
-The issue tracker should have been provided to you — run /setup-matt-pocock-skills if not.
-Read `docs/agents/issue-tracker.md` first: which commands to use depends on which tracker this
-repo configured, and **a local-markdown tracker reverses the order of steps 4 and 5**.
+## Which tracker
+
+The issue tracker should have been provided to you — run /setup-matt-pocock-skills if not. Read
+`docs/agents/issue-tracker.md` first: it decides which of the two write-back files below applies,
+and **that choice changes the order of operations in step 4**.
+
+- **GitHub, GitLab, or another external tracker** → [write-back-remote.md](write-back-remote.md)
+- **Local markdown** → [write-back-local.md](write-back-local.md)
+
+Read only the one that applies. Each carries its tracker's commands, how the acceptance-criteria
+region is delimited, and what failure means there.
 
 ## Process
 
@@ -48,9 +56,9 @@ Walk the ticket's criteria one by one. Sort each into one of two kinds — this 
 everything downstream:
 
 - **Execution-verified** — you ran something and observed the outcome (a test, the actual
-  behaviour). You tick these yourself, in step 5.
+  behaviour). You tick these yourself, in step 4.
 - **Reading-verified** — you read the code and it looks right. **Never tick these yourself.**
-  Collect them for step 6.
+  Collect them for step 5.
 
 Every tick you make carries a one-line piece of evidence (which test, what you did). That
 evidence goes in the **session output only** — never into the ticket, never into the commit
@@ -68,11 +76,22 @@ gracefully. Tick nothing, commit as normal, and state plainly that
 `#42 没有验收标准区块，未做勾选写回`. **Never invent criteria** from the work you just did —
 that is setting your own exam, sitting it, and marking it.
 
-### 4. Commit
+### 4. Land the commit and the first write-back
 
-> **Local-markdown tracker: do step 5 before this step.** A local ticket file is *in* the
-> repo, so the tick and the work that earned it belong in the same commit. Everywhere else,
-> commit first.
+Two operations, and **the invariant is that they succeed together or neither does**: an `[x]`
+must never outlive the commit that earned it, and code must never land in a commit whose ticket
+did not come with it. The whole reason the order differs by tracker is to serve that one rule.
+
+- **Remote tracker** — the ticket lives outside the repo. **Commit, then write back.** If the
+  write-back fails the commit has already landed and cannot be unmade; report the split state
+  honestly and never try to undo it.
+- **Local markdown** — the ticket file is *in* the repo, so it has to be in the same commit.
+  **Write back, then commit.** If anything fails at any point, roll the ticks back and commit
+  nothing.
+
+Your tracker's file spells out its half in full. Follow it.
+
+#### Committing
 
 Stage everything and make one commit. The tree was clean before /implement, so every change in
 it is this ticket's — there is nothing to select between. If you arrive and the staging area is
@@ -95,11 +114,9 @@ than a write-back failure, and it comes in two kinds:
   gate, and this skill does not have standing to open it. A retry that still fails counts as a
   refusal and lands here.
 
-On a refusal the tree keeps everything /implement produced, so there is nothing to undo — with
-one exception: on a **local-markdown tracker** step 5 has already run, so the ticket is sitting
-there ticked for a commit that will never exist. Roll those ticks back (see "Rolling back a
-local ticket") before reporting. An unearned `[x]` outliving the run is the one failure this
-skill exists to prevent.
+On a refusal the tree keeps everything /implement produced, so there is nothing to undo — the
+one exception being a local-markdown run, where the invariant above sends you to roll the ticks
+back before reporting.
 
 ```
 ⚠ #03 未提交：pre-commit 失败
@@ -109,56 +126,33 @@ skill exists to prevent.
 已回滚 ticket 勾选，文件恢复原样。修复后重跑 /to-commit。
 ```
 
-### 5. Write back — first pass
+#### The write-back
 
-Tick the execution-verified criteria and append a comment. See "Write-back by tracker" for the
-commands.
+Tick the execution-verified criteria and append a comment.
 
 1. **Re-read the ticket body** from the tracker. Align against **that** copy, not the one in
    your context — the ticket may have been edited since. This also stops two concurrent
    sessions from clobbering each other with a stale whole-body overwrite.
 2. **Flip only boxes inside the acceptance-criteria region.** A ticket carries other
    checkboxes — task lists, sub-issue lists, hand-written todos — and they look identical.
-   Never touch a box outside the region, however much it resembles a criterion.
+   Never touch a box outside the region, however much it resembles a criterion. Your tracker's
+   file defines where the region begins and ends.
 3. **Mismatch means stop.** A criterion on the ticket you did not verify → leave `[ ]` and
    report it. Something you verified that has no matching criterion on the ticket → **stop,
    write nothing back, and tell the user**. Never fuzzy-match: the case that triggers it is
    exactly the case where a human edited the ticket, i.e. the case you least want a model
-   guessing at. Report it the same way as a write failure below.
+   guessing at.
 4. **Append a comment** recording what happened (template below). The body is mutable state
    that gets rewritten every run; the comment log is the only append-only record — and it is
    the only place an untick from step 3 leaves a trace.
 
 **On failure, stop — do not retry.** These writes fail because of permissions, a deleted
 ticket, or a concurrent edit; retrying produces the same error later. Never skip a failed step
-and carry on: a ticket that got commented but not updated contradicts itself.
+and carry on: a ticket that got commented but not updated contradicts itself. What "stop" means
+here — a split-state report or a rollback — depends on where the commit is, which is what the
+ordering above decided; your tracker's file gives the exact wording.
 
-**What "stop" means depends on where the commit is** — and that is exactly what the step order
-above decided:
-
-**GitHub / GitLab — the commit has already landed.** It cannot be unmade, so report the split
-state honestly: what landed, what did not, what is left to do by hand. Give a paste-ready
-command and **keep the temp body file** — it is the most expensive artefact of the run:
-
-```
-⚠ 已提交 abc1234，但 #42 的 body 写回失败（403）。ticket 未被修改。手动补：
-  gh issue edit 42 --body-file "$TMPDIR/issue-42.md"
-```
-
-**Local markdown — nothing has been committed yet.** Do not go on to step 4. Abandoning the
-run here costs nothing: the working tree still holds everything /implement produced, so the
-user fixes the cause and re-runs. Committing anyway would produce the one thing this ordering
-exists to prevent — code in a commit whose ticket did not come with it.
-
-Roll back whatever ticks already reached the file (see "Rolling back a local ticket"), then
-report:
-
-```
-⚠ #03 写回失败：ticket 上有「并发写入不丢单」，但本轮未验证到对应项。
-  未做任何修改，未提交。工作树原样保留，请确认 ticket 后重跑 /to-commit。
-```
-
-### 6. Ask the user
+### 5. Ask the user
 
 **Only when reading-verified criteria exist.** All-green means there is nothing to ask — report
 the result and stop.
@@ -177,20 +171,16 @@ issue 已勾选 2 条并追加评论。
 Do not ask about closing the ticket. Closing is the user's own act and no business of this
 skill's.
 
-### 7. Write back — second pass
+### 6. Write back — second pass
 
-Only after the user has answered, and only for the criteria they confirmed. Same rules as step
-5: re-read the body, flip only inside the region, stop on mismatch or failure. Append a second
-comment for the confirmation — it records a real change to the checkboxes, so it earns its own
-entry in the log.
+Only after the user has answered, and only for the criteria they confirmed. Same four rules as
+the first pass: re-read the body, flip only inside the region, stop on mismatch or failure.
+Append a second comment for the confirmation — it records a real change to the checkboxes, so it
+earns its own entry in the log.
 
-On a local-markdown tracker the commit has already been made by now; do not amend. Land the
-ticket edit as a follow-up `chore:` commit and say so.
-
-That also changes what failure means here. Step 5's local branch rolls ticks back because no
-commit had landed yet; by this pass one has, and it carries the first-pass ticks. **Do not roll
-back on a second-pass failure** — report the split state the way GitHub/GitLab does. The ticket
-is behind the code by exactly the criteria the user just confirmed; say which ones.
+By now a commit has landed on every tracker, and it carries the first-pass ticks. So a
+second-pass failure is always a split state, never a rollback: report which criteria the ticket
+is now behind the code by.
 
 ## Templates
 
@@ -224,9 +214,8 @@ Template notes:
   criterion was execution-verified.
 - **No `- [ ]` / `- [x]` marks.** Checkboxes belong to the ticket. A commit states facts.
 - `scope` only if the repo's log shows an established scope vocabulary; otherwise omit.
-- **Local-markdown tracker:** no issue ids — use `Refs: .scratch/<feature-slug>/issues/03-<slug>.md`.
 
-First-pass comment (step 5). Omit any line that does not apply:
+First-pass comment. Omit any line that does not apply:
 
 <comment-template>
 abc1234 (feat/foo)
@@ -236,95 +225,10 @@ abc1234 (feat/foo)
 待人工确认：README 已更新；命名与领域词汇一致
 </comment-template>
 
-Second-pass comment (step 7):
+Second-pass comment:
 
 <comment-template-2>
 用户确认：README 已更新；命名与领域词汇一致
 </comment-template-2>
 
-On a local-markdown ticket, drop the sha from the first line and keep the branch — the file is
-*in* that commit, so `git log --follow` recovers it.
-
-## Write-back by tracker
-
-The ticket is the source of truth for state; the commit message records what each commit
-delivered. They carry different things and neither is generated from the other.
-
-**GitHub.** Re-read, flip, write back, comment:
-
-```bash
-gh issue view <n> --json body --jq .body > "$TMPDIR/issue-<n>.md"
-# edit that file, inside the `## Acceptance criteria` region only:  - [ ] …  →  - [x] …
-gh issue edit <n> --body-file "$TMPDIR/issue-<n>.md"
-gh issue comment <n> --body "<comment-template>"
-```
-
-The acceptance-criteria region runs from the `## Acceptance criteria` heading to the next
-heading of the same level. Match each criterion by its text within that region. Never
-regenerate the body from the commit message — that would drop everything else the ticket carries.
-
-**GitLab.** Same shape with `glab`:
-
-```bash
-glab issue view <n> -F json | jq -r .description > "$TMPDIR/issue-<n>.md"
-# edit that file, inside the `## Acceptance criteria` region only
-glab issue update <n> --description "$(cat "$TMPDIR/issue-<n>.md")"
-glab issue note <n> --message "<comment-template>"
-```
-
-**Local markdown.** One file per ticket under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`.
-Edit it with the Edit tool **before** `git commit` (step 5 runs ahead of step 4) and stage it
-with the code.
-
-`/to-tickets`' local template gives the criteria no heading, so the region has to be delimited
-by shape instead:
-
-- **It starts** at the first checkbox below the `**Status:**` line.
-- **It ends** at the first line that is neither a checkbox nor blank. Any prose, any heading,
-  anything else — the region is over.
-- **Nested checkboxes** neither end the region nor get ticked. Step past them; never descend.
-
-```markdown
-**Status:** ready-for-agent
-
-- [ ] 标准 1          ← region starts
-  - [ ] 子项           ← skipped, region continues
-- [ ] 标准 2          ← region ends here
-
-随手记的备忘：       ← terminator
-- [ ] 手写 todo       ← outside; never touched
-```
-
-This cuts the region short rather than long on purpose. A stray line between criteria costs you
-a tick you then report as unverified; the other way round silently ticks somebody's todo list.
-Losing a tick is visible, and the standing rule is when in doubt, don't tick.
-
-Append the comment under a `## Comments` heading at the bottom of the file, per the local
-conventions in `docs/agents/issue-tracker.md`. **The template does not create that heading** —
-on a ticket's first write-back it will not be there. Add it at the end of the file, then append
-under it.
-
-Leave the `**Status:**` line untouched. Ticket status is the user's to change.
-
-**Rolling back a local ticket.** Referenced by step 4 and step 5: whenever a local run stops
-before its commit lands, the ticks already written have to come back off.
-
-```bash
-git checkout -- .scratch/<feature-slug>/issues/<NN>-<slug>.md
-```
-
-**The path is mandatory and it is one file.** Never `git checkout .`, never `-- .`, never
-`git restore .`, never `-A`. Widening this command past the single ticket file destroys the
-entire session's work — the exact work that is sitting uncommitted in the tree at the moment
-you run it.
-
-Rollback only reaches a **tracked** file. On a ticket's first run the file is usually untracked
-— `/to-tickets` writes ticket files but never commits them, so nothing gets tracked until this
-skill's own first commit. `git checkout` then fails with `pathspec did not match`. That is
-expected, not an error to work around: leave the edits in place and say plainly what was
-written, so the user can undo it by hand.
-
-```
-⚠ #03 未提交。ticket 文件尚未纳入版本控制，无法回滚。
-  已写入：勾选了 2 条验收标准。请手动确认后重跑。
-```
+A local-markdown tracker varies both templates slightly — see its file.
