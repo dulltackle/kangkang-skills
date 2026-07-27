@@ -84,6 +84,31 @@ Compose the message from the template below and commit to the current branch.
 Never use a closing keyword (`Closes`/`Fixes`): it only fires when the commit reaches the
 default branch, and this skill does not push. **Pushing is never this skill's action.**
 
+**When the commit itself fails.** A pre-commit hook rejecting the commit is far more common
+than a write-back failure, and it comes in two kinds:
+
+- **The hook rewrote files** (`lint-staged --fix`, prettier, a formatter). The work is fine;
+  the hook just moved it. Re-stage and retry **once** — that is a hard limit, never a loop. Say
+  in the report which files the hook touched and that they are in the commit.
+- **The hook refused** (tests red, types broken, an unfixable lint error). Stop. Show the hook's
+  own output rather than a paraphrase of it. **Never `--no-verify`** — the hook is the user's
+  gate, and this skill does not have standing to open it. A retry that still fails counts as a
+  refusal and lands here.
+
+On a refusal the tree keeps everything /implement produced, so there is nothing to undo — with
+one exception: on a **local-markdown tracker** step 5 has already run, so the ticket is sitting
+there ticked for a commit that will never exist. Roll those ticks back (see "Rolling back a
+local ticket") before reporting. An unearned `[x]` outliving the run is the one failure this
+skill exists to prevent.
+
+```
+⚠ #03 未提交：pre-commit 失败
+
+  items.test.ts → 2 failed
+
+已回滚 ticket 勾选，文件恢复原样。修复后重跑 /to-commit。
+```
+
 ### 5. Write back — first pass
 
 Tick the execution-verified criteria and append a comment. See "Write-back by tracker" for the
@@ -99,24 +124,39 @@ commands.
    report it. Something you verified that has no matching criterion on the ticket → **stop,
    write nothing back, and tell the user**. Never fuzzy-match: the case that triggers it is
    exactly the case where a human edited the ticket, i.e. the case you least want a model
-   guessing at. The commit has already landed by then, so report it the same way as a write
-   failure below — what landed, what did not, and what is left to do by hand.
+   guessing at. Report it the same way as a write failure below.
 4. **Append a comment** recording what happened (template below). The body is mutable state
    that gets rewritten every run; the comment log is the only append-only record — and it is
    the only place an untick from step 3 leaves a trace.
 
 **On failure, stop — do not retry.** These writes fail because of permissions, a deleted
-ticket, or a concurrent edit; retrying produces the same error later. Report how far you got,
-give a paste-ready command, and **keep the temp body file** — it is the most expensive artefact
-of the run:
+ticket, or a concurrent edit; retrying produces the same error later. Never skip a failed step
+and carry on: a ticket that got commented but not updated contradicts itself.
+
+**What "stop" means depends on where the commit is** — and that is exactly what the step order
+above decided:
+
+**GitHub / GitLab — the commit has already landed.** It cannot be unmade, so report the split
+state honestly: what landed, what did not, what is left to do by hand. Give a paste-ready
+command and **keep the temp body file** — it is the most expensive artefact of the run:
 
 ```
 ⚠ 已提交 abc1234，但 #42 的 body 写回失败（403）。ticket 未被修改。手动补：
   gh issue edit 42 --body-file "$TMPDIR/issue-42.md"
 ```
 
-Never skip a failed step and carry on: a ticket that got commented but not updated contradicts
-itself.
+**Local markdown — nothing has been committed yet.** Do not go on to step 4. Abandoning the
+run here costs nothing: the working tree still holds everything /implement produced, so the
+user fixes the cause and re-runs. Committing anyway would produce the one thing this ordering
+exists to prevent — code in a commit whose ticket did not come with it.
+
+Roll back whatever ticks already reached the file (see "Rolling back a local ticket"), then
+report:
+
+```
+⚠ #03 写回失败：ticket 上有「并发写入不丢单」，但本轮未验证到对应项。
+  未做任何修改，未提交。工作树原样保留，请确认 ticket 后重跑 /to-commit。
+```
 
 ### 6. Ask the user
 
@@ -146,6 +186,11 @@ entry in the log.
 
 On a local-markdown tracker the commit has already been made by now; do not amend. Land the
 ticket edit as a follow-up `chore:` commit and say so.
+
+That also changes what failure means here. Step 5's local branch rolls ticks back because no
+commit had landed yet; by this pass one has, and it carries the first-pass ticks. **Do not roll
+back on a second-pass failure** — report the split state the way GitHub/GitLab does. The ticket
+is behind the code by exactly the criteria the user just confirmed; say which ones.
 
 ## Templates
 
@@ -231,8 +276,55 @@ glab issue note <n> --message "<comment-template>"
 Edit it with the Edit tool **before** `git commit` (step 5 runs ahead of step 4) and stage it
 with the code.
 
-- The acceptance-criteria region is the **top-level** checkboxes below the `**Status:**` line
-  (`/to-tickets`' local template has no heading for them). Do not descend into nested items.
-- Append the comment to a `## Comments` heading at the bottom of the file, per the local
-  conventions recorded in `docs/agents/issue-tracker.md`.
-- Leave the `**Status:**` line untouched. Ticket status is the user's to change.
+`/to-tickets`' local template gives the criteria no heading, so the region has to be delimited
+by shape instead:
+
+- **It starts** at the first checkbox below the `**Status:**` line.
+- **It ends** at the first line that is neither a checkbox nor blank. Any prose, any heading,
+  anything else — the region is over.
+- **Nested checkboxes** neither end the region nor get ticked. Step past them; never descend.
+
+```markdown
+**Status:** ready-for-agent
+
+- [ ] 标准 1          ← region starts
+  - [ ] 子项           ← skipped, region continues
+- [ ] 标准 2          ← region ends here
+
+随手记的备忘：       ← terminator
+- [ ] 手写 todo       ← outside; never touched
+```
+
+This cuts the region short rather than long on purpose. A stray line between criteria costs you
+a tick you then report as unverified; the other way round silently ticks somebody's todo list.
+Losing a tick is visible, and the standing rule is when in doubt, don't tick.
+
+Append the comment under a `## Comments` heading at the bottom of the file, per the local
+conventions in `docs/agents/issue-tracker.md`. **The template does not create that heading** —
+on a ticket's first write-back it will not be there. Add it at the end of the file, then append
+under it.
+
+Leave the `**Status:**` line untouched. Ticket status is the user's to change.
+
+**Rolling back a local ticket.** Referenced by step 4 and step 5: whenever a local run stops
+before its commit lands, the ticks already written have to come back off.
+
+```bash
+git checkout -- .scratch/<feature-slug>/issues/<NN>-<slug>.md
+```
+
+**The path is mandatory and it is one file.** Never `git checkout .`, never `-- .`, never
+`git restore .`, never `-A`. Widening this command past the single ticket file destroys the
+entire session's work — the exact work that is sitting uncommitted in the tree at the moment
+you run it.
+
+Rollback only reaches a **tracked** file. On a ticket's first run the file is usually untracked
+— `/to-tickets` writes ticket files but never commits them, so nothing gets tracked until this
+skill's own first commit. `git checkout` then fails with `pathspec did not match`. That is
+expected, not an error to work around: leave the edits in place and say plainly what was
+written, so the user can undo it by hand.
+
+```
+⚠ #03 未提交。ticket 文件尚未纳入版本控制，无法回滚。
+  已写入：勾选了 2 条验收标准。请手动确认后重跑。
+```
