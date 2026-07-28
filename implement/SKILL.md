@@ -10,6 +10,6 @@ Use /tdd where possible, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end.
 
-Once done, use /open-code-review to review the work.
+Once done, use /code-review to review the work.
 
-Use /to-commit to commit your work to the current branch.
+Commit your work to the current branch.
