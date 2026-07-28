@@ -238,14 +238,15 @@ page_count: <N>
 - HEX values with role labels (primary / accent / background / text / etc.)
 - Brand-specific application rules when present (e.g. "KPI cards rotate blue→green→red→yellow")
 
-## III. Typography (omit when using the default `Arial, "Microsoft YaHei", sans-serif` stack)
-- Per-role font stacks ONLY when the template intentionally diverges (display serif title, brand typeface, etc.)
-- Font-install or embedding requirement when a non-preinstalled font leads any stack
+## III. Typography (omit without template-owned typeface identity)
+- Per-role stacks for identity (display serif, brand face, etc.)
+- A non-preinstalled face may lead only after user-confirmed target installation/approved install; no auto-embedding
+- Otherwise export a safe face; unavailable proprietary faces stay references. CSS tails aid preview, not deterministic PowerPoint fallback
 - Body baseline px (informational; `spec_lock.md` owns the actual values per project)
 
 ## IV. Signature Design Elements
 - Decorative motifs that ARE this template — top bar, gradient underline, logo treatment, brand emblem placement
-- Source-derived layout grammar — grid / column rhythm, page chrome, image zones, mask / crop behavior, overlay treatment, and density rhythm that make the template recognizable
+- Source-derived layout grammar — grid / column rhythm, page chrome, image zones, crop/clip behavior, scrim/overlay or baked-alpha treatment, and density rhythm that make the template recognizable
 - Optional XML snippet for any reusable component unique to this template
 
 ## V. Page Roster
@@ -337,7 +338,7 @@ Templates must strictly follow the finalized template brief and the generated `d
 - **Color scheme**: Uses primary, secondary, and accent colors from the spec
 - **Font plan**: Uses the per-role font families declared in the spec
 - **Layout principles**: Margins and spacing conform to the spec
-- **Image system**: Image placement, crop / mask behavior, full-bleed zones, and overlay rules follow the source-derived norms in the spec
+- **Image system**: Image placement, crop/clip behavior, full-bleed zones, and scrim/overlay or baked-alpha treatment follow the source-derived norms in the spec
 - **Deck application**: Template Overview describes the recurring situations, audiences/outcomes, and representative roles; Page Roster factually describes the actual prototypes and reusable slots without prescribing future use
 
 If PPTX import output exists:

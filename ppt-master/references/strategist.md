@@ -214,9 +214,9 @@ See [`../templates/icons/README.md`](../templates/icons/README.md) for the curre
 
 - User or active template typography is authoritative. Otherwise ≥3 Stage-2 directions include concord (safe) and contrast (tension); never add a separate font-choice round or pair near-duplicate title/body families.
 - Every Stage-2 direction carries `heading` / `body` `cjk`, `latin`, `css`, and positive `body_size`; repeat user/template-fixed stacks.
-- Use PowerPoint-installed exported faces. Safe anchors: CJK `Microsoft YaHei` / `SimHei` / `SimSun` / `FangSong` / `KaiTi`; Latin sans `Arial` / `Calibri` / `Segoe UI` / `Verdana` / `Trebuchet MS`; Latin serif `Times New Roman` / `Georgia` / `Cambria` / `Garamond` / `Book Antiqua`; mono `Consolas` / `Courier New`; display `Impact` / `Arial Black`. Other export-safe families are limited to sparse short display/ornament; structural or recurring use returns upstream.
-- Keep each stack to four families or fewer. A non-installed brand or web face is legal only when the Design Spec explicitly records the install / embed requirement and a safe substitute.
-- Avoid splitting roles across near-equivalents such as YaHei↔PingFang, SimSun↔Songti, Arial↔Helvetica↔Segoe UI, or Times New Roman↔Times. A cross-platform counterpart may remain inside one fallback stack.
+- Use concrete, target-installed PowerPoint faces. **Examples only, never a catalog/default** (verify locale): Chinese `DengXian` / `SimSun`; Japanese `Meiryo` / `Yu Gothic`; Korean `Malgun Gothic` / `Batang`; Latin `Arial` / `Georgia` / `Consolas` / `Impact`.
+- Keep stacks to four families or fewer. A brand/web face may lead only after user-confirmed target installation/approved install; PPT Master does not embed fonts. Otherwise export a safe face and keep the unavailable face as Design Spec reference.
+- Avoid near-equivalent role splits such as YaHei↔PingFang, SimSun↔Songti, Arial↔Helvetica↔Segoe UI, or Times New Roman↔Times. Counterparts may aid SVG/browser preview; CSS tails are not deterministic PowerPoint fallbacks.
 - Choose by locked style and vary the axis instead of defaulting to YaHei/Arial: serif×sans, Kai/FangSong×hei, hei×song, double-serif, display×neutral, same-family weight, or sans+mono. These are recall seeds, not presets.
 
 **Strategist-owned role extension after confirmation**: Confirm UI keeps the heading/body choice unchanged. While authoring the complete §IX roster and §IV typography plan, scan the actual content for recurring roles that materially need a different family for character or legibility—such as `annotation`, `footer`, `footnote`, `data`, `emphasis`, `quote`, or `code`. Add a lowercase snake_case role and exact stack only when it recurs; inherited roles and one-off garnish stay omitted. The extension must remain coherent with the confirmed heading/body system and locked visual style, and it does not reopen confirmation. Only when an additional family role is added, record one compact `Role rationale` in §IV naming the added role(s) and why; otherwise omit the line.
@@ -272,18 +272,16 @@ The module owns formula policy, AI rendering alternatives, acquisition paths, re
 
 ### Presentation Capability & Visualization Recall (Non-blocking — Strategist recommends, no user confirmation needed)
 
-**Per-page capability recall**: Before finalizing §IX, consider the short menu
-below. Select only capabilities that strengthen the page's communication or
-visual expression; no page or deck owes a usage quota. Record semantic intent
-in existing Design Spec fields, never commands, coordinates, group ids, or
-effect parameters. Omit unused recommendation lines instead of writing `none`.
-Executor owns realization under the receiving capability contract and may adapt
-or decline the two non-literal §IX suggestion lines while preserving content
-and intent; explicit user/template requirements remain binding.
+**Per-page capability recall**: Before §IX, consider this menu without a usage
+quota. Use existing fields for semantic intent; omit unused lines and
+implementation parameters. Executor may adapt/decline the
+two non-literal suggestions while preserving content and intent; explicit
+user/template requirements bind.
 
 | Capability | Opportunity signal | Design Spec handoff |
 |---|---|---|
-| Image composition | Image-as-canvas plus native overlay, editorial crop, collage, cutout, or independently meaningful focus / comparison / evidence units carry the page better than an adjacent rectangle | Propose a permitted image source; when selected, load [`strategist-image.md`](./strategist-image.md), record each resource's exact catalog §VIII `Layout pattern`, and describe the page-level image/overlay relationship in §IX `Layout` / `Images` |
+| Image composition | Image-as-canvas, editorial crop, collage, cutout, or meaningful focus / comparison / evidence units carry the page better than an adjacent rectangle | Propose a permitted source; when selected, load [`strategist-image.md`](./strategist-image.md), record exact §VIII `Layout pattern`, and describe page-level image/overlay relationships in §IX `Layout` / `Images` |
+| Native paint / overlay | Gradient, translucency, scrim, vignette, or wash supports focus, hierarchy, depth, legibility, or image integration | Record purpose/layering in §IX `Layout`, plus `Images` when imagery participates; no new field or type/stops/opacity/coordinates—Executor chooses realization |
 | Native shape / Merge Shapes | A literal Office symbol, a stock bent/curved relationship contour, or a compound silhouette, negative-space cutout, overlap-only region, or meaningful fragmentation strengthens the visual idea | Add an optional §IX `Native shape suggestion` with the semantic result plus a candidate preset/Connector family or Boolean operation/operands |
 | Page transition | A section/state change, spatial continuity, recorded/self-running flow, or the same semantic object changing position, scale, crop, or state across adjacent pages benefits from motion | Add an optional §IX `Motion suggestion` describing the communication job and any continuing object's start/end semantic states; leave effect, ids, pairing names, and timing to Executor |
 | Object animation | Progressive reveal clarifies sequence, causality, comparison, hierarchy, narration order, full-view → detail, atmosphere → evidence, or hotspot/annotation order | Add an optional §IX `Motion suggestion` describing semantic units/order and any visible image-state relationship; leave group ids, effect, and timing to Executor |

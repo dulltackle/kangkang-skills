@@ -16,7 +16,7 @@ Almost every pattern below is an instance of one underlying split:
 
 This is the single most underused move in image-heavy decks. The default reflex is to place image and text in adjacent rectangles. The far more powerful move — especially for content-rich pages — is to let the image **be the canvas** (often full-bleed) and draw native vector elements (annotation cards, flow nodes, KPI tiles, leader lines, network diagrams, dashboards) directly on top.
 
-Anything that must be editable, numerically accurate, contain Chinese, or be styled to the deck's exact palette belongs in the SVG layer regardless of what the image looks like underneath.
+Anything that must remain editable, numerically or semantically exact, or styled to the deck's exact typography belongs in the SVG layer regardless of what the image looks like underneath. Script alone never decides ownership.
 
 ---
 
@@ -39,9 +39,13 @@ The patterns below are what separate a deck that looks designed from a deck that
 | Text needs legibility but a solid scrim would kill the photo | `#97` frosted-glass panel | The photo's colour and composition stay visible through the panel |
 | An image grid looks like a stock template | `#88` non-rectangular tessellation with 1–3 cells left empty | The empty cells are where the title and body copy live |
 | A subject should escape its container | `#85` subject breaking out + `#96` | Depth with no shadow at all |
-| One place should be recognized across consecutive pages | `#87` one image panned across pages | The deck reads as one continuous scene; with `-t morph` the flip becomes a camera pan |
+| One place should be recognized across consecutive pages | `#87` one image panned across pages | The deck reads as one continuous scene; `-t morph` uses heuristic matching, while explicit `morph.pairs` makes the camera pan deterministic |
+
+**Mandatory**: Pair a modifier-only router result with a content-appropriate Part 1 Primary as the page bones before §VIII. The pairing makes the recommendation complete; it does not lock Executor geometry or create a usage quota.
 
 **Hard rule — registration is what makes this family work**: in `#82`, `#85`, `#87`, `#89`, `#96`, and `#97`, the image stays anchored to the *union* of its containers, or the two copies stay in exact register. A few pixels of drift reads as a printing error, and giving each container its own image collapses the page into an ordinary tile grid. `#84` is the one pattern that breaks registration on purpose, and it only reads as a decision because the others establish the expectation.
+
+**Prepared-asset gate**: select `#96` only when a registered cutout PNG already exists, `#97` only when its blurred crop exists, and `#99` only when its desaturated copy exists. If not, keep the original asset and fall back to a native-shape treatment such as `#30` / `#29`; do not invent an image-processing step during execution.
 
 **Skip-detection signal** — if every page's `Layout pattern` resolves to a bare `#2` / `#3` / `#5` / `#6` with no Modifier id, this table was not consulted. Re-open it before finalizing `design_spec.md §VIII`.
 
@@ -154,7 +158,7 @@ This is the family that opens up the largest design space and the one AI is most
     | Wave band + vertical bars | Rhythmic strip |
     | Trapezoid + slanted bars | Perspective row |
 
-    **Authoring**: compute each cell's contour and write it as its own `<path>` clip — the geometry is deterministic, so derive the cells rather than eyeballing them. `shape_boolean_svg.py fragment` returns exactly these interlocking regions as separately addressable paths. Give every cell the same stroke (2px, background color) so the cuts read as designed seams.
+    **Authoring**: compute each cell's contour and write it as its own `<path>` clip — the geometry is deterministic, so derive the cells rather than eyeballing them. `shape_boolean_svg.py render <svg-file> --operation fragment --source <id> --source <id> --id <result-id>` returns exactly these interlocking regions as separately addressable paths. Give every cell the same stroke (2px, background color) so the cuts read as designed seams.
 
     **Choosing between #92 and #82**: same construction, opposite content rule. One image across all cells (#82) says "these fragments are one thing"; a different image per cell (#92) says "these are peers, cut from one frame". Mixing them destroys both readings. Distinct from #50 / #51, where cells are independent rectangles that never shared a parent.
 
@@ -212,17 +216,17 @@ Stack any of these freely on top of a Primary structure. Multiple Modifiers per 
 
     **The one thing that makes or breaks it — registration**: place the `<image>` over the *union bounding box* of every subpath (not one image per shape), sized with `preserveAspectRatio="xMidYMid slice"`. The photo then runs continuously *behind* the containers and the gaps read as cuts through one scene. Give each container a different image and it instantly collapses into an ordinary tile grid (#50 / #51) — the continuity is the entire design, not the shapes.
 
-    Distinct from #24 (one connected contour) and #47–#56 (every cell its own image). For non-trivial contours take the `d` from `shape_boolean_svg.py union` / `combine` (see [`native-shape-authoring.md`](./native-shape-authoring.md)) instead of deriving it by hand. Clip-shape constraints — one direct shape child, no `fill-rule` / `clip-rule`, `<image>` targets only — are owned by [`shared-standards-core.md`](./shared-standards-core.md) §1.2.
+    Distinct from #24 (one connected contour) and #47–#56 (every cell its own image). For non-trivial contours take the `d` from the `union` or `combine` operation of `shape_boolean_svg.py render` (see [`native-shape-authoring.md`](./native-shape-authoring.md) §6) instead of deriving it by hand. Clip-shape constraints — one direct shape child, no `fill-rule` / `clip-rule`, `<image>` targets only — are owned by [`shared-standards-core.md`](./shared-standards-core.md) §1.2.
 
 83. **Panel with a real hole punched through it (Subtract window)** — a solid or tinted panel with a shape-cut opening that reveals the image below, PowerPoint's Merge Shapes 剪除.
 
-    **Geometry**: one `<path>` containing both contours, running in **opposite directions**. Outer clockwise, inner counter-clockwise — e.g. panel `M 80,80 H 1200 V 640 H 80 Z` followed by hole `M 420,220 V 500 H 760 V 220 H 420 Z` (note the second one descends first, reversing the winding). Under nonzero winding the reversed subpath subtracts, producing a true hole, so the effect never needs `fill-rule` and stays inside the [`shared-standards-core.md`](./shared-standards-core.md) §1.2 boundary. Verified end-to-end: both subpaths survive into a single `<a:path>` in the exported `custGeom`. `shape_boolean_svg.py subtract` emits this contour directly.
+    **Geometry**: one `<path>` containing both contours, running in **opposite directions**. Outer clockwise, inner counter-clockwise — e.g. panel `M 80,80 H 1200 V 640 H 80 Z` followed by hole `M 420,220 V 500 H 760 V 220 H 420 Z` (note the second one descends first, reversing the winding). Under nonzero winding the reversed subpath subtracts, producing a true hole, so the effect never needs `fill-rule` and stays inside the [`shared-standards-core.md`](./shared-standards-core.md) §1.2 boundary. Verified end-to-end: both subpaths survive into a single `<a:path>` in the exported `custGeom`. The `subtract` operation of `shape_boolean_svg.py render` emits this contour directly; follow [`native-shape-authoring.md`](./native-shape-authoring.md) §6.
 
     **Why not #67**: that pattern fakes the opening by laying a background-colored shape on top. It works only over a flat background and silently breaks the moment the page gains a gradient, a texture, or a second image behind the panel. A real hole also lets the underlying image be moved or swapped without recutting the panel.
 
 84. **Deliberately misregistered fragments (Fragment look)** — the inverse of #82. Cut one image into pieces using several `<image>` elements that share the same source, each with its own clip, then **break the alignment on purpose**: offset a few px, rotate 1–3°, or nudge one piece's scale. The eye still assembles one photo, but the seams now read as intentional — misprint, torn paper, glitch.
 
-    Keep the displacement small and consistent in direction; large or random offsets stop reading as a decision and start reading as a rendering bug. `shape_boolean_svg.py fragment` returns each atomic region as a separately addressable path when the pieces must be individually positioned.
+    Keep the displacement small and consistent in direction; large or random offsets stop reading as a decision and start reading as a rendering bug. The `fragment` operation of `shape_boolean_svg.py render` returns each atomic region as a separately addressable path when the pieces must be individually positioned; follow [`native-shape-authoring.md`](./native-shape-authoring.md) §6.
 
 85. **Subject breaking out of its container** — the subject sits half inside a card / grid cell / color panel and half outside its boundary. Two `<image>` elements from the same file: one clipped to the container (optionally tinted, #31), one clipped to only the escaping region, positioned so the two halves stay in perfect register. Produces depth with no shadow at all.
 
@@ -230,17 +234,22 @@ Stack any of these freely on top of a Primary structure. Multiple Modifiers per 
 
 26. **Triptych baked into a single wide image** — one wide `<image width=1160 height=334>` whose internal composition already contains 2–3 scenes. Generate the triptych as one image (not three separate calls) when scene-to-scene consistency matters — the model preserves character identity, lighting continuity, and color grading far more reliably when panels are produced together.
 
-## Overlay & Masking Treatments
+## Overlay, Scrim & Vignette Treatments
+
+**Hard rule — visual masking is not SVG `<mask>`**: Masking in a design brief
+names the intended appearance only. Realize it with crop/clip geometry,
+scrim/overlay shapes, a real cutout path, or a baked-alpha asset; never emit
+`<mask>` or `mask="url(...)"`.
 
 > **Crop displacement (HARD rule for text over images).** `preserveAspectRatio="xMidYMid slice"` center-crops whatever the source aspect ratio does not cover — when source and display aspects differ, the subject can land under the text column even if the prompt asked for it on the "focal side". Before layering text on a slice-cropped image: estimate the crop from the aspect-ratio difference, and keep the **entire text column on the scrim's opaque plateau** — text must never start inside a gradient's transition zone. When the subject position is unverified, fall back to an opaque treatment (`#30` at high opacity, or a solid panel) instead of a two-stop scrim (`#29`).
 
-27. **Linear gradient mask for text legibility** — `<linearGradient>` in `<defs>` (set `x1/y1/x2/y2` for direction) + overlay `<rect fill="url(#grad)">`. Most common is top-to-bottom darkening on full-bleed cover images.
+27. **Linear gradient scrim for text legibility** — `<linearGradient>` in `<defs>` (set `x1/y1/x2/y2` for direction) + overlay `<rect fill="url(#grad)">`. Most common is top-to-bottom darkening on full-bleed cover images.
 
 28. **Radial gradient vignette** — `<radialGradient cx cy r>` with dark outer stops; overlay `<rect>`. Focuses attention by darkening the periphery.
 
 29. **Two-stop scrim — opaque on text side, transparent on focal side** — `<linearGradient>` with one stop at `stop-opacity="0.9"` and another at `stop-opacity="0"`. Use when text sits on one side and the image's subject on the other.
 
-30–31. **Flat overlay wash** — one `<rect fill-opacity>` over the image: neutral `#000` / `#fff` around 0.4 for uniform darkening or lightening, the simplest scrim there is (**#30**), or a deck color at 0.15–0.25 to pull a foreign-looking photo toward the palette without regenerating it (**#31**).
+30–31. **Flat overlay wash** — one `<rect fill-opacity>` over the image: neutral `#000000` / `#FFFFFF` around 0.4 for uniform darkening or lightening, the simplest scrim there is (**#30**), or a deck color at 0.15–0.25 to pull a foreign-looking photo toward the palette without regenerating it (**#31**).
 
 > **Sample the scrim color from the photo itself.** For any gradient scrim over an image (#27, #29, #31, #32, #90), take the solid end's hex from a dominant color *in that image* rather than defaulting to black or a deck color, and slide the gradient stop until the seam between scrim and photo disappears. A black scrim over a warm photo announces itself as a rectangle; a scrim in the photo's own shadow tone reads as part of the picture. This one substitution is the difference between a page that looks masked and one that looks composed.
 
@@ -281,7 +290,7 @@ Stack any of these freely on top of a Primary structure. Multiple Modifiers per 
 
     The panel must stay in register with the base photo; a frosted panel showing a *different* part of the scene is the classic tell. Pair with #95 when the panel should also carry a floating edge.
 
-33. **Spotlight mask — clear region surrounded by darkness** — cover the canvas with `<rect>` filled by a `<radialGradient>` whose inner stop is fully transparent and outer stop is opaque dark. Reads as a flashlight beam on the focal area. Use sparingly — it kills everything outside the spotlight.
+33. **Radial spotlight overlay — clear region surrounded by darkness** — cover the canvas with `<rect>` filled by a `<radialGradient>` whose inner stop is fully transparent and outer stop is opaque dark. Reads as a flashlight beam on the focal area. Use sparingly — it kills everything outside the spotlight.
 
 34. **Gaussian-blur backdrop** — blur the background in the source image, then layer sharp SVG content above it. Native filter export maps the supported blur graph to a glow/shadow effect; it does not preserve a blurred-image backdrop.
 
@@ -307,7 +316,7 @@ Stack any of these freely on top of a Primary structure. Multiple Modifiers per 
 
     Never box a cutout in a rectangle — that throws away the only thing it offers. Combine with #4 (bleed off the edge), #58 (corner fragment), #66 (fade into background), #69 (slight rotation), or #49 (asymmetric collage).
 
-64. **Image with embedded text rendered by the AI** — text becomes part of the artwork: decorative lettering, designed title, hand-lettered keyword. Prompt with explicit text content — name the exact characters literally. Use for text that is part of the artwork and will not change. Anything that must be correct or editable goes in the SVG `<text>` layer (#65).
+64. **Image with embedded text rendered by the AI** — text becomes part of the artwork: decorative lettering, artistic wordmark, hand-lettered keyword. Prompt with explicit text content — name the exact characters literally. Use for text that is part of the artwork and will not change. Authoritative titles and anything that must stay correct or editable go in the SVG `<text>` layer (#65).
 
 65. **Image with NO text — labels added as native SVG** — generate the image with explicit "no text, no letters, no numbers, no signs" instruction (`text_policy: none`), then place all labels as `<text>` overlays. The right call when labels will be reworded, must stay exact, or carry data that must stay editable — pair with `#64` when stable visual identifiers (axis labels, subplot letters, unit symbols) belong inside the image instead.
 
@@ -321,15 +330,17 @@ Stack any of these freely on top of a Primary structure. Multiple Modifiers per 
 
 70–71. **Frames** — a single `<rect fill="none" stroke="#color" stroke-width="2–6"/>` at the image edge (**#70**), or several nested outlines at slightly different sizes for a photo-print look (**#71**). When the image was cut to a non-rectangular contour, use #86 instead so the frame follows the cut.
 
-72. **Image-to-image transition / merge** — two `<image>` elements with overlapping regions, one or both with gradient masks (from group C) creating a soft blend between them.
+72. **Baked-alpha image-to-image blend** — a genuinely soft blend between two images requires a precomposited bitmap or source images with baked alpha. An ordinary gradient overlay can conceal the join only when both images fade through the same solid bridge color; it is not a per-pixel mask and cannot blend arbitrary imagery.
 
-95. **Shape filled with the page background itself** — the most-used trick in real decks and the one that has no obvious SVG name. A shape is painted not with a color but with *the page's own background, sampled at the shape's own position*, so it becomes invisible against the page while still being a real object that can be moved, animated, or given an edge.
+95. **Shape filled with the page background itself** — the most-used trick in real decks and the one that has no obvious SVG name. A shape is painted not with a color but with *the page's own background, sampled at the shape's own position*, so it becomes invisible against the page while still being a real object that can carry an edge treatment.
 
     **SVG form**: give the shape the same `<image>` as the page background, positioned in root coordinates exactly as the background is, and clip it to the shape contour (§1.2). Because the fill stays registered to the page rather than to the shape, the object reads as a hole in whatever is above it.
 
+    **Registration boundary**: the sampled shape and page background must remain fixed in the same root coordinates. Moving, resizing, rotating, or morphing the sampled shape moves its pixels with it and exposes the seam; animate independent content above or below the stationary shape instead.
+
     Three things it buys you, all of which otherwise require a second asset:
     - **A cut that keeps the scene continuous** — the shape "removes" a foreground panel and shows the background through it, with no seam even over a photo or gradient.
-    - **Invisible objects that still animate** — a background-filled bar can wipe, slide, or morph across the page to reveal or conceal content, while never being visible itself.
+    - **A stationary conceal/reveal patch** — it can cover one fixed region while independent content enters or leaves above or below it.
     - **Edge-only forms** — the shape disappears but its stroke, glow, or shadow remains, giving a floating outline that appears cut into the page.
 
     Distinct from #83 (a panel with a real hole) and #90 (a scrim with cuts): those remove paint, this one *impersonates* the background. Reach for it when the thing above must stay a solid object.
@@ -352,7 +363,7 @@ Stack any of these freely on top of a Primary structure. Multiple Modifiers per 
 
 87. **One image panned across consecutive pages** — a single wide image referenced by 2–4 consecutive slides, each showing a different horizontal segment (same `<image>` file and container geometry per page, only `x` shifts). Static on its own, it makes the deck read as one continuous scene; the audience recognizes the place before reading a word.
 
-    **To make it actually move, the pages must be morph-compatible**: keep the same image file, the same container size, and the same group `id` on every participating page, then export with `-t morph` ([`animations.md`](./animations.md)). Morph then treats it as one object and slides it — the flip becomes a camera pan. Change the filename or the container dimensions between pages and morph stops matching the object, silently degrading to a cross-fade with none of the effect. Nothing else in the deck needs to know about this; it is a page-authoring decision plus one export flag.
+    **Motion contract**: keep the same image file and compatible direct-root group/container geometry on every participating page. Exporting with `-t morph` alone leaves object matching to PowerPoint's heuristic; stable ids and compatible geometry improve the chance of a camera pan but do not prove it. When the pan must be deterministic, run the custom motion stage and declare the adjacent objects in `animations.json` `morph.pairs` ([`animations.md`](./animations.md) §2.1); the pair may bind different source/destination ids while preserving compatible object kinds. Changing the file or endpoint geometry still changes the visual action and may reduce an unpaired Morph to a cross-fade.
 
 ---
 
@@ -393,7 +404,7 @@ Combine freely. The "AI-default" failure mode is the opposite: defaulting to bar
 
 ## Hard Constraints
 
-- Long body copy, data points, numeric labels, and Chinese text always go in the SVG layer — never baked into the image.
+- Page chrome, body copy, captions, and data values that must remain exact or editable stay in SVG. Stable figure-internal identifiers, axis/unit labels, panel markers, or lettering that is deliberately part of the artwork may be image-owned under `text_policy: embedded`, regardless of script or length.
 - Project-wide SVG compatibility rules start at [`shared-standards-core.md`](./shared-standards-core.md),
   whose routing table names each conditional owner. This catalog neither
   restates nor relaxes that contract; each pattern records only its

@@ -119,7 +119,7 @@ Rules:
   | `direction` | Directional Fly/Crawl/Wipe/Peek/Strips/Split/Stretch/Zoom and related entrance/exit effects |
   | `amount` | Wheel spokes (`1`, `2`, `3`, `4`, `8`), emphasis Spin degrees, or Transparency ratio |
   | `color` | Color-capable emphasis effects; `#RRGGBB` or `theme:<scheme-color>` |
-  | `font_name` | Change Font; required for `emphasis_change_font` |
+  | `font_name` | Change Font; required for `emphasis_change_font`; one installed PowerPoint face, not a CSS list |
   | `size` | Grow/Shrink |
   | `relative` | Motion paths (`true` = shape-relative, `false` = fixed slide path) |
 - Any animation/group block may set `repeat_count` or `repeat_duration`
@@ -389,7 +389,7 @@ mechanisms already defined above — none needs a new capability.
 
 **Carousel** (Morph, §2.1 and §3.1) — hold a fixed row of card frames and rotate the *content* through them: on each page every image advances one position, so the card at centre changes while the frames stay put. Explicitly pair each moving content unit across adjacent pages; the fixed frames stay static and need no pair. Scales to any number of images with one page each.
 
-**Odometer / counting numerals** (morph or motion path) — build a vertical strip of digits 0–9 and show one through a fixed window: a masked opening, or a background-filled rectangle above and below ([`image-layout-patterns.md`](./image-layout-patterns.md) `#95`). Shift the strip so the target digit lands in the window, then either morph between two pages or run a `path_up` motion on the strip. Give each digit column a 0.1 s stagger so they settle in sequence rather than in lockstep.
+**Odometer / counting numerals** (morph or motion path) — build a vertical strip of digits 0–9 and show one through a fixed window formed by background-filled rectangles above and below ([`image-layout-patterns.md`](./image-layout-patterns.md) `#95`). Shift the strip so the target digit lands in the window, then either morph between two pages or run a `path_up` motion on the strip. Give each digit column a 0.1 s stagger so they settle in sequence rather than in lockstep.
 
 **Parallax depth** (morph) — move a background layer a *short* distance and a foreground layer a longer one between two pages. The differing travel is read as depth. Keep both layers' z-order identical on both pages; a layer that changes stacking between pages breaks the tween and the transition jumps.
 
