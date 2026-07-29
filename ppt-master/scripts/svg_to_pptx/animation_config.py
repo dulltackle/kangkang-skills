@@ -36,6 +36,15 @@ from .semantic_markers import is_static_page_frame
 
 
 _NON_VISUAL_TAGS = frozenset(('defs', 'title', 'desc', 'metadata', 'style'))
+_INHERITANCE_SENSITIVE_ANIMATION_FIELDS = frozenset({
+    'effect',
+    'effect_options',
+    'repeat_count',
+    'repeat_duration',
+    'accelerate',
+    'decelerate',
+    'bounce_end',
+})
 _CHROME_ID_TOKENS = frozenset({
     'background', 'bg',
     'decoration', 'decorations', 'decor',
@@ -165,15 +174,21 @@ def _require_unique_target_ids(
         raise ValueError(_duplicate_target_error(slide_name, duplicates))
 
 
-def scan_project_targets(project_path: Path) -> tuple[dict[str, list[GroupTarget]], list[str]]:
-    """Scan ``svg_output/*.svg`` for animation targets."""
-    svg_dir = project_path / 'svg_output'
+def scan_project_targets(
+    project_path: Path,
+    *,
+    svg_files: list[Path] | None = None,
+) -> tuple[dict[str, list[GroupTarget]], list[str]]:
+    """Scan selected SVG files, defaulting to ``svg_output/*.svg``."""
     targets_by_slide: dict[str, list[GroupTarget]] = {}
     anonymous_groups: list[str] = []
-    if not svg_dir.is_dir():
-        return targets_by_slide, [f'svg_output directory not found: {svg_dir}']
+    if svg_files is None:
+        svg_dir = project_path / 'svg_output'
+        if not svg_dir.is_dir():
+            return targets_by_slide, [f'svg_output directory not found: {svg_dir}']
+        svg_files = sorted(svg_dir.glob('*.svg'))
 
-    for svg_path in sorted(svg_dir.glob('*.svg')):
+    for svg_path in svg_files:
         targets, anonymous = scan_svg_targets(svg_path)
         targets_by_slide[svg_path.stem] = targets
         anonymous_groups.extend(anonymous)
@@ -186,14 +201,18 @@ def default_config_path(project_path: Path) -> Path:
 
 
 def load_animation_config(project_path: Path, config_path: str | None = None) -> dict[str, Any] | None:
-    """Load optional animation config; return ``None`` when absent."""
-    if config_path:
+    """Load animation config; only an absent default sidecar is optional."""
+    if config_path is not None:
+        if not config_path.strip():
+            raise ValueError('Animation config path must be non-empty')
         path = Path(config_path)
     else:
         path = default_config_path(project_path)
-    if config_path and not path.is_absolute():
+    if config_path is not None and not path.is_absolute():
         path = project_path / path
     if not path.exists():
+        if config_path is not None:
+            raise FileNotFoundError(f'Animation config does not exist: {path}')
         return None
 
     with open(path, 'r', encoding='utf-8') as f:
@@ -225,6 +244,18 @@ def _animation_effect_error(effect: object, label: str) -> str | None:
             f'valid effects: {valid}'
         )
     return None
+
+
+def resolve_slide_animation_config(
+    default_animation: dict[str, Any],
+    slide_animation: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge one slide animation over defaults using writer inheritance rules."""
+    resolved = dict(default_animation)
+    if 'effect' in slide_animation and 'effect_options' not in slide_animation:
+        resolved.pop('effect_options', None)
+    resolved.update(slide_animation)
+    return resolved
 
 
 def _animation_parameter_errors(
@@ -759,7 +790,7 @@ def validate_animation_config_errors(config: dict[str, Any]) -> list[str]:
             _animation_scope_errors(slide_cfg, f'slide "{slide_name}"')
         )
         errors.extend(_animation_group_errors(slide_name, slide_cfg))
-    errors.extend(_resolved_bounce_support_errors(config))
+    errors.extend(_resolved_animation_parameter_errors(config))
     return list(dict.fromkeys(errors))
 
 
@@ -935,14 +966,17 @@ def _bounce_support_error(
     )
 
 
-def _resolved_bounce_support_errors(config: dict[str, Any]) -> list[str]:
-    """Validate effective bounce/effect pairs after sidecar inheritance."""
+def _resolved_animation_parameter_errors(config: dict[str, Any]) -> list[str]:
+    """Validate effective animation parameters after sidecar inheritance."""
     defaults = config.get('defaults', {})
     default_animation: dict[str, Any] = {'effect': 'auto'}
     if isinstance(defaults, dict):
         value = defaults.get('animation', {})
         if isinstance(value, dict):
-            default_animation.update(value)
+            default_animation = resolve_slide_animation_config(
+                default_animation,
+                value,
+            )
 
     errors: list[str] = []
     default_error = _bounce_support_error(default_animation, 'defaults animation')
@@ -952,21 +986,30 @@ def _resolved_bounce_support_errors(config: dict[str, Any]) -> list[str]:
     slides = config.get('slides', {})
     if not isinstance(slides, dict):
         return errors
-    relevant_fields = frozenset({'effect', 'effect_options', 'bounce_end'})
     for slide_name, slide_cfg in slides.items():
         if not isinstance(slide_cfg, dict):
             continue
-        slide_animation = dict(default_animation)
         slide_value = slide_cfg.get('animation', {})
-        if isinstance(slide_value, dict):
-            slide_animation.update(slide_value)
-            if relevant_fields & set(slide_value):
-                error = _bounce_support_error(
+        if not isinstance(slide_value, dict):
+            continue
+        slide_animation = resolve_slide_animation_config(
+            default_animation,
+            slide_value,
+        )
+        if _INHERITANCE_SENSITIVE_ANIMATION_FIELDS & set(slide_value):
+            errors.extend(
+                _animation_parameter_errors(
                     slide_animation,
                     f'slide "{slide_name}" animation',
+                    inherited_effect='auto',
                 )
-                if error:
-                    errors.append(error)
+            )
+            error = _bounce_support_error(
+                slide_animation,
+                f'slide "{slide_name}" animation',
+            )
+            if error:
+                errors.append(error)
 
         groups = slide_cfg.get('groups', {})
         if not isinstance(groups, dict):
@@ -974,18 +1017,32 @@ def _resolved_bounce_support_errors(config: dict[str, Any]) -> list[str]:
         for group_id, group_cfg in groups.items():
             if (
                 not isinstance(group_cfg, dict)
-                or not relevant_fields & set(group_cfg)
+                or not _INHERITANCE_SENSITIVE_ANIMATION_FIELDS & set(group_cfg)
             ):
                 continue
-            group_animation = dict(slide_animation)
-            if 'effect' in group_cfg:
-                group_animation['effect'] = group_cfg['effect']
-                if 'effect_options' in group_cfg:
-                    group_animation['effect_options'] = group_cfg['effect_options']
-                else:
-                    group_animation.pop('effect_options', None)
-            if 'bounce_end' in group_cfg:
-                group_animation['bounce_end'] = group_cfg['bounce_end']
+            inherited_group_animation = {
+                field: slide_animation[field]
+                for field in (
+                    'effect',
+                    'effect_options',
+                    'duration',
+                    *ANIMATION_TIMING_OPTION_FIELDS,
+                    'after_effect',
+                    'sound',
+                )
+                if field in slide_animation
+            }
+            group_animation = resolve_slide_animation_config(
+                inherited_group_animation,
+                group_cfg,
+            )
+            errors.extend(
+                _animation_parameter_errors(
+                    group_animation,
+                    f'group "{slide_name}/{group_id}"',
+                    inherited_effect='auto',
+                )
+            )
             error = _bounce_support_error(
                 group_animation,
                 f'group "{slide_name}/{group_id}"',
@@ -1061,8 +1118,10 @@ def validate_animation_config(
     project_path: Path,
     config: dict[str, Any] | None = None,
     config_path: str | None = None,
+    *,
+    svg_files: list[Path] | None = None,
 ) -> list[str]:
-    """Return sidecar-reference diagnostics for ``svg_output``.
+    """Return sidecar-reference diagnostics for the selected SVG slides.
 
     Fatal field/type/value checks are owned by
     :func:`validate_animation_config_errors`. Anonymous groups are warnings;
@@ -1076,7 +1135,10 @@ def validate_animation_config(
         return []
 
     warnings = _animation_sound_path_errors(project_path, config)
-    targets_by_slide, anonymous_groups = scan_project_targets(project_path)
+    targets_by_slide, anonymous_groups = scan_project_targets(
+        project_path,
+        svg_files=svg_files,
+    )
     for item in anonymous_groups:
         warnings.append(f'{item} has no id and cannot be customized in animations.json')
 
