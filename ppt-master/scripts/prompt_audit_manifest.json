@@ -187,13 +187,12 @@
       "max_tokens": 70000
     },
     "route.generate.quick-generate": {
-      "description": "Explicit one-pass Generate path with active-context mode/style selection, conditional source/resource preparation, and complete flat SVG visual-construction authorities.",
+      "description": "Self-contained one-pass Generate profile with source intake, active-context mode/style selection, conditional resource preparation, and complete flat SVG visual-construction authorities.",
       "scope": "cumulative",
       "include": [
         "bootstrap.routing"
       ],
       "files": [
-        "skills/ppt-master/workflows/generate-pptx.md",
         "skills/ppt-master/workflows/profiles/quick-generate.md",
         "skills/ppt-master/references/artifact-ownership.md",
         "skills/ppt-master/references/shared-standards-core.md",
@@ -222,6 +221,16 @@
         }
       ],
       "max_tokens": 80000
+    },
+    "route.generate.quick-generate.beautify": {
+      "description": "Quick Generate with the shared strict 1:1 Beautify profile.",
+      "scope": "cumulative",
+      "include": [
+        "route.generate.quick-generate",
+        "profile.generate.beautify-pptx"
+      ],
+      "files": [],
+      "max_tokens": 70000
     },
     "route.generate.quick-generate.template-fusion": {
       "description": "Quick Generate with the maximum Brand, Style, Layout, and Deck exact-root fusion loaded for flat authoring.",
@@ -737,7 +746,7 @@
       "max_tokens": 2000
     },
     "profile.generate.beautify-pptx": {
-      "description": "Strict 1:1 wording, order, and page-count generation profile.",
+      "description": "Strict 1:1 wording, order, and page-count profile with Default and explicit Quick branches.",
       "scope": "incremental",
       "files": [
         "skills/ppt-master/workflows/profiles/beautify-pptx.md"
@@ -1022,9 +1031,14 @@
       "to": "skills/ppt-master/workflows/routing.md"
     },
     {
-      "concern": "generate-workflow",
+      "concern": "default-generate-workflow",
       "from": "skills/ppt-master/workflows/routing.md",
       "to": "skills/ppt-master/workflows/generate-pptx.md"
+    },
+    {
+      "concern": "quick-generate-workflow",
+      "from": "skills/ppt-master/workflows/routing.md",
+      "to": "skills/ppt-master/workflows/profiles/quick-generate.md"
     },
     {
       "concern": "failure-policy",
