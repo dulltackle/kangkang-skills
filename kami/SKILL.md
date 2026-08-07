@@ -179,7 +179,7 @@ After the material check, output a structured status block before continuing. Th
 
 ```
 Materials status:
-- Logo: OK assets/client-logo.svg
+- Logo: OK /absolute/path/to/client-logo.svg
 - Brand colors: OK #1B365D mapped to --brand
 - Product screenshot: MISSING (using a pure-text layout; no placeholder image)
 - UI screenshot: not required for this doc type
