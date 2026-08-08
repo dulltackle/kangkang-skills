@@ -9,6 +9,7 @@
       "AGENTS.md",
       "skills/ppt-master/**/*.md",
       "skills/ppt-master/templates/charts/charts_index.json",
+      "skills/ppt-master/templates/tables/tables_index.json",
       "skills/ppt-master/templates/schemas/*.json"
     ],
     "exclude": [],
@@ -20,6 +21,9 @@
     "skills/ppt-master/references/executor-base.md": 9250,
     "skills/ppt-master/references/executor-structured.md": 5500,
     "skills/ppt-master/references/executor-chart.md": 3500,
+    "skills/ppt-master/references/executor-visualization.md": 1250,
+    "skills/ppt-master/references/executor-structure.md": 1250,
+    "skills/ppt-master/references/executor-table.md": 1000,
     "skills/ppt-master/references/executor-image.md": 2000,
     "skills/ppt-master/references/executor-web-image.md": 750,
     "skills/ppt-master/references/executor-notes.md": 1000,
@@ -199,6 +203,7 @@
         "skills/ppt-master/references/svg-effects.md",
         "skills/ppt-master/references/native-shape-authoring.md",
         "skills/ppt-master/references/semantic-svg.md",
+        "skills/ppt-master/references/executor-structure.md",
         "skills/ppt-master/references/modes/_index.md",
         "skills/ppt-master/references/visual-styles/_index.md",
         {
@@ -307,18 +312,19 @@
       "files": [],
       "max_tokens": 92000
     },
-    "route.generate.quick-generate.chart": {
-      "description": "Quick Generate with bounded chart recall, chart/table authoring, optional native-data metadata, and in-context coordinate verification before the final checker.",
+    "route.generate.quick-generate.visualization": {
+      "description": "Quick Generate with bounded Chart/Table recall, their data-object branches, optional native-data metadata, and chart-coordinate verification before the final checker; the fixed Quick context already carries Shape Composition Grammar.",
       "scope": "cumulative",
       "include": [
         "route.generate.quick-generate",
+        "stage.generate.executor.visualization",
         "stage.generate.executor.chart",
+        "stage.generate.executor.table",
         "stage.generate.executor.native-data",
-        "stage.generate.chart-authoring",
         "stage.generate.verify-charts"
       ],
       "files": [
-        "skills/ppt-master/scripts/docs/chart-recall.md"
+        "skills/ppt-master/scripts/docs/visualization-recall.md"
       ],
       "max_tokens": 105000
     },
@@ -554,14 +560,16 @@
       "files": [],
       "max_tokens": 130000
     },
-    "route.generate.flat-no-image-chart": {
-      "description": "Default flat Generate-PPTX path with chart authoring, native-data replacement, and verification.",
+    "route.generate.flat-no-image-visualization": {
+      "description": "Default flat Generate-PPTX path with visualization-reference consumption, all three information-model branches, optional native-data replacement, and chart verification.",
       "scope": "cumulative",
       "include": [
         "route.generate.flat-no-image",
+        "stage.generate.executor.visualization",
         "stage.generate.executor.chart",
+        "stage.generate.executor.structure",
+        "stage.generate.executor.table",
         "stage.generate.executor.native-data",
-        "stage.generate.chart-authoring",
         "stage.generate.verify-charts"
       ],
       "files": [],
@@ -769,12 +777,13 @@
       ],
       "max_tokens": 7000
     },
-    "stage.generate.chart-authoring": {
-      "description": "Conditional visualization-library authoring guidance.",
+    "maintenance.visualization-authoring": {
+      "description": "Shared chart and table catalog-template authoring guidance; not a Generate runtime load.",
       "scope": "incremental",
       "files": [
+        "skills/ppt-master/templates/VISUALIZATION_TEMPLATE_AUTHORING.md",
         "skills/ppt-master/templates/charts/README.md",
-        "skills/ppt-master/templates/charts/CHART_STYLE_GUIDE.md"
+        "skills/ppt-master/templates/tables/README.md"
       ],
       "max_tokens": 10000
     },
@@ -884,12 +893,36 @@
       "max_tokens": 88000
     },
     "stage.generate.executor.chart": {
-      "description": "Conditional chart/table page execution rules.",
+      "description": "Conditional value-driven chart execution rules.",
       "scope": "incremental",
       "files": [
         "skills/ppt-master/references/executor-chart.md"
       ],
       "max_tokens": 3500
+    },
+    "stage.generate.executor.visualization": {
+      "description": "Conditional selected visualization-reference resolution and flexible page-local adaptation rules.",
+      "scope": "incremental",
+      "files": [
+        "skills/ppt-master/references/executor-visualization.md"
+      ],
+      "max_tokens": 1250
+    },
+    "stage.generate.executor.structure": {
+      "description": "Conditional page-local qualitative-topology construction rules.",
+      "scope": "incremental",
+      "files": [
+        "skills/ppt-master/references/executor-structure.md"
+      ],
+      "max_tokens": 1250
+    },
+    "stage.generate.executor.table": {
+      "description": "Conditional semantic cell-grid construction rules.",
+      "scope": "incremental",
+      "files": [
+        "skills/ppt-master/references/executor-table.md"
+      ],
+      "max_tokens": 1000
     },
     "stage.generate.strategist.image": {
       "description": "Conditional Strategist image/formula policy with the always-read layout math and compact composition vocabulary.",
@@ -1091,6 +1124,51 @@
       "to": "skills/ppt-master/references/shared-standards-core.md"
     },
     {
+      "concern": "visualization-reference-routing",
+      "from": "skills/ppt-master/references/executor-base.md",
+      "to": "skills/ppt-master/references/executor-visualization.md"
+    },
+    {
+      "concern": "structured-executor-routing",
+      "from": "skills/ppt-master/references/executor-base.md",
+      "to": "skills/ppt-master/references/executor-structured.md"
+    },
+    {
+      "concern": "chart-executor-routing",
+      "from": "skills/ppt-master/references/executor-base.md",
+      "to": "skills/ppt-master/references/executor-chart.md"
+    },
+    {
+      "concern": "structure-executor-routing",
+      "from": "skills/ppt-master/references/executor-base.md",
+      "to": "skills/ppt-master/references/executor-structure.md"
+    },
+    {
+      "concern": "table-executor-routing",
+      "from": "skills/ppt-master/references/executor-base.md",
+      "to": "skills/ppt-master/references/executor-table.md"
+    },
+    {
+      "concern": "native-data-routing",
+      "from": "skills/ppt-master/references/executor-base.md",
+      "to": "skills/ppt-master/references/native-data-interface.md"
+    },
+    {
+      "concern": "visualization-chart-routing",
+      "from": "skills/ppt-master/references/executor-visualization.md",
+      "to": "skills/ppt-master/references/executor-chart.md"
+    },
+    {
+      "concern": "visualization-structure-routing",
+      "from": "skills/ppt-master/references/executor-visualization.md",
+      "to": "skills/ppt-master/references/executor-structure.md"
+    },
+    {
+      "concern": "visualization-table-routing",
+      "from": "skills/ppt-master/references/executor-visualization.md",
+      "to": "skills/ppt-master/references/executor-table.md"
+    },
+    {
       "concern": "structured-execution-contract",
       "from": "skills/ppt-master/references/executor-structured.md",
       "to": "skills/ppt-master/references/pptx-structure-interface.md"
@@ -1098,6 +1176,16 @@
     {
       "concern": "native-data-contract",
       "from": "skills/ppt-master/references/executor-chart.md",
+      "to": "skills/ppt-master/references/native-data-interface.md"
+    },
+    {
+      "concern": "chart-verification-handoff",
+      "from": "skills/ppt-master/references/executor-chart.md",
+      "to": "skills/ppt-master/workflows/stages/verify-charts.md"
+    },
+    {
+      "concern": "native-table-contract",
+      "from": "skills/ppt-master/references/executor-table.md",
       "to": "skills/ppt-master/references/native-data-interface.md"
     },
     {
@@ -1249,6 +1337,26 @@
         "type",
         "types"
       ]
+    },
+    {
+      "name": "table-templates",
+      "kind": "json_collection",
+      "source": "skills/ppt-master/templates/tables/tables_index.json",
+      "key": "tables",
+      "reference_terms": [
+        "tables_index.json",
+        "table catalog"
+      ],
+      "claim_nouns": [
+        "table",
+        "tables",
+        "summary",
+        "summaries",
+        "template",
+        "templates",
+        "type",
+        "types"
+      ]
     }
   ],
   "schema_grammars": [
@@ -1257,6 +1365,7 @@
       "fields": [
         "font_family",
         "image_rendering",
+        "page_visualizations",
         "page_charts",
         "page_layouts",
         "page_pptx_layouts",
@@ -1340,6 +1449,10 @@
         "reason": "Maintainer command reference for an optional helper script."
       },
       {
+        "glob": "skills/ppt-master/scripts/docs/chart-recall.md",
+        "reason": "Legacy compatibility note; current generation loads visualization-recall.md."
+      },
+      {
         "glob": "skills/ppt-master/scripts/pptx_shapes/data/NOTICE.md",
         "reason": "License notice; never loaded as prompt context."
       },
@@ -1353,7 +1466,11 @@
       },
       {
         "glob": "skills/ppt-master/templates/charts/charts_index.json",
-        "reason": "Machine-consumed chart-recall registry; Strategist receives only the ranked candidate summaries."
+        "reason": "Machine-consumed chart-family registry; Strategist receives only bounded visualization-recall candidates."
+      },
+      {
+        "glob": "skills/ppt-master/templates/tables/tables_index.json",
+        "reason": "Machine-consumed table-family registry; Strategist receives only bounded visualization-recall candidates."
       },
       {
         "glob": "skills/ppt-master/templates/schemas/*.json",
