@@ -203,6 +203,23 @@ use; otherwise decide which prototypes to use, skip, repeat, reorder, or adapt
 while authoring. Persist no separate template-application artifact. If no
 template was installed, make the same design choices freely.
 
+Before resolving the one-pass design, read only these three indexes:
+
+```
+Read references/modes/_index.md
+Read references/visual-styles/_index.md
+Read references/image-renderings/_index.md
+```
+
+Resolve the best whole solution from the project brief and index summaries,
+freeze its exact mode/style/rendering ids, then read only those selected preset
+files or custom-basis files. A novel custom reads none. Never open detail files
+to compare candidates, glob a catalog, or let an unselected sibling influence
+the decision. Decide whether AI images are useful as a separate source judgment;
+even when the answer is no, retain the chosen rendering direction for visual
+coherence. Keep the chosen mode, style, rendering, and exact bases in active
+context only.
+
 **One-pass decision boundary**: resolve only what is needed to author this deck
 in the current context. Do not print a strategy summary, create a planning
 checkpoint, or persist a page/resource plan.
@@ -224,6 +241,14 @@ Before writing P01, resolve in active context:
 - the implementation path for each resource. An explicit user path wins;
   otherwise choose the registered automatic/default path without another
   interaction.
+
+**Mandatory — subject-layer capability scan**: Before resource preparation,
+inspect the intended layer relationship rather than treating every reference
+visual as one flat image. When a subject crosses a native title, panel, frame,
+card, or shape, prepare a clean full-canvas base plus a same-canvas RGBA subject
+cutout and use `#A2-03`; follow [`image-generator.md`](../../references/image-generator.md)
+§4.4. A subject that only floats independently may use `#A2-01`. Complete this
+decision and both required assets before SVG authoring.
 
 **Mandatory — whole-roster rhythm check**: During the same active-context
 resolution, compare neighbors and section arcs to judge whether chapter entries
@@ -294,9 +319,10 @@ Prepare only the resource paths needed by the decided pages:
 | Supplied/extracted image | Copy the selected file into `images/`; preserve its factual/provenance context and use the measured file rather than an invented substitute |
 | Bundled/custom icon | Follow the [icon library contract](../../templates/icons/README.md), choose one coherent primary library, sync a useful project pool covering recurring semantics and likely page-local needs without assigning icons to pages, and choose from that prepared pool during SVG authoring |
 | Formula | Follow the [`latex_render.py` contract](../../scripts/docs/image.md), write `images/formula_manifest.json`, run the renderer, and keep the rendered PNG under `images/` |
-| AI image | Follow `image-base.md` + `image-generator.md`; keep `image_prompts.json` and its human-readable sidecar |
+| AI image | Follow `image-base.md` + `image-generator.md`; apply only the chosen rendering preset or exact custom bases, never blend unselected catalog identities, and keep `image_prompts.json` plus its human-readable sidecar |
 | Web image | Follow `image-base.md` + `image-searcher.md`; keep query/status data and `image_sources.json`, including any required on-slide attribution |
 | Illustration slice | Generate or obtain the parent sheet, run `slice_images.py`, and place only the resulting element files |
+| Registered subject/base pair | Follow `image-generator.md` §4.4; keep the clean base and transparent subject on the same full canvas, then place both with `crop=no-crop` |
 | Visualization | Keep Chart values, Table cell topology, and chosen treatment in active context; load the applicable Chart/Table authority in §3 and write native replacement metadata only for an independently selected native-ready object |
 
 **Image inspection boundary**: acquisition-time suitability review follows the
@@ -327,13 +353,11 @@ not route among them one file at a time:
 [`svg-effects.md`](../../references/svg-effects.md),
 [`native-shape-authoring.md`](../../references/native-shape-authoring.md),
 [`semantic-svg.md`](../../references/semantic-svg.md),
-[`executor-structure.md`](../../references/executor-structure.md),
-[`modes/_index.md`](../../references/modes/_index.md), and
-[`visual-styles/_index.md`](../../references/visual-styles/_index.md). Resolve
-one narrative mode and one visual style from explicit user/template requirements
-or the current content, keep that choice only in active context, and read every
-exact preset source actually used once. A genuinely novel custom direction
-follows its resolved behavior without inventing a nearby preset.
+and [`executor-structure.md`](../../references/executor-structure.md). Retain
+only the mode/style detail files selected during one-pass design resolution and
+realize that chosen direction. Exact `*_references` define the complete basis
+of a custom synthesis; a genuinely novel custom follows its resolved behavior
+without reading or inventing a nearby preset.
 
 Do not load `executor-base.md`: it owns Default's persisted-plan handoff,
 first-page gate, and completion routing. Excluding that file is not a capability
