@@ -27,6 +27,8 @@ this stage.
 - Per-page narration files exist at `notes/*.md`. In Generate PPTX, split `notes/total.md` during Step 7.1. In Enhance Native PPTX, the notes module writes numeric files such as `001.md`.
 - Default mode: `edge-tts` is installed (`python3 -m pip install edge-tts`).
 - The stage is page-level only: one note becomes `audio/<stem>.<audio-ext>` plus `audio/<stem>.srt` on provider-timed paths, or one audio file with Qwen / explicit CosyVoice audio-only mode. Never substitute one long track or automatic splitting.
+- Final/literal script notes are synthesized verbatim. Source SRT timecodes are pacing evidence only; new provider timing owns the generated audio/SRT set.
+- SRT bound to an authoritative existing recording does not enter TTS. Recorded narration requires page-level audio or an explicit page/time map; automatic long-track splitting is unsupported.
 - A fully successful run writes a compact `audio/manifest.json` with only provider/model, audio/subtitle format, relevant voice settings, and a SHA-256 fingerprint instead of the raw cloud voice ID. It has no per-slide inventory, artifact hashes, or API keys and is not a normal generation input. The flat `audio/` directory is the single active narration set; do not create provider subdirectories unless the user explicitly asks to preserve multiple variants.
 - PPT narration assets must be PowerPoint-reliable audio: `m4a` (AAC), `mp3`, or `wav`. The built-in TTS path defaults to `mp3`; provider formats such as `pcm`, `opus`, or `flac` must be transcoded before embedding.
 - PowerPoint recorded narration export requires `ffprobe` so slide timings can be written from actual audio duration.
@@ -185,23 +187,26 @@ python3 skills/ppt-master/scripts/notes_to_audio.py <project_path> \
 #     sidecar. Reuse current SVG semantics when complete; otherwise read only
 #     the missing or stale svg_output pages.
 python3 skills/ppt-master/scripts/narration_sync.py animations <project_path> \
-  --narration-padding 0.5 --force
+  --narration-start-floor 0.8 --narration-padding 0.5 --force
 
 # 2B. Re-export with audio embedded
 #     Use the base export's [REPORT] path to preserve source-bound deck motion.
 python3 skills/ppt-master/scripts/svg_to_pptx.py <project_path> \
-  --recorded-narration audio --narration-padding 0.5 \
+  --recorded-narration audio \
+  --narration-start-floor 0.8 --narration-padding 0.5 \
   --inherit-motion-from "<base_postflight_report>"
 
 # Optional: use the canonical presentation animation instead
 python3 skills/ppt-master/scripts/svg_to_pptx.py <project_path> \
-  --recorded-narration audio --narration-padding 0.5 \
+  --recorded-narration audio \
+  --narration-start-floor 0.8 --narration-padding 0.5 \
   --animation-config animations.json \
   --inherit-motion-from "<base_postflight_report>"
 
 # Optional: export narration with no object or page-transition animation
 python3 skills/ppt-master/scripts/svg_to_pptx.py <project_path> \
-  --recorded-narration audio --narration-padding 0.5 \
+  --recorded-narration audio \
+  --narration-start-floor 0.8 --narration-padding 0.5 \
   --no-animations
 
 # 2C. Only when page-local SRT exists, merge it against timing values read
@@ -253,7 +258,19 @@ Before generation starts, `notes_to_audio.py` removes stale `audio/manifest.json
 Generate passes the base report through `--inherit-motion-from`: inherited
 `-a none` preserves explicit objects-off, while final Stage-2 `false` does not.
 Only explicit all-motion-off uses `--no-animations`. Invalid reports block;
-audio duration plus padding owns final advance.
+page-start lead-in, audio duration, and page-tail padding own final advance.
+
+**Narration pacing controls**: page-front and page-tail timing are independent,
+optional parameters. Unless the user supplies values, use
+`narration_start_floor=0.8` seconds and `narration_padding=0.5` seconds without
+adding a confirmation question. For a destination-page transition of `T`
+seconds, the post-transition lead-in is
+`max(0, narration_start_floor - T)`: narration never begins during the
+transition, while a longer transition is not stretched. Apply the same
+lead-in to embedded narration, cue-bound object animation, subtitle offsets,
+and slide advance. Uncued title or decorative animation keeps its canonical
+relative timing. Setting the start floor to `0` means narration begins as soon
+as the transition completes; it does not bypass the transition.
 
 When canonical custom animation is synchronized,
 `<project_path>/narration_timing.json` is the explicit semantic mapping for
@@ -273,6 +290,7 @@ python3 skills/ppt-master/scripts/narration_sync.py fingerprint <project_path>
 {
   "version": 1,
   "srt_sha256": "<sha256 of the ordered page-local SRT set>",
+  "narration_start_floor": 0.8,
   "narration_padding": 0.5,
   "slides": {
     "01_title": {
@@ -306,7 +324,7 @@ This stage keeps subtitles as external SRT files. It does not burn subtitles int
 
 For Qwen or explicit CosyVoice audio-only mode, embed/export the audio normally but skip `narration_timing.json`, `narration_sync.py animations`, SRT merge, and final-video subtitle alignment. Never present those missing subtitle artifacts as generated.
 
-For Generate PPTX, `--recorded-narration audio` prepares PowerPoint's recorded timings and narrations: every slide must have a matching supported audio file, every duration must be readable by `ffprobe`, and object animations must not use `--animation-trigger on-click`. Use `after-previous` or `with-previous` for narrated/video export. Narration changes the slide-advance layer only: the resolved page-transition effect remains unchanged, `-t none` remains visually transition-free, and narration advance disables click while using audio duration plus padding. The re-export is saved as `exports/<project_name>_<timestamp>_narrated.pptx`, telling it apart from silent exports.
+For Generate PPTX, `--recorded-narration audio` prepares PowerPoint's recorded timings and narrations: every slide must have a matching supported audio file, every duration must be readable by `ffprobe`, and object animations must not use `--animation-trigger on-click`. Use `after-previous` or `with-previous` for narrated/video export. Narration changes the slide-advance layer only: the resolved page-transition effect remains unchanged, `-t none` remains visually transition-free, and narration advance disables click while using page-start lead-in plus audio duration plus page-tail padding. The re-export is saved as `exports/<project_name>_<timestamp>_narrated.pptx`, telling it apart from silent exports.
 
 **Narrated SVG export**: use the default text-flow mode. It keeps authored line breaks in one editable, no-wrap text frame; narration does not require per-line text frames.
 
