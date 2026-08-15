@@ -320,6 +320,24 @@ the complete carrier menu once and choose only the forms that communicate its
 content best. A decision to use none of a carrier is valid; skipping the scan
 because Quick is expected to be faster is not.
 
+**Mandatory — proactive AI decorative lettering**: Apply
+[`image-generator.md`](../../references/image-generator.md) §7's
+callable-generator test before SVG authoring: a configured `IMAGE_BACKEND` is
+Path A and a host-native image-generation tool is Path B; Offline Manual, web
+search, or vision-only access does not qualify. When Path A/B is callable and
+the user has not forbidden AI, scan the frozen roster's cover/divider wording
+for stable keywords or short hooks. If a suitable set exists, prepare it without
+a separate request: preserve the exact approved strings, use one ordinary AI
+item for a single hook or batch several compatible marks through one
+Illustration Sheet and transparent slices, and keep ordinary title/chrome copy
+native. A prepared wordmark and an editable title are not mutually exclusive:
+one page may carry the wordmark as its display layer while its subtitle, chrome,
+and body stay native text. Skip a scanned hook only when that exact wording must
+stay editable, the user forbade AI, or no generator is callable; do not add
+another disqualifier. Offline Manual
+alone does not trigger this proactive path; explicit user-required lettering
+still follows the normal resource contract.
+
 | Communication job | Available carrier |
 |---|---|
 | Real subject, place, product, evidence, atmosphere, or scene benefits from visual grounding | Supplied/extracted, web, AI, or sliced image |
@@ -329,9 +347,12 @@ because Quick is expected to be faster is not.
 | Sequence, hierarchy, role, region, or relationship determines page-local topology | Qualitative structure |
 | Rows, columns, cells, headers, merges, and alignment form the information model | Cell-grid table |
 | Mathematical notation is clearer as typeset math than ordinary text | PowerPoint-native inline or block math |
+| A small set of stable cover/divider keywords needs a material, dimensional, hand-rendered, or otherwise illustrative treatment beyond ordinary text | Apply the proactive rule above; place prepared lettering assets as images and keep ordinary editable title/chrome in separate text frames |
 | Typography, spacing, and simple geometry already carry the message | Use no additional visual carrier |
 
 This carrier menu does not satisfy or replace the per-page Structure decision in §3.
+
+**Default — source fit decided per page, not inherited from the visual style (may override when an explicit user constraint requires another source)**: Outside Image to PPTX, whose closed page surface owns its reconstruction assets, choose each page image's source separately from the resolved style. Prefer a supplied/extracted asset that already carries authority; use web when an externally verifiable subject must appear as itself; use AI when invented or deliberately stylized expression matters more than documentary identity. Mixed sources across one deck are normal. A visual style and its `Illus.` propensity govern how imagery looks, never whether the deck needs documentary imagery.
 
 **Visualization recall — optional Chart/Table reference**: When a reusable
 Chart/Table reference would help, run recall with 3–8 English semantic tags.
@@ -372,7 +393,7 @@ Prepare only the resource paths needed by the decided pages:
 | Formula | Create no resource file. Retain the exact source LaTeX, then choose ordinary text, an inline native marker, or a block native marker under §3; the registered SVG preview is discarded by native export |
 | AI image | Follow `image-base.md` + `image-generator.md`; apply only the chosen rendering preset or exact custom bases, never blend unselected catalog identities, and keep `image_prompts.json` plus its human-readable sidecar |
 | Web image | Follow `image-base.md` + `image-searcher.md`; keep query/status data and `image_sources.json`, including any required on-slide attribution |
-| Illustration slice | Generate or obtain the parent sheet, run `slice_images.py`, and place only the resulting element files |
+| Illustration / lettering slice | Generate or obtain the parent sheet, run `slice_images.py --trim --alpha`, and place only the resulting transparent element files; a lettering sheet names every exact stable string and contains no scene or page chrome |
 | Registered reconstruction group | Follow `image-generator.md` §4.4; keep full-canvas members registered with `crop=no-crop`, and materialize every required shared-plate member as an independent picture object |
 | Visualization | Keep Chart values, Table cell topology, and chosen treatment in active context; load the applicable Chart/Table authority in §3 and write native replacement metadata only for an independently selected native-ready object |
 
@@ -523,8 +544,9 @@ and omit Master/Layout/layer/placeholder metadata. A request that specifically
 requires reusable native Master/Layout/placeholder output is incompatible with
 the lockless Quick exporter and must use the default lock-backed profile.
 
-**Typography**: name an installed concrete font family in the SVG; do not depend
-on a lock or generated font asset.
+**Typography**: name a concrete target-installed/approved PowerPoint family
+under [`shared-standards-core.md`](../../references/shared-standards-core.md)
+§4.1; do not depend on a lock or generated font asset.
 
 **Generation pacing**: the current main agent hand-writes the SVG roster in
 order. Use P01 as the visual-system calibration baseline and continue
@@ -641,5 +663,5 @@ or lock.
 - [x] Enabled notes were validated/generated and split; enabled custom motion ran through its owning stage
 - [x] One native PPTX exists under `exports/` or the explicit output path
 - [x] No Strategist, confirmation, root project Design Spec, or lock artifact was created
-- [ ] **Next**: Report the base PPTX and any enabled narrated PPTX, raw/mixed/captured MP4, or capture-ready PPTX handoff
+- [ ] **Next**: Report the base PPTX and any enabled narrated PPTX, raw/mixed/captured MP4, or capture-ready PPTX handoff, plus the resolved mode, visual style, and the image sources actually used
 ```

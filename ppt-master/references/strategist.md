@@ -287,6 +287,15 @@ owns SVG authoring under [`native-hyperlinks.md`](./native-hyperlinks.md).
 
 **Default — evidence before synthesis (may override when explicit source constraints or the communication intent require another permitted source)**: Prefer `provided` when supplied assets already carry authority. Propose `web` when the actual appearance of an externally verifiable subject is material; propose `ai` when custom expression matters more than documentary identity. Mixed sources may serve different page roles. This is a source-fit decision, not an image quota.
 
+**Mandatory — proactive decorative-lettering scan**: Before each Stage-2
+`recommend.image_usage`, treat a configured `IMAGE_BACKEND` or host-native image
+generator as callable; Offline Manual, web, and vision-only access do not
+qualify. If callable and planned cover/divider wording contains an exact stable
+hook suited to illustrative lettering, include `ai` plus its role in
+`image_notes.value` without waiting for a request. Never invent or rewrite copy
+to trigger it. Explicit no-AI or editable-only requirements win. Execution
+follows [`image-generator.md`](./image-generator.md) §7.
+
 **Recommendation output**: Write `recommend.image_usage` as one source id or an array for mixed sources. Put page roles, authoritative assets, preferred/avoided imagery, and placeholder tolerance in `image_notes.value`. `none` is exclusive. Generic human-scale topics such as family life, education, wellness, or children lean `ai` when no supplied asset carries the story; regulated investor decks, B2B finance reports, and data-only dashboards remain eligible for `none` by judgment.
 
 **Confirmed value wins**: Accept the confirmed legacy string or multi-select array. Map `ai→ai`, `web→web`, `provided→user`, and `placeholder→placeholder` into §VIII `Acquire Via`. Every direction already carries a rendering candidate whether or not AI is proposed; generated images inherit the deck colors and never introduce a second image-palette choice.
@@ -311,6 +320,7 @@ user/template requirements bind.
 | Image composition | Image-as-canvas, editorial crop, collage, cutout, or meaningful focus / comparison / evidence units carry the page better than an adjacent rectangle | Propose a permitted source; when selected, apply the already-loaded [`strategist-image.md`](./strategist-image.md) resource contract plus the conditional image-layout references, record a concise §VIII `Layout pattern` suggestion, and describe page-level image/overlay relationships in §IX `Layout` / `Images` |
 | Native paint / overlay | Gradient, translucency, scrim, vignette, or wash supports focus, hierarchy, depth, legibility, or image integration | Record purpose/layering in §IX `Layout`, plus `Images` when imagery participates; no new field or type/stops/opacity/coordinates—Executor chooses realization |
 | Native shape / Merge Shapes | A literal Office symbol, a stock bent/curved relationship contour, or a compound silhouette, negative-space cutout, overlap-only region, or meaningful fragmentation strengthens the visual idea | Add an optional §IX `Native shape suggestion` with the semantic result plus a candidate preset/Connector family or Boolean operation/operands |
+| AI decorative lettering asset | A small set of stable cover/divider keywords needs a material, dimensional, hand-rendered, or otherwise illustrative treatment beyond ordinary text | Apply [`strategist-image.md`](./strategist-image.md): when compatible, plan one unplaced AI Illustration Sheet plus one transparent `slice` row per used lettering element; record every exact string, and keep subtitle/chrome/body as native text. A display wordmark and an editable page title may coexist; choose ordinary text instead only when that exact wording must stay editable |
 | Page transition | A section/state change, spatial continuity, recorded/self-running flow, or the same semantic object changing position, scale, crop, or state across adjacent pages benefits from motion | Add an optional §IX `Motion suggestion` describing the communication job and any continuing object's initial state → action → end state; leave effect, ids, pairing names, and timing to Executor |
 | Object animation | Progressive reveal, emphasis, movement, removal, or deliberate stillness clarifies sequence, causality, comparison, hierarchy, narration order, full-view → detail, atmosphere → evidence, or hotspot/annotation order | Add an optional §IX `Motion suggestion` naming each relevant semantic unit's lifecycle duty and initial state → communication action → end state, plus any meaningful order/relationship; leave group ids, effects, options, and timing to Executor |
 
