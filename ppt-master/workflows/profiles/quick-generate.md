@@ -92,7 +92,7 @@ Prepare source facts before initialization:
 
 | Input | Action |
 |---|---|
-| Topic or requirements without supporting facts | Run [`topic-research`](../stages/topic-research.md) immediately and retain its Markdown supplement, fact-provenance JSON, and adopted webpage inputs for import |
+| Topic or requirements without supporting facts | Run [`topic-research`](../stages/topic-research.md) immediately and retain its Markdown supplement plus fact-provenance JSON; adopted webpage URLs remain inside that pair and are not import inputs |
 | One or more PNG / JPEG / WebP files representing page frames under Image to PPTX | Do not call `source_to_md.py`; normalize single-page files and multi-frame contact sheets into the canonical ordered frame roster through that profile, then import the originals below |
 | PDF / DOCX / Office document / XLSX / XLSM / PPTX / EPUB / HTML / LaTeX / RST / web URL | Run `python3 ${SKILL_DIR}/scripts/source_to_md.py <file_or_URL_or_dir> [<file_or_URL_or_dir> ...]` |
 | CSV / TSV | Read directly as a plain-text table source |
@@ -121,9 +121,9 @@ After reading every direct and converted source, assess factual sufficiency:
 **Sufficiency test**: research only when the requested outcome would otherwise
 require inventing, omitting, or leaving unsupported an externally verifiable
 claim. File presence or length does not establish sufficiency. Research records
-the needed facts and adopted webpages. Those pages import as text-only evidence;
-independent AI / web / slice acquisition remains part of the
-resource preparation below.
+the needed facts and adopted webpage URLs in its research pair. Project
+initialization fetches none of those pages; independent AI / web / slice
+acquisition remains part of the resource preparation below.
 
 **Conditional video-delivery context**: when the intended use is recorded,
 self-running, or video-directed—or an explicit final/literal narration script
@@ -184,9 +184,11 @@ python3 ${SKILL_DIR}/scripts/project_manager.py import-sources \
   [projects/<research_slug>.md projects/<research_slug>.facts.json]
 ```
 
-The facts JSON owns retained URLs. `project_manager.py` imports them
-automatically in text-only mode and fails incomplete reconciliation; do not
-repeat URLs or add page images to `<project>/images/`.
+The facts JSON is the sole URL authority, not a download queue.
+`project_manager.py` imports it as an ordinary file and never expands its
+`source_url` values. If normal web-image search is exhausted, follow
+[`topic-research`](../stages/topic-research.md) § Hand-off to fetch one relevant
+webpage package, review it, and copy only accepted images into the runtime pool.
 
 Only inputs already under the repository's `projects/` tree move into the
 target project; every external path is copied and remains untouched. Use
@@ -347,9 +349,11 @@ keep a native title wherever the page needs a searchable, selectable, or
 outline-visible heading, with the lettering as its display layer.
 If a suitable set exists, prepare it without
 a separate request: preserve the exact approved strings, use one ordinary AI
-item for a single mark or batch several compatible marks through one
-Illustration Sheet and transparent slices, and keep ordinary title/chrome copy
-native. A prepared wordmark and an editable title are not mutually exclusive:
+item for a single mark or partition several marks by artistic treatment and
+batch each compatible treatment set through its own Illustration Sheet and
+transparent slices. Split one treatment only when its cell geometry or quality
+needs conflict, and keep ordinary title/chrome copy native. A prepared wordmark
+and an editable title are not mutually exclusive:
 one page may carry the wordmark as its display layer while its subtitle, chrome,
 and body stay native text, so a wish to keep that wording editable is answered
 by the native layer rather than by dropping the lettering. Skip a scanned hook
@@ -415,7 +419,7 @@ Prepare only the resource paths needed by the decided pages:
 | Formula | Create no resource file. Retain the exact source LaTeX, then choose ordinary text, an inline native marker, or a block native marker under §3; the registered SVG preview is discarded by native export |
 | AI image | Follow `image-base.md` + `image-generator.md`; apply only the chosen rendering preset or exact custom bases, never blend unselected catalog identities, and keep `image_prompts.json` plus its human-readable sidecar |
 | Web image | Follow `image-base.md` + `image-searcher.md`; keep query/status data and `image_sources.json`, including any required on-slide attribution |
-| Illustration / lettering slice | Generate or obtain the parent sheet, run `slice_images.py --trim --alpha`, and place only the resulting transparent element files; a lettering sheet names every exact stable string and contains no scene or page chrome |
+| Illustration / lettering slice | Generate or obtain the parent sheet, run `slice_images.py --trim --alpha --strict-alpha`, and place only outputs from a successful strict cut; a lettering sheet names every exact stable string and contains no scene or page chrome |
 | Registered reconstruction group | Follow `image-generator.md` §4.4; keep full-canvas members registered with `crop=no-crop`, and materialize every required shared-plate member as an independent picture object |
 | Visualization | Keep Chart values, Table cell topology, and chosen treatment in active context; load the applicable Chart/Table authority in §3 and write native replacement metadata only for an independently selected native-ready object |
 
@@ -437,8 +441,9 @@ strategy.
 Every required file-backed resource must reach a usable terminal state before
 its page. Web `Needs-Selection` blocks until one thumbnail is promoted or the
 bounded ranked pages and materially different query variants are exhausted;
-only then may a vision-capable owner test one retained-page image URL at a time
-with `--from-url`; never bulk-download or use those pages as the initial pool.
+only then may a vision-capable owner fetch one adopted-page source package,
+review its companion images, and promote only accepted files; never auto-expand
+facts URLs or use those packages as the initial pool.
 `Needs-Manual` blocks even when an unverified file exists. With no visual
 capability, only the strict metadata-ranked web path may reach `Sourced`, and
 its provenance must say `selection_method: metadata-ranked` rather than imply
