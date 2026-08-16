@@ -10,6 +10,6 @@ Use /tdd where possible, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end.
 
-Once done, use /open-code-review to review the work.
+Once done, spawn one read-only subagent with the ticket context to run /open-code-review-delegate. Validate and fix its findings, rerun affected tests.
 
 Use /to-commit to commit your work to the current branch.
