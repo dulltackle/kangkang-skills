@@ -562,14 +562,20 @@ This decision is mandatory on every page and cannot be satisfied by the
 capability menu, visualization recall, template geometry, or a later check.
 
 **Mandatory — independent per-page geometry move**: after the Structure result
-and any applicable topology resolve, apply
-[`native-shape-authoring.md`](../../references/native-shape-authoring.md) §2.1
-to the transient geometry job, actual content, resolved style, and complete
-native vocabulary before writing coordinates. It owns the exact-fit geometry
-gate, independent relationship / carrier fit, contour-family / exact-result
-choice, reader effect for a generic or undrawn result, running actual-geometry
-signature, and materialization boundary. Apply it to both `no` and `yes`; keep
-the current decision in active context and never change the Structure result.
+and any applicable topology resolve, but before choosing any contour, run the
+page-local direct `recommend --compact --limit 6` invocation defined by
+[`native-shape-authoring.md`](../../references/native-shape-authoring.md) from
+the actual job, then invoke `describe --compact` directly only for serious
+candidates. Registry discovery followed by direct `describe` without
+`recommend` does not satisfy this recall. Apply §2.1 to the transient geometry
+job, actual content, resolved style, and complete native vocabulary before
+writing coordinates. It owns the exact-fit geometry gate, independent
+relationship / carrier fit,
+contour-family / exact-result choice, reader effect for a generic or undrawn
+result, running actual-geometry signature, and materialization boundary. A
+primitive remains valid when it wins this comparison; there is no preset quota.
+Apply the move to both `no` and `yes`; keep the current decision in active
+context and never change the Structure result.
 
 | Deterministic trigger | Additional authority |
 |---|---|
@@ -737,8 +743,9 @@ or lock.
 
 - [x] All required source/resource preparation is complete
 - [x] The fixed planning-capability batch was read before the roster, and every selected detail source was read
-- [x] The complete native preset registry was read unfiltered before P01 and consumed during contour selection
+- [x] The complete native preset registry was read unfiltered before P01; every page entering ordinary contour selection ran job-derived `recommend` before choosing a contour and described only serious candidates
 - [x] Every page considered suitable carrier combinations without a coverage quota or single-carrier assumption
+- [x] The proactive decorative-lettering scan ran before capability resolution; every exact string passing both eligibility questions entered an AI item or lettering sheet/slice job unless the user forbade AI
 - [x] Every page not bound to literal supplied geometry carried its geometry job into authoring, resolved each drawn contour from its exact family and job, retained the reader effect for any generic or undrawn result, and compared its actual geometry signature before the next page; repetition served the same page job / relationship or continuity motif
 - [x] Image need was decided independently of credentials; any zero-image deck is backed by an explicit no-image requirement or a roster whose visual burden is fully carried by charts / native SVG
 - [x] Every `slice_names` output exists after an exit-0 strict-alpha run, and no page whose chosen composition depends on a slice was authored or exported without it
