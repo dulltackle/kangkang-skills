@@ -13,6 +13,10 @@ description: One-pass Generate profile for agent-decided preparation, direct SVG
 strategy/confirmation, or directs the agent to proceed to SVG and export.
 Page count alone never activates or blocks this profile.
 
+**Hard rule — Quick paths**: Apply the entry-time `SKILL_DIR` anchor to every
+linked or abbreviated package path below. Expand it inside each tool call;
+never change CWD or inherit a prior shell working directory.
+
 ---
 
 ## 1. Profile Boundary
@@ -248,15 +252,15 @@ Before resolving the one-pass design, read this fixed planning-capability batch
 in one pass:
 
 ```
-Read references/canvas-formats.md
-Read references/image-layout-spec.md
-Read references/image-layout-patterns.md
-Read references/modes/_index.md
-Read references/visual-styles/_index.md
-Read references/image-renderings/_index.md
-Read templates/icons/README.md
-Read templates/charts/chart-vocabulary.md
-Read templates/tables/tables_index.json
+Read ${SKILL_DIR}/references/canvas-formats.md
+Read ${SKILL_DIR}/references/image-layout-spec.md
+Read ${SKILL_DIR}/references/image-layout-patterns.md
+Read ${SKILL_DIR}/references/modes/_index.md
+Read ${SKILL_DIR}/references/visual-styles/_index.md
+Read ${SKILL_DIR}/references/image-renderings/_index.md
+Read ${SKILL_DIR}/templates/icons/README.md
+Read ${SKILL_DIR}/templates/charts/chart-vocabulary.md
+Read ${SKILL_DIR}/templates/tables/table-vocabulary.md
 ```
 
 This batch is the complete capability map for planning, not a usage checklist:
@@ -422,7 +426,7 @@ Resolving one visual style, `Illus.` propensity, or generated-image rendering re
 
 **Mandatory — complete Chart/Table capability review**: During that same
 carrier resolution, compare every page's information model against every entry
-in the already-loaded Chart expression vocabulary and Table registry. These
+in the already-loaded Chart and Table expression vocabularies. These
 complete capability maps expose what exists; their descriptions do not rank
 candidates or replace judgment from the actual information, and they are
 neither usage quotas nor whitelists. Do not select a catalog reference for
@@ -451,7 +455,7 @@ Prepare only the resource paths needed by the decided pages:
 | Web image | Follow `image-base.md` + `image-searcher.md`; keep query/status data and `image_sources.json`, including any required on-slide attribution |
 | Composable illustration / illustrated-icon / lettering slice | Generate or obtain the parent sheet, run `slice_images.py --trim --alpha --bg KEY_HEX_FROM_PROMPT --strict-alpha`, and place only outputs from a successful strict cut. Slices remain under `images/` and may serve several pages; each lettering sheet still names every exact stable string assigned to it |
 | Registered reconstruction group | Follow `image-generator.md` §4.4; keep full-canvas members registered with `crop=no-crop`, and materialize every required shared-plate member as an independent picture object |
-| Visualization | Keep Chart values, Table cell topology, and chosen treatment in active context; load the applicable Chart/Table authority in §3 and write native replacement metadata only for an independently selected native-ready object |
+| Visualization | Keep Chart values, Table cell topology, and chosen treatment in active context; load the applicable Chart/Table authority in §3 and write native replacement metadata for every supported chart and pure text grid, which are native-ready by default |
 
 **Hard rule — planned slice closure**: Every placeable-element sheet carries `slice_grid` plus comma-separated `slice_names` in `image_prompts.json`. Deterministically enumerate those basenames and require every `images/<name>.png` after an exit-0 `slice_images.py --strict-alpha` run before SVG authoring; a `Generated` parent sheet never satisfies its named outputs. A nonzero slice run returns the parent to image preparation: correct only an evidenced key/tolerance mismatch, then enlarge cells or split incompatible shape families and regenerate when content reaches a cell edge. Repeating the same failing grid is not recovery. An explicitly selected manual path retains the marker, sets the affected item to `Needs-Manual` with `last_error`, and blocks Quick SVG/export until every named output is supplied and validated. Exhausted automated AI generation or dependent slicing instead follows the no-AI replan below; never retain an unresolved AI/slice row merely to continue.
 
@@ -586,7 +590,7 @@ context and never change the Structure result.
 | Any actual row × column fact grid | [`executor-table.md`](../../references/executor-table.md) |
 | Any mathematical notation that may require native math | [`native-formula.md`](../../references/native-formula.md) before choosing ordinary text, inline native math, or block native math |
 | Any external or same-deck click hyperlink | [`native-hyperlinks.md`](../../references/native-hyperlinks.md) before authoring its inline or whole-object SVG anchor |
-| A used preset pattern fill, or one independent Chart/Table object selected as native-ready in active context | [`native-data-interface.md`](../../references/native-data-interface.md) before drawing that object |
+| A used preset pattern fill, or one independent Chart/Table object resolved as `<object-key>=yes` in active context | [`native-data-interface.md`](../../references/native-data-interface.md) before drawing that object |
 | Any data-driven chart geometry | [`verify-charts.md`](../stages/verify-charts.md) after the complete roster and before the one final checker |
 
 Chart/Table reference and final information model are independent loading
