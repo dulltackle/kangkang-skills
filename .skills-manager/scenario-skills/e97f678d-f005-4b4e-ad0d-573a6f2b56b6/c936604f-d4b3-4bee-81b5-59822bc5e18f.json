@@ -8,6 +8,7 @@
     "claude_code": false,
     "codex": false,
     "github_copilot": false,
-    "opencode": false
+    "opencode": false,
+    "zcode": true
   }
 }
