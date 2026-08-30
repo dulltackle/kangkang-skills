@@ -137,8 +137,9 @@ Any font-family that may render Chinese or Japanese must include a CJK fallback,
 
 ## Radius scale
 
-Print: `2pt` for chips, `4pt` for blocks. Screen: `8px` for blocks and
-`999px` only for pill actions. Do not invent intermediate steps for emphasis.
+Print radii stay within `2-6pt` and follow physical scale, from compact chips to
+large media frames. Screen: `8px` for blocks and `999px` only for pill actions.
+Do not use radius alone to create emphasis.
 
 ## Common CSS snippets
 
@@ -291,6 +292,8 @@ Alternate light/dark rhythm: add `.sd-alt` to any section container.
 Source templates intentionally keep `{{...}}` fields. Run `python3 scripts/build.py --check-placeholders path/to/filled.html` on completed documents. Run `python3 scripts/build.py --check-density` to warn on pages with >25% trailing whitespace (skips cover).
 
 For new documents built from raw material, validate the content IR before layout and re-check coverage after filling: `python3 scripts/build.py --check-content content.json [filled.html]` (schemas in `references/schemas/`). Before shipping a filled PDF, run `python3 scripts/build.py --check-visual path/to/filled.pdf` and view every exported page image against the printed checklist.
+
+**Strict mathematics**: author formulas only as standard LaTeX `\( inline \)` or `\[ display \]`. Before delivery run `bash scripts/ensure_mathjax.sh`, `python3 scripts/math_render.py --in-place filled.html`, then `python3 scripts/math_render.py --check filled.html`. The accepted HTML/PDF result is MathJax SVG, never Unicode pseudo-formulas, raw TeX, or formula screenshots.
 
 Marp variant deck (opt-in): `assets/templates/marp/`. Render with local `marp-cli`. See design.md §8 + production.md Part 2.5.
 
