@@ -856,7 +856,7 @@ col 3': 66 chars (2 lines)   <- fixed by trimming "general intelligence" -> "AGI
 
 **Root cause**: An `<img src="../../../sibling-project/asset.jpg">` reaches outside the kami repo. The path resolves on the maintainer's laptop where the sibling project happens to be checked out, but breaks for every other user, breaks the packaged skill ZIP, and breaks any CI that doesn't recreate the maintainer's working tree.
 
-**Fix**: Every image referenced by a demo or template must live under `assets/demos/images/` or `assets/illustrations/`. Copy the source into the kami repo, then reference it with a relative path inside the repo.
+**Fix**: Every image referenced by a demo or template must live under the demo's `images/` folder (`site/assets/demos/images/` in this repository) or `site/assets/illustrations/`. Copy the source into the kami repo, then reference it with a relative path inside the repo.
 
 ```html
 <!-- avoid -->
@@ -866,7 +866,7 @@ col 3': 66 chars (2 lines)   <- fixed by trimming "general intelligence" -> "AGI
 <img src="images/kaku-hero.jpg" alt="...">
 ```
 
-Quick check before building any demo: `rg 'src="(\.\./|/Users/|file://)' assets/demos/` should return zero matches.
+Quick check before building any demo: `rg 'src="(\.\./|/Users/|file://)' site/assets/demos/` should return zero matches.
 
 ### 20. (P1) Metric row baseline-align breaks when labels wrap
 

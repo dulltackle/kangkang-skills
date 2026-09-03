@@ -61,7 +61,7 @@ Before creating or modifying an output, lock the contract: language, template, o
 
 Use the nearest existing template and verification path. Do not add a new template, shared CSS layer, dependency, script flag, or optional mode unless the current request cannot be satisfied without it.
 
-If a change touches `SKILL.md`, templates, scripts, references, or package inputs, decide whether `dist/kami.zip` must be refreshed before handoff. Shipped behavior is not ready until the package contains the changed files.
+A change to `SKILL.md`, templates, scripts, or references reaches `npx skills add` and plugin installs on the next push to `main`; Claude Desktop users get it only when the next release rebuilds `kami.zip`. Name the channel that carries the change before calling it shipped.
 
 ### Work mode
 
@@ -429,7 +429,6 @@ python3 scripts/build.py --check-density              # repo sweep (skips cover 
 python3 scripts/build.py --check-rhythm slides slides-en   # warn on monotonous slide sequences
 python3 scripts/build.py --doctor         # installed render/check/font capability report
 python3 scripts/build.py --check            # lint + token/theme + public-site fact checks
-python3 scripts/build_metadata.py --check   # Claude/Codex plugin mirror + marketplace drift check
 ```
 
 > **Strict LaTeX mathematics**: Use only `\( inline \)` / `\[ display \]` as formula source. The delivered HTML/PDF must contain MathJax SVG, not Unicode pseudo-formulas, raw TeX, or formula screenshots. Run `ensure_mathjax.sh`, `math_render.py --in-place`, and `math_render.py --check` before render/hand-off.

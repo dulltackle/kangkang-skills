@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "skill_id": "c936604f-d4b3-4bee-81b5-59822bc5e18f",
+  "skill_id": "2770570e-a6d0-406b-8e31-c89e0ede3b2b",
   "path": "kami",
   "path_key": "kami",
   "enabled": true,
@@ -8,7 +8,7 @@
   "source": {
     "type": "skillssh",
     "ref": "tw93/kami/kami",
-    "subpath": "plugins/kami/skills/kami",
+    "subpath": "skills/kami",
     "branch": null
   }
 }

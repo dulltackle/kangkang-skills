@@ -5,7 +5,22 @@ set -euo pipefail
 # Avoids `declare -A` so the script runs on a fresh macOS without `brew install bash`.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_FONT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/assets/fonts"
+SKILL_FONT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/assets/fonts"
+REPO_FONT_DIR="$SKILL_FONT_DIR"
+# In a repository checkout the commercial fonts are tracked two levels up,
+# outside the skill directory, so installs stay light. Templates resolve
+# ../fonts/ against the skill directory, so copy them in (gitignored there).
+if [ -d "$SCRIPT_DIR/../../../assets/fonts" ]; then
+  ROOT_FONT_DIR="$(cd "$SCRIPT_DIR/../../../assets/fonts" && pwd)"
+  mkdir -p "$SKILL_FONT_DIR"
+  for f in "$ROOT_FONT_DIR"/*.ttf "$ROOT_FONT_DIR"/*.otf; do
+    [ -f "$f" ] || continue
+    if [ ! -f "$SKILL_FONT_DIR/$(basename "$f")" ]; then
+      cp "$f" "$SKILL_FONT_DIR/$(basename "$f")"
+      echo "OK: copied $(basename "$f") from the repository root into $SKILL_FONT_DIR"
+    fi
+  done
+fi
 
 # Download target lives OUTSIDE the skill directory on purpose.
 #
