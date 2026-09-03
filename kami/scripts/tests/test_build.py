@@ -579,7 +579,7 @@ def test_site_facts_flags_bad_diagram_count() -> None:
 
 def test_site_facts_cover_developer_install_docs() -> None:
     files = site_fact_file_map()
-    command = "npx skills add tw93/kami/plugins/kami -a universal -g -y"
+    command = "npx skills add tw93/kami/plugins/kami -a claude-code codex cursor -g -y"
     files["developers.md"] = files["developers.md"].replace(command, "npx skills add stale/path")
     issues = site_fact_issues(files)
     check("public site facts flag stale developer install docs",
@@ -1617,7 +1617,7 @@ def test_check_update_script() -> None:
         rc, out = run(str(dp / "c1"), newer.as_uri())
         check("check-update notifies on a newer remote", rc == 0 and "9.9.9" in out, out)
         check("check-update default command uses plugin bundle path",
-              "npx skills add tw93/kami/plugins/kami -a universal -g -y" in out and "skills update" not in out,
+              "npx skills add tw93/kami/plugins/kami -a claude-code codex cursor -g -y" in out and "skills update" not in out,
               out)
 
         rc, out = run(str(dp / "c2"), same.as_uri())

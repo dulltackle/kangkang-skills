@@ -35,7 +35,7 @@ CODEX_PLUGIN_INSTALL_COMMANDS = (
     f"codex plugin marketplace add {PUBLIC_REPO}",
     "codex plugin add kami@kami",
 )
-GENERIC_AGENT_INSTALL_COMMAND = f"npx skills add {PUBLIC_REPO}/plugins/kami -a universal -g -y"
+GENERIC_AGENT_INSTALL_COMMAND = f"npx skills add {PUBLIC_REPO}/plugins/kami -a claude-code codex cursor -g -y"
 CLAUDE_DESKTOP_PACKAGE_URL = "https://github.com/tw93/kami/releases/latest/download/kami.zip"
 
 # Canonical parchment background color, kept here so build/density
