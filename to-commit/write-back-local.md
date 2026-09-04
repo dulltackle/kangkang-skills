@@ -35,12 +35,32 @@ Append it under a `## Comments` heading at the bottom of the file, per the local
 `docs/agents/issue-tracker.md`. **The template does not create that heading** — on a ticket's
 first write-back it will not be there, so add it at the end of the file, then append under it.
 
-The `**Status:**` line stays as it is. Ticket status is the user's to change.
+The `**Status:**` line stays as it is on any run that leaves a criterion unticked. An all-green
+ticket sets it, below.
+
+## Closing an all-green ticket
+
+A local ticket has no close command: the `**Status:**` line **is** the close. Set it to `done`.
+
+`done` is this skill's own word. `docs/agents/issue-tracker.md` describes the `Status:` line
+without listing it, so a reader of that file meets `done` here first.
+
+**Which commit carries it depends on the path.** Step 4's write-back runs before the commit, so
+on the all-`ran` path `Status: done` rides in the same commit as the work — the ticket file is in
+the repo and belongs with it. On the step-6 path the commit has already landed, so the second
+pass's `chore:` commit carries it instead. That extra commit is what the no-amend rule costs, not
+a shape to copy back onto the first path.
+
+Step 7 pushes afterwards either way, and a repo with no remote skips the push and stays closed —
+no remote is the shape a local-markdown tracker usually comes in.
+
+**Reopening.** When a re-run unticks a criterion, `**Status:**` goes back to `ready-for-agent`
+beside the untick.
 
 ## Rolling back
 
 Whenever a local run stops before its commit lands — a hook refusing, a mismatch, a write failure
-— the ticks already written come back off.
+— the ticks already written come back off, and any `done` with them.
 
 ```bash
 git checkout -- .scratch/<feature-slug>/issues/<NN>-<slug>.md
@@ -72,7 +92,9 @@ the edits in place and say plainly what was written, so the user can undo it by 
 
 - **Commit message** — no issue ids. Use `Refs: .scratch/<feature-slug>/issues/<NN>-<slug>.md`.
 - **Comment** — drop the sha from the first line, keep the branch. The file is *in* that commit,
-  so `git log --follow` recovers it.
+  so `git log --follow` recovers it. On an all-green run add a `已关闭：验收标准全部通过` line.
+  The push itself is reported in the session output, since the comment is written before it
+  happens.
 
 ## The second pass
 

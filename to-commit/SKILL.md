@@ -1,6 +1,6 @@
 ---
 name: to-commit
-description: Commit a completed ticket as one Conventional-Commit, verifying each acceptance criterion, then ticking it off on the ticket itself. Never closes the ticket and never pushes. Invoked by /implement at the end of a ticket session.
+description: Commit a completed ticket as one Conventional-Commit, verifying each acceptance criterion, then ticking it off on the ticket itself. Pushes the branch and closes the ticket only once every criterion is earned. Invoked by /implement at the end of a ticket session.
 disable-model-invocation: true
 ---
 
@@ -14,8 +14,10 @@ An `[x]` is a claim that somebody checked, and a wrong one is a lie that sits on
 forever. So every tick this skill writes is **earned**: you ran something and watched it pass.
 Unearned criteria stay `[ ]` and get reported. **When in doubt, don't tick — and say why.**
 
-**The user decides; this skill executes.** Closing the ticket is the user's own act, and pushing
-is never this skill's. Once the user answers the one question in step 5, carry out every
+**Closing is earned too.** A ticket closes when every one of its criteria is earned and not
+before — arithmetic on the ticks, never a judgement call — so the same evidence that fills the
+last `[ ]` is what pushes the branch and closes the ticket in step 7. The user's own decision
+survives where it belongs: the one question in step 5. Once they answer it, carry out every
 remaining step without further prompting.
 
 ## Which tracker
@@ -54,8 +56,9 @@ Every tick carries a one-line piece of evidence: which test, what you did. Evide
 **Re-runs.** You will meet criteria already marked `[x]`. Re-run **all** of the `ran`
 verification, those included. One that now fails loses its tick, loudly:
 `⚠ #42 的「POST /items 返回 201」上一轮已通过，本轮 items.test.ts 失败，已取消勾选`. Moving the
-ticket backwards is right; leaving a tick that stopped being true is not. Criteria the user
-already confirmed keep theirs — those are asked once, not every run.
+ticket backwards is right; leaving a tick that stopped being true is not. A ticket an earlier
+run closed comes back open with the tick it lost — your tracker's file says how. Criteria the
+user already confirmed keep theirs — those are asked once, not every run.
 
 **A ticket with no acceptance criteria at all** (hand-filed issues often have none): tick
 nothing, commit as normal, and state it plainly — `#42 没有验收标准区块，未做勾选写回`. The
@@ -81,8 +84,8 @@ If the staging area is **not** empty when you arrive, that contradicts the clean
 assumption: show the user what is already staged and let them decide. Otherwise stage everything
 and make one commit on the current branch from the template below.
 
-Leave `Closes`/`Fixes` out: they only fire when the commit reaches the default branch, and this
-skill does not push.
+Leave `Closes`/`Fixes` out: step 7 closes the ticket itself, and only once every criterion is
+earned. A trailer would hand that off to whoever merges the branch, on evidence nobody checked.
 
 **When the commit itself fails**, it is almost always a pre-commit hook, in one of two kinds:
 
@@ -127,7 +130,7 @@ commented but not updated contradicts itself. Your tracker's file gives the word
 
 ### 5. Ask the user
 
-**Only when `read` criteria exist.** All-green means there is nothing to ask: report and stop.
+**Only when `read` criteria exist.** All green means there is nothing to ask: report, then step 7.
 
 ```
 #42 已提交 abc1234（分支 feat/items，未推送）
@@ -140,7 +143,7 @@ issue 已勾选 2 条并追加评论。
 这两条你认可吗？
 ```
 
-Ask about the criteria and nothing else. Whether the ticket closes is the user's own business.
+Ask about the criteria and nothing else — they are what the rest of the run turns on.
 
 ### 6. Write back — second pass
 
@@ -149,6 +152,34 @@ earns those. Same four rules, plus a second comment for the confirmation.
 
 A commit has landed on every tracker by now, carrying the first-pass ticks. So a second-pass
 failure is always a split state, never a rollback: report which criteria the ticket is behind by.
+
+### 7. Push and close
+
+**Only when the ticket is all green**: its acceptance-criteria region is non-empty and every box
+inside it is `[x]`. Boxes outside the region never counted and still don't. An empty region — the
+hand-filed ticket with no criteria — never goes green, so it is never pushed and never closed.
+
+Both paths arrive here: step 4 when every criterion was `ran`, step 6 when the user's word earned
+the rest. One criterion they declined leaves the ticket short of green; the commit and the
+write-back stand, and nothing is pushed or closed.
+
+**Push, then close, in that order.** The two cannot be atomic, so the order decides which half a
+failure leaves standing. Code pushed with the ticket still open is a todo somebody can act on; a
+closed ticket whose code never left the machine is a lie.
+
+`git push -u origin <current branch>` the first time, `git push` after. Any branch — the closing
+comment records which one, so a ticket closed from an unmerged branch says so on its face.
+
+**No remote, or no upstream** — a shape, not a failure, and the shape a local-markdown repo
+usually has. Skip the push, close as normal, and say so: `本仓库无远端，未推送`.
+
+**A push that is refused** — a non-fast-forward, a protected branch, a pre-push hook — stops the
+run with the ticket left open. The commit has landed and stays landed. `pull --rebase` rewrites
+the commit this session just made and `--force` is off the table, so report the refusal, hand
+back the command to retry by hand, and leave the remote alone: it is the user's gate, exactly as
+a pre-commit hook is.
+
+Your tracker's file carries the closing half.
 
 ## Templates
 
