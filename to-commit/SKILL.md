@@ -20,9 +20,9 @@ remaining step without further prompting.
 
 ## Which tracker
 
-Read `docs/agents/issue-tracker.md` first — it decides which write-back file applies, and **that
-choice flips the order of operations in step 4**. Read only the one that applies. If the file is
-missing, run /setup-matt-pocock-skills.
+Read `docs/agents/issue-tracker.md` first, then read only the write-back file it points to —
+**that choice flips the order of operations in step 4**. If the file is missing, run
+/setup-matt-pocock-skills.
 
 - **GitHub or another external tracker** → [write-back-remote.md](write-back-remote.md)
 - **Local markdown** → [write-back-local.md](write-back-local.md)
@@ -123,8 +123,7 @@ Tick the `ran` criteria and append a comment.
 
 **On failure, stop.** These writes fail on permissions, a deleted ticket, or a concurrent edit,
 and a retry produces the same error later. Every step runs or the run stops: a ticket that got
-commented but not updated contradicts itself. Whether "stop" means a split-state report or a
-rollback is what the ordering above decided; your tracker's file gives the wording.
+commented but not updated contradicts itself. Your tracker's file gives the wording.
 
 ### 5. Ask the user
 
@@ -146,12 +145,10 @@ Ask about the criteria and nothing else. Whether the ticket closes is the user's
 ### 6. Write back — second pass
 
 Only after the user has answered, and only for the criteria they confirmed — their word is what
-earns those. Same four rules as the first pass, plus a second comment: the checkboxes really
-changed, so it earns its own entry in the log.
+earns those. Same four rules, plus a second comment for the confirmation.
 
 A commit has landed on every tracker by now, carrying the first-pass ticks. So a second-pass
-failure is always a split state, never a rollback: report which criteria the ticket is now behind
-the code by.
+failure is always a split state, never a rollback: report which criteria the ticket is behind by.
 
 ## Templates
 
@@ -177,8 +174,8 @@ Refs: #<ticket id>
 - Drop "本次未执行验证" entirely when every criterion was `ran`. Where it appears it states a fact
   about this commit — these criteria were not exercised — and claims no sign-off from anyone.
 - The message states what **this commit** delivered, in plain facts with no `- [ ]` / `- [x]`
-  marks: checkboxes belong to the ticket. A snapshot of the whole ticket rots instead, since a
-  reworked ticket spans several commits and leaves you three conflicting half-lists.
+  marks: checkboxes belong to the ticket. A reworked ticket spans several commits, so a snapshot
+  of the whole ticket would leave you three conflicting half-lists.
 
 First-pass comment. Omit any line that does not apply:
 
