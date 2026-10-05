@@ -1,5 +1,5 @@
 interface:
   display_name: "Implement Spec"
-  short_description: "并行实现整份规格，经过逐票与整体 OCR 审查及最终验收后交付"
+  short_description: "Implement specs with parallel work, OCR, and verified acceptance"
 policy:
   allow_implicit_invocation: false

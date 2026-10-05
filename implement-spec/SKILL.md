@@ -1,75 +1,93 @@
 ---
 name: implement-spec
-description: "并行实现整份规格及其 tickets，经逐票与整体 OCR 审查、逐项验收后交付集成分支。"
+description: "Implement a spec and its tickets in parallel, with OCR review and verified acceptance criteria."
 disable-model-invocation: true
 ---
 
 # Implement Spec
 
-将整份 spec 的 tickets 实现到一个集成分支，按 issue tracker 的规则完成交付。由用户显式调用。
+Implement the entire spec on one **integration branch**, with every ticket resolved the way the issue tracker closes work.
 
-基于 [上游 v1.3.1](https://github.com/mattpocock/skills/blob/v1.3.1/skills/engineering/implement-spec/SKILL.md)：保留依赖图调度、独立 worktree、合并子代理、条件式 PR 和最终清理；定制点为两轮 OCR、一票一个首次集成提交，以及最终逐项验收。复用 `to-commit` 的验收语义，本流程自行收尾，不调用该用户触发技能。
+The tickets are a **task graph**, not a list of steps. The **frontier** is the set of tickets whose dependencies have landed and whose requirements are settled. Run implementer subagents in the background across that frontier.
 
-## 1. 准备任务图
+Communicate through **context pointers** to the spec, tickets, research notes, and commits. Keep shared exploration notes outside the repo, accessible to every subagent.
 
-读取 spec、关联 tickets 和 `docs/agents/issue-tracker.md` 指定的 tracker 配置。缺少 tracker 配置时，请用户运行 `/setup-matt-pocock-skills`，配置完成后继续。
+## Which tracker
 
-将 tickets 组织为依赖图。就绪票须有验收标准、依赖已集成且无未解决的需求问题。缺少标准的票，先提出候选标准供用户确认；确认前暂停该票及其依赖票，继续其他就绪票。循环依赖或缺失依赖同样作为阻塞报告。
+Read `docs/agents/issue-tracker.md` and the configuration it points to. If none has been provided, tell the user to run `/setup-matt-pocock-skills` before continuing.
 
-记录 spec、票号、依赖、验收标准和相关上下文的指针。子代理通过这些指针读取信息，避免重复传递长文。需要共享探索时，可启动探索子代理，将笔记保存在仓库外、其他子代理可访问的位置。
+## Steps
 
-开始调度前，在仓库外的持久目录建立本次 spec 的恢复记录，向用户报告路径，并在每次集成、审查、确认及写回后更新。记录基线与集成提交、每票分支/worktree、状态与阻塞、OCR 覆盖和处理结果、逐项证据及其对应提交、人工确认的准确标准与相关内容、tracker 已完成与待完成动作。恢复时将记录与实际 Git/tracker 状态核对；未经核实的历史结果重新验证。
+### 1. Read the task graph
 
-完成条件：每票均已确定为就绪、等待依赖或明确阻塞。
+Read the spec and its tickets. Classify every ticket as ready, waiting on dependencies, or blocked. Missing dependencies, cycles, and unresolved requirements block the affected path.
 
-## 2. 创建集成分支
+Every ticket needs acceptance criteria before implementation. Propose missing criteria for the user's confirmation; only confirmed criteria become the ticket's requirements. Continue independent tickets while that decision is pending.
 
-确认基线并创建本次 spec 的集成分支，记录基线提交。保留用户已有暂存集合及其他工作；当前工作区有无关修改时使用隔离 worktree。恢复已有运行时先核实分支、提交与任务状态，复用匹配的工作。
+Optionally use an exploration subagent to investigate code or external documentation and save shared notes. Implementers should be able to follow those pointers straight into implementation.
 
-若 tracker 通过 PR 关闭工作，或用户要求 PR，在第一次合并产生相对基线的新提交后创建草稿 PR，按 tracker 语法关联并关闭 spec 和 tickets。其余情况交付集成分支即可。
+### 2. Prepare the integration branch
 
-## 3. 并行实现与逐票审查
+Confirm and record the baseline, then create the integration branch. Preserve existing staged and unrelated work; use an isolated worktree when needed. On resume, reconcile the recorded state with the actual branches and tracker before reusing work.
 
-按可用并发容量在后台调度就绪票。每票一个实现子代理、独立分支和 worktree：
+Create a durable **run record** outside the repo and report its path. Update it after reviews, merges, user confirmations, and tracker writes. Keep:
 
-1. 确认分支基于集成分支。基线错误且尚无工作时重建正确分支；已有工作时先保留再修正基线，禁止硬重置丢弃修改。
-2. 调用 `tdd` 技能实现该票；经常运行类型检查和相关单文件测试，完成时运行项目全量测试。汇报实际执行结果与未执行项。
-3. 主代理为该票启动只读审查子代理，调用 `open-code-review-delegate`，传入 ticket 上下文指针和明确的差异基线。OCR CLI 负责选文件与解析规则，审查判断由代理完成。
-4. 实现子代理核实并修复所有有效发现，重跑受影响验证。误报记录排除理由；需要用户决定的取舍交主代理汇总询问。审查工具缺失或失败属于阻塞，不能当作审查通过。
-5. 合入最新集成分支，再验证受影响行为。同步或冲突解决改变该票代码时，补审改变的部分。
-6. 返回提交、审查覆盖与处理结果、每项验收证据、待人工确认项和阻塞情况。该阶段只收集证据，票的正式勾选与关闭留到最终阶段。
+- Baseline and integration commits; each ticket's branch, worktree, status, and blockers.
+- Review coverage and finding dispositions; acceptance evidence and the commits it verifies.
+- The exact criteria and relevant content the user confirmed.
+- Completed and pending tracker operations.
 
-完成条件：票的实现、只读 OCR 和有效发现修复均完成，相关验证通过，分支已同步集成状态。
+If the tracker closes work through PRs, or the user asks for one, open a draft PR **after the first merge**, with the appropriate closing references for the spec and tickets. Otherwise the integration branch is the deliverable.
 
-## 4. 串行集成并推进任务图
+### 3. Implement and review each ready ticket
 
-由合并子代理逐票串行集成，避免并发移动集成分支：
+Dispatch one implementer per ticket, each in its own branch and worktree. Each implementer:
 
-- 合并前再次检查集成分支是否前进。已过时的实现分支先同步、验证，必要时补审，再集成。
-- 每票首次集成形成一个 Conventional Commit，中文消息说明交付行为、已执行及未执行验证，使用 `Refs:` 关联票。可在集成分支 squash merge 该票；保留实现分支作为恢复依据，不重写已有集成历史。这是相对上游合并方式的有意调整。
-- 完整遵守仓库提交钩子与暂存规则。钩子仅自动格式化本次文件时，可重新暂存这些文件并重试一次；钩子拒绝或再次失败时报告阻塞，不绕过钩子。
-- 集成成功后解锁依赖票，继续调度。首次集成成功后按第 2 步决定是否创建草稿 PR。
+1. Confirms its branch is based on the integration branch. Recreate an unused branch from the correct base; preserve existing work before correcting a mistaken base. Never discard work with a hard reset.
+2. Calls the Skill tool with `tdd` to build the ticket. Run typechecking and individual test files regularly, and the full suite at the end. Report what ran and what did not.
+3. Hands the ticket to the coordinator for a **read-only review subagent**. That reviewer calls the Skill tool with `open-code-review-delegate`, using the ticket context and an explicit diff baseline.
+4. Validates the findings, fixes every valid issue, and reruns affected checks. Record reasons for dismissing false positives. Route decisions requiring the user through the coordinator; a missing or failed review tool is a blocker.
+5. Merges the integration tip into its branch and verifies affected behavior. Changes introduced by synchronization or conflict resolution receive a follow-up review.
+6. Reports commits, review coverage and dispositions, per-criterion evidence, pending human checks, and blockers. Collect evidence here; formal acceptance ticks and closure belong to final acceptance.
 
-票发生阻塞时暂停其依赖路径，继续独立路径。保留已完成提交及恢复所需的 worktree，汇总原因；整份 spec 保持未交付，PR 保持草稿，tickets 保持未关闭。
+A ticket is ready to merge when implementation and review are complete, every valid finding is resolved, affected checks pass, and its branch is synchronized.
 
-完成条件：全部 tickets 已集成；仍有阻塞时保留状态，等待必要输入后恢复。
+### 4. Merge and advance the frontier
 
-## 5. 最终整体审查
+Use a **merger subagent** to land tickets one at a time. Recheck the integration tip before each merge; if it advanced, synchronize the ticket again, verify, and review any resulting changes before landing it.
 
-启动只读子代理，对基线至集成分支的整体变化调用 `open-code-review-delegate`，以 spec 和全部 tickets 为上下文。此步骤替代上游 `code-review`。
+Land each ticket initially as **one Conventional Commit**, using a squash merge when needed. Describe delivered behavior, verification performed and omitted, and reference the ticket with `Refs:`. Preserve implementer branches for recovery and leave existing integration history intact.
 
-由一个实现子代理统一核实并修复所有有效发现，重跑受影响验证；修复使用独立提交并关联受影响 tickets，不改写首次集成提交。对修复涉及的差异补审。需要用户决定的事项由主代理集中提出。
+Follow the repo's staging and hook rules. If a hook only reformats this run's files, restage those files and retry once. A refusal or second failure blocks the merge; report it without bypassing the hook.
 
-完成条件：整体差异已按 OCR 覆盖规则审查，所有有效发现已解决，相关验证通过。
+Each successful merge may unlock more tickets: dispatch them immediately. Create the conditional draft PR after the first merge, as described in step 2.
 
-## 6. 最终验收与写回
+A blocked ticket pauses its dependents, not independent paths. Preserve commits and worktrees needed for recovery; report blockers. Keep the spec incomplete, the PR in draft, and tickets open until the overall handoff is earned.
 
-此时读取 [最终验收与 tracker 收尾](references/acceptance.md)，在集成分支复验全部 tickets，集中处理人工确认，写回正式验收状态。该引用是本技能验收与写回规则的唯一来源。
+Proceed when every ticket has landed.
 
-完成条件：每票验收区非空，所有标准均由执行证据或用户明确确认支持，正式写回成功；否则保持未交付并报告未完成项。
+### 5. Review the integration branch
 
-## 7. 交付与清理
+Spawn a read-only subagent to call the Skill tool with `open-code-review-delegate` on the full baseline-to-integration diff, with the spec and all tickets as context.
 
-按引用中的交付规则推送并收尾：有草稿 PR 时转为待审查，等待 PR 流程关闭 tickets；无 PR 时按 tracker 规则解决每票及 spec。
+Use one implementer subagent to validate and fix every valid finding. Record false-positive dispositions and bring user decisions to the coordinator. Rerun affected checks and review the changed portions again.
 
-仅在整体交付成功后清理本次实现子代理 worktree。先确认工作已进入集成分支、没有未保存成果；保留集成分支。清理失败如实列出残留路径。最终汇报集成分支、PR（如有）、验收结果和实际关闭状态。
+Land final fixes as separate commits referencing affected tickets. Keep the initial ticket commits intact.
+
+Proceed when the full diff is accounted for under OCR's coverage rules, every valid finding is resolved, and affected checks pass.
+
+### 6. Verify acceptance and write back
+
+Read [acceptance.md](acceptance.md) now. Reverify tickets on the integration branch, collect human confirmation in one batch, and write earned ticks back to the tracker.
+
+Proceed to handoff only when every ticket has a nonempty acceptance region, every criterion is earned, and write-back has succeeded. Report anything still pending.
+
+### 7. Hand off and clean up
+
+Follow the handoff rules in [acceptance.md](acceptance.md): push before making a draft PR ready or closing tickets directly. Report the branch, PR if present, acceptance results, and actual closure state.
+
+After successful handoff, remove this run's implementer worktrees only after confirming all work is preserved in the integration branch and no unsaved results remain. Keep the integration branch. Report any cleanup failures and remaining paths.
+
+## Upstream and customization
+
+Based on [upstream v1.3.1](https://github.com/mattpocock/skills/blob/v1.3.1/skills/engineering/implement-spec/SKILL.md). Preserve its task-graph scheduling, worktree isolation, merger subagents, conditional PR, and cleanup. Customizations are per-ticket and final OCR, one initial commit per ticket, and final evidence-based acceptance. Reuse `to-commit`'s acceptance semantics through this skill's own close-out; do not invoke that user-invoked skill.
