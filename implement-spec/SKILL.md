@@ -87,7 +87,3 @@ Proceed to handoff only when every ticket has a nonempty acceptance region, ever
 Follow the handoff rules in [acceptance.md](acceptance.md): push before making a draft PR ready or closing tickets directly. Report the branch, PR if present, acceptance results, and actual closure state.
 
 After successful handoff, remove this run's implementer worktrees only after confirming all work is preserved in the integration branch and no unsaved results remain. Keep the integration branch. Report any cleanup failures and remaining paths.
-
-## Upstream and customization
-
-Based on [upstream v1.3.1](https://github.com/mattpocock/skills/blob/v1.3.1/skills/engineering/implement-spec/SKILL.md). Preserve its task-graph scheduling, worktree isolation, merger subagents, conditional PR, and cleanup. Customizations are per-ticket and final OCR, one initial commit per ticket, and final evidence-based acceptance. Reuse `to-commit`'s acceptance semantics through this skill's own close-out; do not invoke that user-invoked skill.
