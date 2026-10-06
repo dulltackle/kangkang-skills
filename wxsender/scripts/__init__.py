@@ -1,1 +1,0 @@
-"""Skill script namespace."""
