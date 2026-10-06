@@ -15,3 +15,5 @@ Run typechecking regularly, single test files regularly, and the full test suite
 Once done, spawn one read-only subagent with the ticket context to run /open-code-review-delegate. Validate and fix its findings, rerun affected tests.
 
 Use /to-commit to commit your work to the current branch.
+
+在选择解释器、定位技能、查询 GitHub 或处理长输出前，读取[工具定位与证据留存](../../tool-economy.md)。

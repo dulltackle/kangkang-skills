@@ -89,3 +89,5 @@ Proceed to handoff only when every ticket has a nonempty acceptance region, ever
 Follow the handoff rules in [acceptance.md](acceptance.md): push before making a draft PR ready or closing tickets directly. Report the branch, PR if present, acceptance results, and actual closure state.
 
 After successful handoff, remove this run's implementer worktrees only after confirming all work is preserved in the integration branch and no unsaved results remain. Keep the integration branch. Report any cleanup failures and remaining paths.
+
+在选择解释器、定位技能、查询 GitHub 或处理长输出前，读取[工具定位与证据留存](../../tool-economy.md)。
