@@ -43,15 +43,18 @@ the template below.
 
 ### 3. Sort the acceptance criteria
 
-Walk the ticket's criteria one by one. Each is one of two kinds:
+先读取并执行 [验收前提与授权续接](../acceptance-preflight.md)。续接时先核对记录和实际状态，复用内容及范围未变的有效授权；新增费用或范围单独处理。
+
+Walk the ticket's criteria one by one. Each is one of these kinds:
 
 - **`ran`** — you executed something and watched the outcome: a test, the actual behaviour.
   Earned, so you tick them yourself in step 4.
 - **`read`** — you only read the code and it looks right. Earned by the user's word alone, so
   they go to step 5 and stay `[ ]` until it arrives.
 
-Every tick carries a one-line piece of evidence: which test, what you did. Evidence lives in the
-**session output only** — the ticket and the commit message carry none of it.
+- **未验证或失败** — 可执行但入口缺失、宿主不可达、前提不成立、尚未执行或执行失败。保持 `[ ]`，报告阻塞；用户阅读确认不能替代执行。只对纯阅读判断使用 `read`。
+
+Every tick carries a one-line piece of evidence: which test, what you did. 完整证据和确认保存在会话输出与仓库外续接记录中；工单和提交沿用下方摘要格式。
 
 **Re-runs.** You will meet criteria already marked `[x]`. Re-run **all** of the `ran`
 verification, those included. One that now fails loses its tick, loudly:
@@ -130,7 +133,7 @@ commented but not updated contradicts itself. Your tracker's file gives the word
 
 ### 5. Ask the user
 
-**Only when `read` criteria exist.** All green means there is nothing to ask: report, then step 7.
+**Only when unconfirmed `read` criteria exist.** Apply the preflight reference when requesting cooperation: current situation, executable action, completion signal. Reuse unchanged confirmations. Unverified executable checks remain blocked; all green means there is nothing to ask: report, then step 7.
 
 ```
 #42 已提交 abc1234（分支 feat/items，未推送）

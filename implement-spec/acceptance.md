@@ -4,6 +4,8 @@ Run after integration review and its fixes. The coordinator owns tracker writes 
 
 An `[x]` is a claim backed by execution or explicit user confirmation. Every ticket must have a nonempty acceptance region with every criterion earned before the spec can be handed off.
 
+真实验收前，执行 [验收前提与授权续接](../acceptance-preflight.md) 的逐项预检；先核实入口，再请求用户动作。不可达项保持未验证。
+
 ## 1. Reverify the final state
 
 Re-read each ticket from the tracker. Match evidence to the **exact text** of its current acceptance criteria. Verify added or changed criteria; evidence with no matching criterion pauses that ticket's write-back. Leave unverified criteria unchecked.
@@ -16,7 +18,7 @@ Classify each criterion:
 - **`read`**: assessed only by reading. Earned by the user's explicit confirmation.
 - **Failed or unverified**: remains unchecked. An executable check that cannot run stays unverified; human confirmation is not a substitute for its execution.
 
-Ask about all `read` criteria in one batch, grouped by ticket. Keep declined or unanswered items unchecked. Retain earlier explicit confirmation only when the relevant content is unchanged.
+Ask about all `read` criteria in one batch, grouped by ticket. Keep declined or unanswered items unchecked. Retain earlier explicit confirmation only when the relevant content and scope are unchanged, using the recorded confirmation and evidence.
 
 A failing check loses its existing tick: report the regression and its reason. Reopen a previously closed ticket that has lost acceptance, using the tracker's rules. It can close again only after acceptance is earned again.
 

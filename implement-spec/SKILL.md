@@ -18,6 +18,8 @@ Read `docs/agents/issue-tracker.md` and the configuration it points to. If none 
 
 ## Steps
 
+开始或续接本流程时，读取 [验收前提与授权续接](../acceptance-preflight.md)，将入口探测、授权范围和已有证据纳入下述运行记录；请求用户配合前再次核对。
+
 ### 1. Read the task graph
 
 Read the spec and its tickets. Classify every ticket as ready, waiting on dependencies, or blocked. Missing dependencies, cycles, and unresolved requirements block the affected path.
