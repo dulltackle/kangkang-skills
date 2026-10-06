@@ -4,9 +4,9 @@ Run after integration review and its fixes. The coordinator owns tracker writes 
 
 An `[x]` is a claim backed by execution or explicit user confirmation. Every ticket must have a nonempty acceptance region with every criterion earned before the spec can be handed off.
 
-真实验收前，执行 [验收前提与授权续接](../acceptance-preflight.md) 的逐项预检；先核实入口，再请求用户动作。不可达项保持未验证。
-
 ## 1. Reverify the final state
+
+先按 [task-discovery.md](task-discovery.md) 重新发现完整任务集合，与运行记录对账，而非仅重读原清单。查询不完整时执行全局停止规则；新增、遗漏或关系变化按该文件的恢复流程处理，补齐受影响的实现和审查后重新进入验收。逐票维护当前标准对应的提交、审查、验收证据及写回状态；父 SPEC 的验收、代码覆盖推测或已关闭状态不能替代子票证据。
 
 Re-read each ticket from the tracker. Match evidence to the **exact text** of its current acceptance criteria. Verify added or changed criteria; evidence with no matching criterion pauses that ticket's write-back. Leave unverified criteria unchecked.
 
@@ -18,7 +18,7 @@ Classify each criterion:
 - **`read`**: assessed only by reading. Earned by the user's explicit confirmation.
 - **Failed or unverified**: remains unchecked. An executable check that cannot run stays unverified; human confirmation is not a substitute for its execution.
 
-Ask about all `read` criteria in one batch, grouped by ticket. Keep declined or unanswered items unchecked. Retain earlier explicit confirmation only when the relevant content and scope are unchanged, using the recorded confirmation and evidence.
+Ask about all `read` criteria in one batch, grouped by ticket. Keep declined or unanswered items unchecked. Retain earlier explicit confirmation only when the relevant content is unchanged.
 
 A failing check loses its existing tick: report the regression and its reason. Reopen a previously closed ticket that has lost acceptance, using the tracker's rules. It can close again only after acceptance is earned again.
 
@@ -47,6 +47,8 @@ Preserve the user's staging set. Unrelated staged changes block this close-out c
 ## 3. Push and hand off
 
 Start when every ticket is all green, write-back succeeded, and the final work is committed.
+
+交付操作前，按 task-discovery.md 再次确认任务集合及关系未变化，并读取当前验收标准和写回状态。发现变化时返回对账和受影响的验收步骤；只有最新完整集合中的每张票和父 SPEC 均满足各自验收、审查及写回条件，才可将 PR 转 ready、直接关闭任务或宣称完整交付。记录实际关闭状态；等待 PR 合并关闭的票不视为已关闭。
 
 **With a PR:** push the integration branch, then mark the draft ready for review. Report it as awaiting merge. Let the PR workflow close the spec and tickets. A local tracker with a separate closure field records acceptance now and follows its configured PR workflow for closure.
 
