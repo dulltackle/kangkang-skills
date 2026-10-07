@@ -45,11 +45,11 @@ If the tracker closes work through PRs, or the user asks for one, open a draft P
 对尚需实现的每张票分配一个 implementer，使用独立分支和工作树。续接或补发现的票先按 [task-discovery.md](task-discovery.md) 核对已有成果，仅派发缺项。每个 implementer：
 
 1. Confirms its branch is based on the integration branch. Recreate an unused branch from the correct base; preserve existing work before correcting a mistaken base. Never discard work with a hard reset.
-2. Calls the Skill tool with `tdd` to build the ticket. Run typechecking and individual test files regularly, and the full suite at the end. Report what ran and what did not.
+2. Calls the Skill tool with `tdd` to build the ticket. 开发期间运行类型检查与受影响测试；审查修复和分支同步完成、候选提交稳定后再运行该票的完整测试。完整测试使用固定提交的独立检出，允许实现工作树继续开发；记录实际受验提交，后续修改不能继承不匹配的通过结果。优先使用项目已有正式验收入口，保持项目所需检查与环境要求。Report what ran and what did not.
 3. Hands the ticket to the coordinator for a **read-only review subagent**. That reviewer calls the Skill tool with `open-code-review-delegate`, using the ticket context and an explicit diff baseline.
 4. Validates the findings, fixes every valid issue, and reruns affected checks. Record reasons for dismissing false positives. Route decisions requiring the user through the coordinator; a missing or failed review tool is a blocker.
 5. Merges the integration tip into its branch and verifies affected behavior. Changes introduced by synchronization or conflict resolution receive a follow-up review.
-6. Reports commits, review coverage and dispositions, per-criterion evidence, pending human checks, and blockers. Collect evidence here; formal acceptance ticks and closure belong to final acceptance.
+6. Reports commits, review coverage and dispositions, per-criterion evidence, pending human checks, and blockers. 独立审查者对技术阅读要求逐项记录标准原文、受验提交、文件位置与判断依据；需要用户决定的内容单独列出。Collect evidence here; formal acceptance ticks and closure belong to final acceptance.
 
 A ticket is ready to merge when implementation and review are complete, every valid finding is resolved, affected checks pass, and its branch is synchronized.
 
@@ -79,7 +79,7 @@ Proceed when the full diff is accounted for under OCR's coverage rules, every va
 
 ### 6. Verify acceptance and write back
 
-现在读取 [acceptance.md](acceptance.md)。先重新发现并对账任务集合，补齐变化影响的工作，再在集成分支逐票复验、批量收集人工确认并写回已获得的验收勾选。
+现在读取 [acceptance.md](acceptance.md)。先重新发现并对账任务集合，补齐变化影响的工作，再对固定集成提交逐票复验，核对独立技术审查证据，仅批量询问需要用户决定的项目，写回已获得的验收勾选。
 
 Proceed to handoff only when every ticket has a nonempty acceptance region, every criterion is earned, and write-back has succeeded. Report anything still pending.
 
