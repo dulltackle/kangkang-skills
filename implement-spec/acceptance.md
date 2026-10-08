@@ -58,3 +58,15 @@ Start when every ticket is all green, write-back succeeded, and the final work i
 **Local closure changes files:** after the acceptance commit is landed and pushed where a remote exists, commit the closure edits separately and push them. If that commit or push fails, report the exact local/remote split, keep recovery materials, and leave handoff incomplete.
 
 A partial failure is not a wholesale rollback. Preserve landed commits and successful remote writes; reverse only this run's uncommitted local ticket edits under the concurrency check above. Before retrying, inspect current state to avoid duplicate comments, duplicate closure, or overwritten edits.
+
+## 4. 清理临时工作树
+
+本流程仅适用于 `implement-spec` 的收尾及续接。
+
+成功交付后，默认清理本次运行所属的临时工作树。续接时，也可纳入有可靠运行记录、能够确认归属的历史工作树。逐项记录路径、创建归属和恢复依据；主目录、共享工作树、无关工作树及管理工具标记为不可清理的对象保持原状。
+
+清理前核实成果已集成，或存在已验证可恢复的提交、备份；检查暂存、未暂存、未跟踪和被忽略文件。存在具体未保存内容迹象时先保存并验证恢复性；需要丢弃内容或归属不明时，暂停该对象并请求用户决定。仅缺少编辑器缓冲区读取接口不构成阻塞。
+
+满足上述条件后，无需重复询问清理授权。使用创建工作树的管理入口；普通 Git 工作树使用正常移除流程。保留集成分支和恢复所需的实现分支或备份。
+
+某个对象因权限、占用或宿主审批失败无法清理时，保留该对象及恢复依据，记录原因和剩余路径，继续处理其他符合条件的对象。已完成的交付保持有效，清理状态单独报告；不强删、硬重置或绕过审批。

@@ -40,6 +40,14 @@ Create a durable **run record** outside the repo and report its path. Update it 
 
 If the tracker closes work through PRs, or the user asks for one, open a draft PR **after the first merge**, with the appropriate closing references for the spec and tickets. Otherwise the integration branch is the deliverable.
 
+#### 配置修改与授权续接
+
+本规则仅适用于 `implement-spec` 的实施、续接和收尾。规格或工单所必需、属于已确认范围的配置修改可直接执行；修改前保存可恢复的原文或精确差异，并记录目标、影响范围和完成证据。
+
+续接时核对已有授权、适用范围和当前状态，目标与影响范围未实质变化时继续执行。新增费用、扩大权限、修改无关配置或需要丢弃用户内容时，先完成独立准备，再请求用户决定；无法核实既有授权时，说明具体缺失。
+
+宿主审批仍按实际权限执行。审批拒绝时保留成果并报告被拒绝的操作和原因，不通过更换路径或工具规避。
+
 ### 3. Implement and review each ready ticket
 
 对尚需实现的每张票分配一个 implementer，使用独立分支和工作树。续接或补发现的票先按 [task-discovery.md](task-discovery.md) 核对已有成果，仅派发缺项。每个 implementer：
@@ -87,4 +95,4 @@ Proceed to handoff only when every ticket has a nonempty acceptance region, ever
 
 Follow the handoff rules in [acceptance.md](acceptance.md): push before making a draft PR ready or closing tickets directly. Report the branch, PR if present, acceptance results, and actual closure state.
 
-After successful handoff, remove this run's implementer worktrees only after confirming all work is preserved in the integration branch and no unsaved results remain. Keep the integration branch. Report any cleanup failures and remaining paths.
+成功交付后，执行 [acceptance.md 的临时工作树清理流程](acceptance.md#4-清理临时工作树)。续接时按该流程核实历史工作树归属、默认清理授权和恢复依据，报告实际清理结果与剩余对象。
