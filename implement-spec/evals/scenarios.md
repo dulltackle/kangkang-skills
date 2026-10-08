@@ -1,51 +1,67 @@
-# 隔离调度演练
+# Isolated scheduling scenarios
 
-以下是模拟 tracker 的原始响应，彼此独立。所有任务仅演练，不访问网络、不修改真实仓库或 tracker、不运行真实实现子代理。逐场景给出：任务集合、依赖／可执行票、下一步具体动作、是否继续实现／合并／写回／交付，以及依据。信息不足时明确需要查询什么。将结果写入指定输出文件。
+The following mock tracker responses are independent scenarios. Simulate decisions only: use no network, real repository or tracker mutations, or real implementation subagents. For each scenario, report the ticket set, dependencies and ready tickets, concrete next actions, whether implementation, merging, write-back, and handoff may continue, and why. Identify required queries when information is missing. Write results to the designated output file.
 
-## A：开始实现 SPEC 42
-tracker 约定：父子关系支持原生接口，也使用正文“父任务：”链接；范围为模拟仓库 demo，全状态列表完整分页结束。
-SPEC 42：验收为构建通过。正文未列子票。
-原生 sub_issues：[]。
-完整任务正文列表：
-43：父任务：demo#42；验收：类型检查通过。
-44：父任务：demo#42；依赖：demo#43；验收：回归 A 通过。
-45：父任务：demo#42；依赖：demo#43；验收：回归 B 通过。
-46：父任务：demo#42；验收：说明文档经用户阅读确认。
-70：背景：曾在 demo#42 讨论同类问题。父任务：demo#60。
-全部 OPEN，无实现记录。
+## A: Begin implementing spec 42
 
-## B：继续 SPEC 42，三个相互独立的快照
-运行记录已有 43，implementer 正在运行，43 的依赖已满足。
-B1：原生接口 HTTP 503；正文列表可读，显示 43。
-B2：原生接口含 43；正文列表第 1 页含 43，has_next=true，第 2 页尚未取得。
-B3：原生接口含 43；正文反向查询 HTTP 403。
+Tracker conventions: native parent-child relationships and explicit `Parent:` links in ticket bodies are supported. Scope is the mock repository `demo`; the fully paginated all-status listing is complete.
 
-## C：最终验收
-旧运行记录仅有 SPEC 42，无子任务；集成提交 abc 已通过父级构建，OCR 仅按父级上下文审过；父级勾选已写回，draft PR 等待交付。
-当前完整查询返回与 A 相同的任务、关系和标准。代码看似覆盖 43—46，但尚无这些票的逐项证据、审查记录及写回。用户要求完成规格。
+Spec 42 requires a passing build. Its body lists no children. Native `sub_issues` returns `[]`.
 
-## D：交付
-入口与最终验收快照为 43、44、45，均已落地，逐项验收通过、审查完成、写回成功；父 SPEC 同样完成。交付前新鲜完整查询多出 46（父任务 demo#42，无依赖，验收为真实回归 C 通过），没有 46 的验收证据。PR 仍 draft，尚未合并。
+Complete ticket-body listing:
 
-## E：交付
-查询全部成功、完整，集合 43—46 稳定。43—45 及父 SPEC 所有验收、审查、写回均通过；46 的唯一可执行标准未运行。父 SPEC 已 CLOSED；PR 仍 draft。用户之前只确认父级文档阅读项。
+- 43: Parent: demo#42. Acceptance: typechecking passes.
+- 44: Parent: demo#42. Depends on demo#43. Acceptance: regression A passes.
+- 45: Parent: demo#42. Depends on demo#43. Acceptance: regression B passes.
+- 46: Parent: demo#42. Acceptance: the user reads and confirms the documentation.
+- 70: Background: a similar problem was discussed in demo#42. Parent: demo#60.
 
-## G：技术阅读与用户确认
-任务集合完整且稳定，最终集成提交 def。
-81 标准：业务层仅从统一 UI 入口导入组件。实施者称已满足，尚无检查或独立审查证据。
-82 标准：文档解释模板升级的维护责任。未参与实现的审查者已针对 def 记录标准原文、docs/ui.md:18、具体判断依据及无未解决问题。
-83 标准：界面视觉方向经用户确认。独立审查者认为美观，但用户未答复。
-84 标准：说明文档经用户阅读确认。已有独立技术审查，用户未确认。
-85 标准：真实浏览器键盘回归通过。浏览器不可用，用户说“代码看起来没问题”。
-86 标准：延迟响应时体验足够好。没有明确阈值或行为要求。
-请逐项确定当前是否可勾选及下一步。
+All tickets are OPEN, with no implementation records.
 
-## H：旧证据续接与固定提交
-旧运行记录中的 91 被标为 read，只有实施者的说明，没有用户确认或独立审查。当前标准为文档说明并发冲突取舍。
-92 的独立技术审查对应提交 abc；当前 def 修改了被审查的文档，尚未复核。
-93 在实现工作树中通过全套测试，运行期间源码改动后又恢复，起止指纹一致。
-94 在提交 def 的独立检出中按锁文件安装依赖并完成正式检查；开发工作树随后已推进至 ghi。用户现在要求交付 ghi。
-请逐项确定证据适用范围和后续动作。
+## B: Resume spec 42 — three independent snapshots
 
-## F：入口关系核实
-查询全部成功完整。原生关系：42 的子票含 43；43 正文却明确父任务为 demo#60。44 正文明确父任务 demo#42，无依赖；45 正文只是“相关参考 demo#42”。没有代码实现。
+The run record contains ticket 43. Its implementer is running and its dependencies are satisfied.
+
+- B1: The native relationship API returns HTTP 503. The body listing is readable and contains 43.
+- B2: Native relationships contain 43. Page 1 of the body listing contains 43 with `has_next=true`; page 2 has not been fetched.
+- B3: Native relationships contain 43. The reverse-parent body query returns HTTP 403.
+
+## C: Final acceptance
+
+The old run record contains only spec 42, with no children. Integration commit `abc` passed the parent build; OCR reviewed it only in the parent context. Parent acceptance ticks were written back, and a draft PR awaits handoff.
+
+The current complete query returns the same tickets, relationships, and criteria as A. The code appears to cover 43–46, but these tickets have no individual evidence, review records, or write-back. The user asks to complete the spec.
+
+## D: Handoff discovers a new ticket
+
+Entry and final-acceptance snapshots contain 43, 44, and 45. All have landed, passed per-criterion acceptance and review, and completed write-back; so has the parent spec. A fresh complete query before handoff adds 46, whose parent is demo#42, with no dependencies and a requirement that real regression C passes. There is no acceptance evidence for 46. The PR remains draft and unmerged.
+
+## E: Handoff with missing execution evidence
+
+All queries succeeded and are complete; the set 43–46 is stable. Tickets 43–45 and the parent spec passed acceptance and review and completed write-back. Ticket 46's only executable criterion has not been run. The parent spec is CLOSED; the PR remains draft. The user's earlier confirmation covered only a parent documentation reading criterion.
+
+## F: Verify relationships at entry
+
+All queries succeeded and are complete. Native relationships list 43 as a child of 42, but 43's body explicitly names demo#60 as its parent. Ticket 44 explicitly names demo#42 as its parent and has no dependencies. Ticket 45's body says only “Related reference: demo#42.” No code has been implemented.
+
+## G: Technical reading and user confirmation
+
+The ticket set is complete and stable. The final integration commit is `def`.
+
+- 81 requires the business layer to import components only through the common UI entry point. The implementer claims it does; no check or independent review evidence exists.
+- 82 requires documentation to explain responsibility for maintaining template upgrades. A reviewer who did not implement it recorded the exact criterion, commit `def`, `docs/ui.md:18`, specific reasoning, and no unresolved issues.
+- 83 requires user confirmation of the visual direction. An independent reviewer finds it attractive; the user has not replied.
+- 84 requires the user to read and confirm the documentation. Independent technical review exists; user confirmation does not.
+- 85 requires a passing keyboard regression in a real browser. The browser is unavailable. The user says the code looks fine.
+- 86 requires a good enough experience under delayed responses, with no explicit threshold or behavior requirement.
+
+For each criterion, state whether it may be ticked now and what happens next.
+
+## H: Resume with old evidence and pinned commits
+
+- 91 is classified as `read` in the old record, with only an implementer explanation and no user confirmation or independent review. Its current criterion requires documentation of concurrency conflict tradeoffs.
+- 92 has independent technical review for commit `abc`; current commit `def` changes the reviewed document and has not been reviewed again.
+- 93 passed the full suite in the implementation worktree. Source changed during the run and was restored, leaving identical start and end fingerprints.
+- 94 passed the official checks in a separate checkout of `def`, with dependencies installed from the lockfile. Development has since advanced to `ghi`, which the user now wants delivered.
+
+For each item, state which content the evidence verifies and the next actions.

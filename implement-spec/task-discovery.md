@@ -1,35 +1,35 @@
-# 任务发现与对账
+# Task discovery and reconciliation
 
-在首次实现前、会话续接、最终验收前和交付操作前执行。协调者负责取得完整任务集合，保存可复查的发现快照，再据此调度和验收。
+Run before initial implementation, on resume, before final acceptance, and before handoff actions. The coordinator establishes the complete ticket set, saves a verifiable discovery snapshot, and uses it for scheduling and acceptance.
 
-## 发现集合
+## Discover the ticket set
 
-读取仓库的 tracker 约定，明确仓库或项目边界、父子关系格式和依赖格式。在约定范围内查询开放及已关闭任务，合并以下来源：
+Read the repository's tracker conventions to establish repository or project boundaries and the formats for parent links and dependencies. Query open and closed tickets within that scope, combining:
 
-- tracker 原生父子关系。
-- SPEC 正文明确列出的子任务。
-- 其他任务正文明确声明的父任务链接，反向指向本 SPEC 或已发现的子任务。
+- Native parent-child relationships.
+- Child tickets explicitly listed in the spec body.
+- Explicit parent links in other ticket bodies pointing back to this spec or an already discovered child.
 
-按 tracker、仓库或项目及任务 ID 去重；递归发现明确归属的后代，并解析依赖。跨仓库链接用完整身份解析，不将同编号任务混为一票。依赖目标需要读取以判断就绪状态，依赖关系本身不等于子任务归属。
+Deduplicate by tracker, repository or project, and ticket ID. Recursively discover explicit descendants and resolve dependencies. Resolve cross-repository links by full identity so matching numbers remain distinct tickets. Read dependency targets to determine readiness; a dependency alone does not establish parentage.
 
-搜索编号或链接只用于发现候选；读取候选正文以核实关系。背景说明、示例、普通引用和依赖引用不能单独构成子任务依据。明确关系可自动纳入；关系冲突或归属含糊时，记录原文、来源和待决定事项，向用户询问，暂停受影响票及其依赖路径。其他路径仅在查询完整且独立性已核实后推进。
+Search for numbers or links to find candidates, then read their bodies to verify relationships. Background mentions, examples, ordinary references, and dependency links alone do not establish parentage. Include explicit relationships automatically. For conflicting or ambiguous parentage, record the original text, source, and decision needed; ask the user and pause affected tickets and their dependents. Other paths may proceed once queries are complete and their independence is verified.
 
-记录每个来源的查询范围、过滤条件、分页结束依据和结果；固定数量上限或一页空结果不能证明完整。若搜索存在截断或索引限制，使用完整分页列表并读取正文等可核查方式补齐。tracker 确实不支持某种原生关系时，记录此事实并使用其余适用来源；权限拒绝或接口错误不能当作“不支持”或“无任务”。
+For every source, record query scope, filters, pagination completion evidence, and results. A fixed result cap or one empty page does not establish completeness. Resolve truncation or indexing limits through verifiable alternatives, such as fully paginated listings and body reads. If the tracker genuinely lacks a native relationship type, record that fact and use the remaining applicable sources. Distinguish unsupported features from access failures and API errors.
 
-## 查询完整性门槛
+## Establish query completeness
 
-接口失败、分页未完成、查询权限不足或无法核实查询覆盖范围时，将发现状态标记为“不完整”，停止全部实现：不派发新 implementer，通知并暂停已运行的实现和合并工作，保存现有成果；暂停验收写回及交付。此时只继续恢复查询、只读调查及保存恢复证据等工作。报告具体失败来源和恢复条件，不把未知任务集合当作空集合。
+An API failure, unfinished pagination, insufficient access, or unverifiable query coverage marks discovery **incomplete** and stops all implementation. Pause new dispatches, notify and pause active implementers and mergers, and preserve existing work. Pause acceptance writes and handoff. Continue only query recovery, read-only investigation, and preservation of recovery evidence. Report the failed source and recovery conditions; an unknown ticket set is not an empty set.
 
-恢复后重新执行发现、核对集合与依赖，确认查询完整后再恢复调度。只有全部适用来源完整查询、候选关系均已判定后，才能断言“无子任务”，按父 SPEC 自身验收要求处理单票实现。
+After recovery, repeat discovery and reconcile the ticket set and dependencies. Resume scheduling only when queries are complete. Conclude that the spec has no children only after every applicable source has been fully queried and every candidate relationship resolved; then implement the parent spec as a single ticket under its own acceptance criteria.
 
-发现快照至少包含：父 SPEC 身份、查询时间及范围、各来源完整性证据、去重后的票集合、每票关系依据、依赖、排除候选及原因、未决关系。未决关系不算已完成；它们阻塞相关路径和全规格交付，但不同于查询失败的全局停止。
+The **discovery snapshot** contains the parent spec's identity, query time and scope, completeness evidence for each source, deduplicated tickets, relationship evidence for each ticket, dependencies, excluded candidates with reasons, and unresolved relationships. Unresolved relationships block affected paths and full-spec handoff; they do not trigger the global stop reserved for query failures.
 
-## 对账与恢复
+## Reconcile and recover
 
-将新快照与运行记录比较，列出新增、遗漏、移除、关系或依赖变化。任务在新结果中消失时核实是归属确实改变还是查询失败；未经核实和记录，不得从验收集合中静默删除。歧义按上述规则处理，查询失败执行全局停止。
+Compare the new snapshot with the run record. Identify added, previously missed, removed, or changed relationships and dependencies. When a ticket disappears, verify whether its parentage changed or a query failed before removing it from the acceptance set, and record the reason. Handle ambiguity and query failures under the rules above.
 
-对新增或曾遗漏的票逐项核对现有成果：当前验收标准、对应提交、审查覆盖、执行证据、仍适用的人工确认及 tracker 写回状态。父级通过、票已关闭或代码看似覆盖均不能替代逐票核验。先补齐缺失实现与审查，再进入最终状态验收；新增票或依赖变化须重新计算就绪任务。
+For each added or previously missed ticket, reconcile current acceptance criteria, matching commits, review coverage, execution evidence, still-applicable user confirmations, and tracker write-back state. Parent acceptance, a closed ticket, or apparently sufficient code cannot replace ticket-level verification. Complete missing implementation and review before final acceptance. Recompute the frontier when tickets or dependencies change.
 
-保留已有提交历史和可恢复成果，不为重建“一票一分支／一提交”而重做已交付代码。记录每张票与已有提交的映射；缺失实现和最终修复使用新增提交引用受影响票。证据只有对应当前标准与未变化内容时才可复用，最终可执行验收仍遵守 acceptance.md 的重跑要求。
+Preserve commit history and recoverable work. Map each ticket to existing commits rather than redoing delivered code to reconstruct one branch or commit per ticket. Use new commits referencing affected tickets for missing implementation and final fixes. Reuse evidence only when it matches current criteria and unchanged content; final executable acceptance still follows the rerun rules in [acceptance and handoff](acceptance.md).
 
-对账未完成、任何关系未决、任何票缺少实现／审查／验收／写回证据时，规格仍未完整交付。若发现已有父票关闭或 PR ready，记录实际状态，按 tracker 规则和现有授权纠正；需要额外权限时报告阻塞，不能把计划纠正当作已完成。
+Keep full-spec handoff pending while reconciliation, relationships, or any ticket's implementation, review, acceptance, or write-back evidence remains unresolved. If the parent is already closed or the PR is ready, record the actual state and correct it under tracker rules and existing authorization. Report blockers when additional permission is needed; distinguish a planned correction from a completed one.

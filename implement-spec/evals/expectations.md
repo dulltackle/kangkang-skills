@@ -1,15 +1,14 @@
-# 行为回归判定
+# Behavioral regression expectations
 
-- G：81 当前不可勾选，优先运行确定性导入检查，实施者自述不算证据；82 可按 reviewed 验收，无需用户重复确认；83、84 保持待用户确认；85 保持未执行，用户确认不能替代；86 先澄清行为标准，不能自行宣布通过。只批量询问需要用户决定的项目。
-- H：91 不自动升级，补独立技术审查；92 复核 def 的受影响内容；93 起止一致不足以证明固定源码，需独立检出正式复验；94 只证明 def，不能转用于 ghi，交付 ghi 前须对该提交正式复验并核对受影响标准。保持旧任务状态，不能因技能更新直接追溯关闭。
+When evaluating skill changes, give an isolated agent only `SKILL.md`, necessary references, and `scenarios.md`; ask it to report scheduling decisions. Keep this evaluator file out of its context. Use no real tracker connections, real implementation dispatches, or external writes. Evaluate each decision rather than keyword counts.
 
-维护技能时，在隔离代理中只提供 SKILL.md、必要引用及 scenarios.md，要求输出调度决策；此文件仅供评估者判定，不提供给执行代理。不连接真实 tracker，不派发真实实现或执行外部写入。逐项检查决策，不以关键词出现次数判定通过。
+- **A:** Discover 43, 44, 45, and 46; exclude background ticket 70. Tickets 43 and 46 are ready; 44 and 45 wait for 43.
+- **B1, B2, B3:** Stop all implementation in every case, including active implementers. Stop new dispatches, merges, write-back, and handoff. Preserve work. Recover the failed query, complete pagination, or restore access, then rediscover and verify before resuming.
+- **C:** Add all four tickets. Preserve `abc`; map each ticket to commits, review, acceptance, and write-back evidence. Complete missing work and final verification. Parent review and acceptance cannot substitute for child-ticket evidence; preserve existing implementation rather than recreating per-ticket commits.
+- **D:** Include 46 and return to reconciliation, missing implementation or review, and acceptance. Keep the PR in draft and full-spec closure and completion claims pending.
+- **E:** Leave 46 unaccepted; parent reading confirmation cannot replace executable checks. Block handoff, record the parent's actual closed state, and correct it under tracker rules and authorization.
+- **F:** Ask the user to resolve 43's conflicting parentage, blocking affected paths and full delivery. Ticket 44 is confirmed independent and may proceed. Ticket 45 is only a reference and remains excluded.
+- **G:** Leave 81 unchecked; prefer a deterministic import check, since implementer assertions are insufficient. Accept 82 as `reviewed` without another user confirmation. Keep 83 and 84 pending user confirmation. Keep 85 unexecuted; user confirmation cannot replace execution. Clarify 86's behavior criterion before acceptance. Batch only items needing user decisions.
+- **H:** Supplement 91 with independent technical review rather than automatically upgrading its classification. Review 92's affected content at `def`. Identical fingerprints for 93 do not prove fixed source; rerun formal checks in a separate checkout. Evidence for 94 verifies only `def`; formally reverify `ghi` and reconcile affected criteria before delivering it. A skill update alone does not retroactively change earlier acceptance or closure state.
 
-- A：发现 43、44、45、46，排除背景票 70；43 与 46 可先行，44 和 45 等待 43。
-- B1、B2、B3：每种情况均停止全部实现，包括已运行的 implementer；停止新派发、合并、写回和交付。保存成果，恢复失败查询／完整分页／权限后重新发现并核实，再恢复调度。
-- C：重新纳入四票；保留 abc，逐票建立提交、审查、验收、写回映射，补缺项并完成最终复验；不能以父级审查和验收直接替代子票，也不能为补每票提交而重做已有实现。
-- D：纳入 46，返回对账、缺项实现／审查和验收；当前禁止 PR 转 ready、关闭全规格或声明完成。
-- E：46 保持未验收，执行检查不能被父级阅读确认替代；阻止交付，记录父级实际关闭状态并按 tracker 规则及授权纠正。
-- F：43 的归属冲突需要用户决定，阻塞受影响路径及完整交付；44 已确认独立可以推进；45 仅为参考，不能据此纳入。
-
-报告实际输出与每条预期的差异。旧版若也通过某项，只能说明该次代理自行补足，不能声称该项复现了旧版错误。场景演练验证决策，不等同真实 API、并发暂停或端到端实现已获验证。
+Report actual output against each expectation. If the old version also passes a case, that shows the agent supplied the missing reasoning in that run; it does not establish reproduction of an old failure. These scenarios verify decisions, not real API behavior, concurrent pausing, or end-to-end implementation.

@@ -1,29 +1,29 @@
-# Acceptance and Handoff
+# Acceptance and handoff
 
 Run after integration review and its fixes. The coordinator owns tracker writes and closure; subagents supply evidence.
 
-验收勾选必须有对应的执行结果、独立技术审查证据或明确用户确认，具体类型按下文判断。Every ticket must have a nonempty acceptance region with every criterion earned before the spec can be handed off.
+Every acceptance tick requires matching execution results, independent technical review evidence, or explicit user confirmation, classified below. Every ticket must have a nonempty acceptance region with every criterion earned before the spec can be handed off.
 
 ## 1. Reverify the final state
 
-先按 [task-discovery.md](task-discovery.md) 重新发现完整任务集合，与运行记录对账，而非仅重读原清单。查询不完整时执行全局停止规则；新增、遗漏或关系变化按该文件的恢复流程处理，补齐受影响的实现和审查后重新进入验收。逐票维护当前标准对应的提交、审查、验收证据及写回状态；父 SPEC 的验收、代码覆盖推测或已关闭状态不能替代子票证据。
+Run [task discovery](task-discovery.md) to rediscover the complete ticket set and reconcile it with the run record. Apply its global stop for incomplete queries and its recovery procedure for added, missed, or changed relationships. Complete affected implementation and review before returning to acceptance. Track commits, review, acceptance evidence, and write-back state against each ticket's current criteria; parent acceptance, apparent code coverage, and closed status cannot replace child-ticket evidence.
 
 Re-read each ticket from the tracker. Match evidence to the **exact text** of its current acceptance criteria. Verify added or changed criteria; evidence with no matching criterion pauses that ticket's write-back. Leave unverified criteria unchecked.
 
-最终集成审查与修复完成后，确定集成提交，在该提交的独立检出中重新运行每项可执行验收（包括已勾选项）、全套测试、类型检查和项目要求的其他检查。优先使用项目已有的正式验收入口；否则准备独立检出并按锁定依赖运行项目检查。记录提交、源码身份、命令、环境、结果和日志位置；结果只证明受验提交，不证明后来变化的分支。开发工作区中的指纹对比不能替代独立检出。Earlier worktree results do not replace this verification.
+After final integration review and fixes, pin the integration commit. In a separate checkout of that commit, rerun every executable criterion, including existing ticks, the full test suite, typechecking, and other required project checks. Prefer the project's established acceptance entry point; otherwise prepare the checkout with locked dependencies and run project checks. Record the commit, source identity, commands, environment, results, and log locations. Results verify that commit, not a branch that later changes. Comparing fingerprints in a development workspace does not replace a separate checkout. Earlier worktree results do not replace this verification.
 
 Classify each criterion:
 
-- **`ran`**：可执行要求已实际运行并观察到通过；记录受验提交、命令、结果及环境缺口。未执行、失败或跳过的要求保持未验收，审查结论与用户确认均不能替代执行。
-- **`reviewed`**：标准明确、能够通过源码或文档阅读判断的技术要求，由未参与该内容实现的独立审查者验收。证据包含标准原文、受验提交、文件位置、判断依据、审查者与未解决问题；协调者核对对应关系后才能勾选。泛称“OCR 通过”或实施者自述不是逐项验收证据。可以机械判定的要求优先建立确定性检查，并按 `ran` 提供结果。
-- **`user`**：产品取舍、主观体验、新增范围、含糊或冲突的标准，以及条款明确要求用户确认的内容，由用户决定或验收。不能通过改分类取消条款中的明确用户确认要求。涉及可执行要求的部分仍须实际运行。
-- **失败、未验证或证据不完整**：保持未勾选。旧记录中的 `read` 不自动升级为 `reviewed`；核对当前条款与内容，补充独立审查证据或有效用户确认后再验收。
+- **`ran`**: an executable requirement was run and observed to pass. Record the tested commit, command, result, and environment gaps. Unrun, failed, or skipped requirements remain unaccepted; review and user confirmation cannot replace execution.
+- **`reviewed`**: a clear technical requirement can be assessed by reading source or documentation. A reviewer who did not implement that content verifies it, recording the criterion verbatim, reviewed commit, file locations, reasoning, reviewer identity, and unresolved issues. The coordinator checks that correspondence before ticking. A generic OCR pass or implementer assertion is insufficient. Prefer deterministic checks for mechanically decidable requirements and record their results as `ran`.
+- **`user`**: product tradeoffs, subjective experience, added scope, ambiguous or conflicting criteria, and criteria explicitly requiring user confirmation need the user's decision or acceptance. Preserve explicit confirmation requirements when classifying. Execute any runnable part as well.
+- **Failed, unverified, or incomplete evidence**: leave unchecked. Reconcile legacy `read` entries with current criteria and content, then obtain independent review evidence or valid user confirmation before acceptance; `read` does not automatically become `reviewed`.
 
-仅将 `user` 项按任务分组一次询问，保留拒绝或未答复项目未勾选。既有明确确认仅在相关内容未变化时沿用。技术审查发现标准含糊时，先请求澄清，不能自行降低标准；新规则不追溯改变旧任务的验收与关闭状态。
+Batch only `user` items into one request, grouped by ticket. Leave declined or unanswered items unchecked. Reuse explicit confirmations only while relevant content remains unchanged. Ask for clarification when technical review finds ambiguous criteria; preserve the acceptance bar. A skill update alone does not retroactively change earlier tickets' acceptance or closure state.
 
 A failing check loses its existing tick: report the regression and its reason. Reopen a previously closed ticket that has lost acceptance, using the tracker's rules. It can close again only after acceptance is earned again.
 
-后续修复使受影响证据失效：对新集成提交重跑受影响标准及项目最终检查，技术阅读项由独立审查者复核相关变化。将结果与当前交付提交对账后才能继续写回和交付。
+Later fixes invalidate affected evidence. Rerun affected criteria and final project checks against the new integration commit, and have an independent reviewer reassess affected reading criteria. Reconcile results with the delivery commit before further write-back or handoff.
 
 ## 2. Write earned acceptance back
 
@@ -49,7 +49,7 @@ Preserve the user's staging set. Unrelated staged changes block this close-out c
 
 Start when every ticket is all green, write-back succeeded, and the final work is committed.
 
-交付操作前，按 task-discovery.md 再次确认任务集合及关系未变化，并读取当前验收标准和写回状态。发现变化时返回对账和受影响的验收步骤；只有最新完整集合中的每张票和父 SPEC 均满足各自验收、审查及写回条件，才可将 PR 转 ready、直接关闭任务或宣称完整交付。记录实际关闭状态；等待 PR 合并关闭的票不视为已关闭。
+Before handoff actions, repeat [task discovery](task-discovery.md) to confirm the ticket set and relationships, and read current acceptance criteria and write-back state. Reconcile changes and repeat affected acceptance. Mark a PR ready, close work directly, or claim full delivery only when every ticket in the latest complete set and the parent spec meet their own acceptance, review, and write-back conditions. Record actual closure state; tickets awaiting PR merge remain open.
 
 **With a PR:** push the integration branch, then mark the draft ready for review. Report it as awaiting merge. Let the PR workflow close the spec and tickets. A local tracker with a separate closure field records acceptance now and follows its configured PR workflow for closure.
 
@@ -59,14 +59,14 @@ Start when every ticket is all green, write-back succeeded, and the final work i
 
 A partial failure is not a wholesale rollback. Preserve landed commits and successful remote writes; reverse only this run's uncommitted local ticket edits under the concurrency check above. Before retrying, inspect current state to avoid duplicate comments, duplicate closure, or overwritten edits.
 
-## 4. 清理临时工作树
+## 4. Clean up temporary worktrees
 
-本流程仅适用于 `implement-spec` 的收尾及续接。
+This procedure applies to close-out and resume under `implement-spec`.
 
-成功交付后，默认清理本次运行所属的临时工作树。续接时，也可纳入有可靠运行记录、能够确认归属的历史工作树。逐项记录路径、创建归属和恢复依据；主目录、共享工作树、无关工作树及管理工具标记为不可清理的对象保持原状。
+After successful handoff, clean up temporary worktrees owned by this run by default. On resume, include earlier worktrees whose ownership is established by reliable run records. Record each path, creation ownership, and recovery evidence. Preserve primary checkouts, shared or unrelated worktrees, and those the management tool marks ineligible for cleanup.
 
-清理前核实成果已集成，或存在已验证可恢复的提交、备份；检查暂存、未暂存、未跟踪和被忽略文件。存在具体未保存内容迹象时先保存并验证恢复性；需要丢弃内容或归属不明时，暂停该对象并请求用户决定。仅缺少编辑器缓冲区读取接口不构成阻塞。
+Before cleanup, verify that work is integrated or recoverable from verified commits or backups. Inspect staged, unstaged, untracked, and ignored files. Preserve and verify recovery of concrete signs of unsaved content. If cleanup requires discarding content or ownership is unclear, pause that worktree and ask the user to decide. The absence of an editor-buffer API alone is not a blocker.
 
-满足上述条件后，无需重复询问清理授权。使用创建工作树的管理入口；普通 Git 工作树使用正常移除流程。保留集成分支和恢复所需的实现分支或备份。
+Once these conditions hold, proceed without asking for cleanup authorization again. Use the management interface that created the worktree, or normal removal for ordinary Git worktrees. Preserve the integration branch and implementation branches or backups needed for recovery.
 
-某个对象因权限、占用或宿主审批失败无法清理时，保留该对象及恢复依据，记录原因和剩余路径，继续处理其他符合条件的对象。已完成的交付保持有效，清理状态单独报告；不强删、硬重置或绕过审批。
+If permissions, active use, or host approval block cleanup, retain that worktree and its recovery evidence, record the reason and remaining path, and continue with other eligible worktrees. Completed handoff remains valid; report cleanup separately. Respect removal and approval boundaries without forced deletion or hard resets.
