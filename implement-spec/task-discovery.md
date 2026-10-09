@@ -18,7 +18,7 @@ For every source, record query scope, filters, pagination completion evidence, a
 
 ## Establish query completeness
 
-An API failure, unfinished pagination, insufficient access, or unverifiable query coverage marks discovery **incomplete** and stops all implementation. Pause new dispatches, notify and pause active implementers and mergers, and preserve existing work. Pause acceptance writes and handoff. Continue only query recovery, read-only investigation, and preservation of recovery evidence. Report the failed source and recovery conditions; an unknown ticket set is not an empty set.
+An API failure, unfinished pagination, insufficient access, or unverifiable query coverage marks discovery **incomplete** and stops all implementation. Pause new dispatches, notify and pause active implementers and coordinator merges, and preserve existing work. Pause acceptance writes and handoff. Continue only query recovery, read-only investigation, and preservation of recovery evidence. Report the failed source and recovery conditions; an unknown ticket set is not an empty set.
 
 After recovery, repeat discovery and reconcile the ticket set and dependencies. Resume scheduling only when queries are complete. Conclude that the spec has no children only after every applicable source has been fully queried and every candidate relationship resolved; then implement the parent spec as a single ticket under its own acceptance criteria.
 
@@ -30,6 +30,6 @@ Compare the new snapshot with the run record. Identify added, previously missed,
 
 For each added or previously missed ticket, reconcile current acceptance criteria, matching commits, review coverage, execution evidence, still-applicable user confirmations, and tracker write-back state. Parent acceptance, a closed ticket, or apparently sufficient code cannot replace ticket-level verification. Complete missing implementation and review before final acceptance. Recompute the frontier when tickets or dependencies change.
 
-Preserve commit history and recoverable work. Map each ticket to existing commits rather than redoing delivered code to reconstruct one branch or commit per ticket. Use new commits referencing affected tickets for missing implementation and final fixes. Reuse evidence only when it matches current criteria and unchanged content; final executable acceptance still follows the rerun rules in [acceptance and handoff](acceptance.md).
+Preserve commit history and recoverable work. Map each ticket to existing commits rather than redoing delivered code to reconstruct one branch or commit per ticket. Use new commits referencing affected tickets for missing implementation and final fixes. Reuse evidence only when it matches current criteria and unchanged content; final executable acceptance still follows the evidence-validity rules in [acceptance and handoff](acceptance.md).
 
 Keep full-spec handoff pending while reconciliation, relationships, or any ticket's implementation, review, acceptance, or write-back evidence remains unresolved. If the parent is already closed or the PR is ready, record the actual state and correct it under tracker rules and existing authorization. Report blockers when additional permission is needed; distinguish a planned correction from a completed one.

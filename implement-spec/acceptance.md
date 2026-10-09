@@ -4,13 +4,15 @@ Run after integration review and its fixes. The coordinator owns tracker writes 
 
 Every acceptance tick requires matching execution results, independent technical review evidence, or explicit user confirmation, classified below. Every ticket must have a nonempty acceptance region with every criterion earned before the spec can be handed off.
 
-## 1. Reverify the final state
+## 1. Verify the final state
 
 Run [task discovery](task-discovery.md) to rediscover the complete ticket set and reconcile it with the run record. Apply its global stop for incomplete queries and its recovery procedure for added, missed, or changed relationships. Complete affected implementation and review before returning to acceptance. Track commits, review, acceptance evidence, and write-back state against each ticket's current criteria; parent acceptance, apparent code coverage, and closed status cannot replace child-ticket evidence.
 
 Re-read each ticket from the tracker. Match evidence to the **exact text** of its current acceptance criteria. Verify added or changed criteria; evidence with no matching criterion pauses that ticket's write-back. Leave unverified criteria unchecked.
 
-After final integration review and fixes, pin the integration commit. In a separate checkout of that commit, rerun every executable criterion, including existing ticks, the full test suite, typechecking, and other required project checks. Prefer the project's established acceptance entry point; otherwise prepare the checkout with locked dependencies and run project checks. Record the commit, source identity, commands, environment, results, and log locations. Results verify that commit, not a branch that later changes. Comparing fingerprints in a development workspace does not replace a separate checkout. Earlier worktree results do not replace this verification.
+After final integration review and fixes, pin the integration commit. Every executable criterion, including existing ticks, the full test suite, typechecking, and required project checks need valid evidence for that commit. Prefer the project's established formal acceptance entry point; otherwise use a separate checkout of the pinned commit with locked dependencies. Record the commit, source identity, commands and scope, environment, results, and log locations.
+
+Reuse an earlier passing formal run when it verifies this exact commit, current criteria and check scope, and the same relevant environment; run only missing or invalidated checks. Moving from merge to acceptance or handoff does not itself invalidate evidence. An ordinary development-worktree result, identical start/end fingerprints, a skipped or failed check, or evidence for another commit does not qualify. Preserve repository-specific requirements and freshness windows: actual-host or deployment checks must still verify the delivered instance and build within their validity period.
 
 Classify each criterion:
 
@@ -23,7 +25,7 @@ Batch only `user` items into one request, grouped by ticket. Leave declined or u
 
 A failing check loses its existing tick: report the regression and its reason. Reopen a previously closed ticket that has lost acceptance, using the tracker's rules. It can close again only after acceptance is earned again.
 
-Later fixes invalidate affected evidence. Rerun affected criteria and final project checks against the new integration commit, and have an independent reviewer reassess affected reading criteria. Reconcile results with the delivery commit before further write-back or handoff.
+Later code fixes require affected regressions and complete formal project checks for the new integration commit; have an independent reviewer reassess changed reading criteria. Reuse a qualifying run already performed on that new commit rather than running it again at handoff. Changes to relevant dependencies, configuration, environment, criteria, or check scope also require renewed matching evidence. Tracker-only remote writes do not change the tested commit. Local acceptance or closure commits must follow the repository's evidence policy; absent an explicit rule allowing record-only commits, formally verify the new delivery commit. Reconcile evidence with the delivery target before handoff.
 
 ## 2. Write earned acceptance back
 

@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Implement the entire spec on one **integration branch**, with every ticket resolved the way the issue tracker closes work.
 
-The tickets are a **task graph**, not a list of steps. The **frontier** is the set of tickets whose dependencies have landed and whose requirements are settled. Run implementer subagents in the background across that frontier.
+The tickets are a **task graph**, not a list of steps. The **frontier** is the set of tickets whose dependencies have landed and whose requirements are settled. Keep independent ready work running in parallel; reducing token use must not turn the frontier into a default serial queue.
 
 Communicate through **context pointers** to the spec, tickets, research notes, and commits. Keep shared exploration notes outside the repo, accessible to every subagent.
 
@@ -33,7 +33,7 @@ Confirm and record the baseline, then create the integration branch. Preserve ex
 Create a durable **run record** outside the repo and report its path. Update it after reviews, merges, user confirmations, and tracker writes. Keep:
 
 - Baseline and integration commits; each ticket's branch, worktree, status, and blockers.
-- Review coverage and finding dispositions; acceptance evidence and the commits it verifies.
+- Review coverage: reviewer, baseline and head, files and changes covered, applicable rules, findings and dispositions, and correspondence to the integration diff. Acceptance evidence and the commits it verifies.
 - The exact criteria and relevant content the user confirmed.
 - Completed and pending tracker operations.
 - Discovery snapshots and changes: query scope, sources, pagination and access status, inclusion and exclusion evidence, unresolved relationships, the dependency graph, and each ticket's implementation, review, acceptance, and write-back state. Save discovery results before incorporating them into this record.
@@ -50,20 +50,26 @@ Follow host approval requirements. If approval is denied, preserve work and repo
 
 ### 3. Implement and review each ready ticket
 
-Assign one implementer to each ticket that still needs implementation, with a separate branch and worktree. For resumed or newly discovered tickets, reconcile existing work through [task discovery](task-discovery.md) and dispatch only missing work. Each implementer:
+Use separate branches and worktrees for concurrent implementers. Reuse an available implementer for a compatible ready ticket instead of creating an agent for each lifecycle stage; keep enough implementers active to advance independent work in parallel. Give overlapping edits clear ownership and synchronize their shared changes. For resumed or newly discovered tickets, reconcile existing work through [task discovery](task-discovery.md) and dispatch only missing work. Each implementer:
 
 1. Confirms its branch is based on the integration branch. Recreate an unused branch from the correct base; preserve existing work before correcting a mistaken base. Never discard work with a hard reset.
-2. Calls the Skill tool with `tdd` to build the ticket. Runs typechecking and affected tests during development. After review fixes and synchronization stabilize the candidate commit, runs the ticket's full tests in a separate checkout pinned to that commit, allowing development to continue independently. Records the tested commit; later changes need matching evidence. Prefers the project's established acceptance entry point and preserves its required checks and environment. Reports what ran and what did not.
-3. Hands the ticket to the coordinator for a **read-only review subagent**. That reviewer calls the Skill tool with `open-code-review-delegate`, using the ticket context and an explicit diff baseline.
+2. Calls the Skill tool with `tdd` to build the ticket. Runs typechecking, the ticket's acceptance tests, and affected regressions before merge; for changed behavior, identify existing tests of the old interaction before starting expensive checks. Record the tested revision or source identity, scope, environment, results, and omissions. Run the complete project checks at final acceptance rather than automatically per ticket, unless the repository requires them earlier. Development results do not become formal acceptance merely by being reused.
+3. Hands the ticket to an independent **read-only review subagent** using `open-code-review-delegate`, ticket context, and explicit baseline and head. Keep the same reviewer for fixes and synchronization of this ticket; give it the new diff and prior findings. Independent tickets may use parallel reviewers. Reviewers must not have implemented the content they assess. If a reviewer becomes unavailable or its context becomes unwieldy, hand off the compact coverage record and source pointers to a replacement.
 4. Validates the findings, fixes every valid issue, and reruns affected checks. Record reasons for dismissing false positives. Route decisions requiring the user through the coordinator; a missing or failed review tool is a blocker.
 5. Merges the integration tip into its branch and verifies affected behavior. Changes introduced by synchronization or conflict resolution receive a follow-up review.
 6. Reports commits, review coverage and dispositions, per-criterion evidence, pending human checks, and blockers. For technical reading criteria, an independent reviewer records each criterion verbatim, the reviewed commit, file locations, and reasoning. Lists items requiring a user decision separately. Collect evidence here; formal acceptance ticks and closure belong to final acceptance.
 
 A ticket is ready to merge when implementation and review are complete, every valid finding is resolved, affected checks pass, and its branch is synchronized.
 
+#### Coordinate by events
+
+While agents or checks run, advance other independent work. Prefer completion or state-change notifications; when nothing is actionable, use the host's blocking wait or suspension within its response constraints. If notifications are unavailable, use bounded queries with backoff, resetting only on meaningful progress or new input. An unchanged status is a reason to wait longer, not to repeat inspection or dispatch replacement work.
+
+Start a long check once and retain its process or job identity and full logs outside the conversation. Read its terminal summary, or bounded failure evidence when needed; use detailed logs to investigate a concrete problem. Agent handoffs carry source pointers, commits, changes, findings, and blockers rather than replaying the conversation. Report meaningful progress and honor required host updates without additional status queries solely to produce an update.
+
 ### 4. Merge and advance the frontier
 
-Use a **merger subagent** to land tickets one at a time. Recheck the integration tip before each merge; if it advanced, synchronize the ticket again, verify, and review any resulting changes before landing it.
+The coordinator lands tickets one at a time, without a dedicated merger agent. Recheck the integration tip before each merge; if it advanced, synchronize the ticket again, verify, and review any resulting changes before landing it.
 
 Land each ticket initially as **one Conventional Commit**, using a squash merge when needed. Describe delivered behavior, verification performed and omitted, and reference the ticket with `Refs:`. Preserve implementer branches for recovery and leave existing integration history intact.
 
@@ -77,9 +83,11 @@ Proceed when every ticket has landed.
 
 ### 5. Review the integration branch
 
-Spawn a read-only subagent to call the Skill tool with `open-code-review-delegate` on the full baseline-to-integration diff, with the spec and all tickets as context.
+Assign an independent read-only reviewer, reusing a suitable ticket reviewer, to the final integration review. Use OCR's full baseline-to-integration file inventory and current rules to reconcile cumulative ticket-review coverage. For every reviewable entry, record matching prior coverage or perform the missing review; retain OCR's explicit skip reasons and coverage accounting. Reuse prior review only where the reviewed changes, requirements, and applicable rules still match. A file name or earlier “passed” result alone is insufficient.
 
-Use one implementer subagent to validate and fix every valid finding. Record false-positive dispositions and bring user decisions to the coordinator. Rerun affected checks and review the changed portions again.
+Focus fresh review on cross-ticket behavior, shared contracts, conflict resolutions, new changes, and coverage gaps. Individually reviewed changes can still interact incorrectly: expand the review wherever their combined behavior is uncertain. Re-read the full diff when coverage cannot be established. Keep per-criterion technical review evidence in addition to OCR coverage.
+
+Return valid findings to the responsible implementer, reusing available agents. Record false-positive dispositions and bring user decisions to the coordinator. Rerun affected checks and have the independent reviewer assess the changed portions again.
 
 Land final fixes as separate commits referencing affected tickets. Keep the initial ticket commits intact.
 
@@ -87,7 +95,7 @@ Proceed when the full diff is accounted for under OCR's coverage rules, every va
 
 ### 6. Verify acceptance and write back
 
-Read [acceptance and handoff](acceptance.md) now. Rediscover and reconcile the ticket set, complete work affected by changes, and reverify each ticket against a pinned integration commit. Check independent technical review evidence, batch only items requiring user decisions, and write back earned acceptance ticks.
+Read [acceptance and handoff](acceptance.md) now. Rediscover and reconcile the ticket set, complete work affected by changes, and match each ticket to valid evidence for the pinned integration commit, running missing or invalidated checks. Check independent technical review evidence, batch only items requiring user decisions, and write back earned acceptance ticks.
 
 Proceed to handoff only when every ticket has a nonempty acceptance region, every criterion is earned, and write-back has succeeded. Report anything still pending.
 
