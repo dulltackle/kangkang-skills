@@ -110,3 +110,15 @@ Describe the next tool action and what should appear in updates. Variant M2: the
 A full formal run passed at `abc`. The repository requires fixed-commit formal evidence and has no exception for documentation or tracker-only commits. Local Markdown acceptance writes create `def`; code files are unchanged. The developer asks to hand off `def`. In another independent repository, its documented evidence policy explicitly allows a proven record-only commit to reuse the prior formal run.
 
 Describe the required verification in both repositories. Separately, a repository requires a full check before each ticket merge: does this skill's default final-only full project check override it?
+
+## O: Creation succeeds but registration fails
+
+Ticket 43's worktree was created through the host management interface, which returned its actual path and identity key. Registry writing failed. Another implementer proposes creating a replacement worktree for the same purpose. Describe preservation, registration, and handoff actions.
+
+## P: Resource state differs on resume
+
+The old `run.json` records worktree A and preview session S, with their creation results. The registry's last observation says A was unused. The current sandbox process list is empty but cannot see the actual host. A host query reports that S is still running. Worktree B merely has a name resembling this run's ticket, without creation evidence. Task discovery is still missing its second page.
+
+## Q: Individual cleanup and retries
+
+Handoff is complete. A is this run's ordinary Git worktree: its code is integrated, recovery files passed hash and restoration checks, and actual-host observation confirms no active use. B has unsaved source or an active process. C is an app-managed worktree whose original interface refuses cleanup. D satisfies normal cleanup conditions. A's removal request succeeded, but its post-removal state has not been queried. On the next resume, A is absent, B is still in use, and D is unprocessed. Describe individual disposition, evidence, and reporting without performing cleanup.

@@ -65,6 +65,8 @@ A partial failure is not a wholesale rollback. Preserve landed commits and succe
 
 This procedure applies to close-out and resume under `implement-spec`.
 
+Follow [run resources](resource-management.md) to process registered worktrees and their preview or check processes individually, recording each actual outcome. Import older resources from reliable creation evidence first. Keep resource details and cleanup events in the registry, with an index and summary in the run record. Continue with other eligible resources when one is blocked.
+
 After successful handoff, clean up temporary worktrees owned by this run by default. On resume, include earlier worktrees whose ownership is established by reliable run records. Record each path, creation ownership, and recovery evidence. Preserve primary checkouts, shared or unrelated worktrees, and those the management tool marks ineligible for cleanup.
 
 Before cleanup, verify that work is integrated or recoverable from verified commits or backups. Inspect staged, unstaged, untracked, and ignored files. Preserve and verify recovery of concrete signs of unsaved content. If cleanup requires discarding content or ownership is unclear, pause that worktree and ask the user to decide. The absence of an editor-buffer API alone is not a blocker.

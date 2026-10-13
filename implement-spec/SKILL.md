@@ -33,10 +33,13 @@ Confirm and record the baseline, then create the integration branch. Preserve ex
 Create a durable **run record** outside the repo and report its path. Update it after reviews, merges, user confirmations, and tracker writes. Keep:
 
 - Baseline and integration commits; each ticket's branch, worktree, status, and blockers.
+- The resource registry's absolute path (`resourceRegistry`) and unique `runId`; keep resource details in the registry rather than duplicating them in the run record.
 - Review coverage: reviewer, baseline and head, files and changes covered, applicable rules, findings and dispositions, and correspondence to the integration diff. Acceptance evidence and the commits it verifies.
 - The exact criteria and relevant content the user confirmed.
 - Completed and pending tracker operations.
 - Discovery snapshots and changes: query scope, sources, pagination and access status, inclusion and exclusion evidence, unresolved relationships, the dependency graph, and each ticket's implementation, review, acceptance, and write-back state. Save discovery results before incorporating them into this record.
+
+Read [run resources](resource-management.md) before creating worktrees, starting preview services or long checks, or resuming a run. Save and register each successful creation result immediately; complete the step when the registration reads back correctly. Reconcile registered resources with the actual host before reuse. Resource reconciliation does not replace complete task discovery.
 
 If the tracker closes work through PRs, or the user asks for one, open a draft PR **after the first merge**, with the appropriate closing references for the spec and tickets. Otherwise the integration branch is the deliverable.
 

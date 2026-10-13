@@ -26,6 +26,8 @@ The **discovery snapshot** contains the parent spec's identity, query time and s
 
 ## Reconcile and recover
 
+On resume, reconcile existing resources through [run resources](resource-management.md), then complete task discovery and reconciliation below. Resource observations govern reuse and cleanup; they do not change query-completeness requirements.
+
 Compare the new snapshot with the run record. Identify added, previously missed, removed, or changed relationships and dependencies. When a ticket disappears, verify whether its parentage changed or a query failed before removing it from the acceptance set, and record the reason. Handle ambiguity and query failures under the rules above.
 
 For each added or previously missed ticket, reconcile current acceptance criteria, matching commits, review coverage, execution evidence, still-applicable user confirmations, and tracker write-back state. Parent acceptance, a closed ticket, or apparently sufficient code cannot replace ticket-level verification. Complete missing implementation and review before final acceptance. Recompute the frontier when tickets or dependencies change.
