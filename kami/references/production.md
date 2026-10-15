@@ -19,6 +19,8 @@ Linux first-time:
 apt install -y libpango-1.0-0 libpangoft2-1.0-0 fonts-noto-cjk
 ```
 
+Windows: use WSL (Ubuntu) and follow the Linux steps; the helper scripts are Bash, and native Windows WeasyPrint needs the GTK/Pango runtime installed separately.
+
 ### Generate
 
 ```python

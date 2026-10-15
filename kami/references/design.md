@@ -21,6 +21,18 @@ This is not a UI framework. It is a constraint system for print, designed to kee
 
 This system is a fusion of Anthropic's visual language and real Chinese / English resume iteration. Details below.
 
+### A choice, not the default
+
+Anthropic's `frontend-design` skill lists "a warm cream background with a high-contrast serif display and a terracotta accent" first among the looks AI-generated design falls into, followed by hairline broadsheet layouts and template chrome (an all-caps eyebrow over every heading, `A · B · C` meta strings, numbered markers). Kami overlaps that list on purpose, so each overlap has to earn its place:
+
+- **Paper tone.** Kami's output is a page that gets printed or read as a PDF, and parchment is the color of the page, not a mood for a screen. The white-paper print variant exists for when the sheet itself is white.
+- **Ink-blue, never clay.** The single accent is `#1B365D`, kept under 5% of the surface and spent on numbers and distinctive phrases. Terracotta and warm clay are not in the palette, and no second accent is added for warmth.
+- **Serif for reading length.** Documents are read top to bottom at length, which is what the serif and the 500 weight are for. Display contrast stays modest; hierarchy comes from size and space, not a fashion display face.
+- **Rules separate data.** A hairline appears only where it divides rows, regions, or states («Subtractive rule»); a broadsheet frame for its own sake is out.
+- **No chrome without information.** One eyebrow on a cover or hero at most, never one over every heading. Numbering only for real sequences (chapters, slides, steps). A middle dot only between data fields of one line (author and date, phone and email), never as a decorative joiner.
+
+When a brief or brand profile asks for a different direction, follow it (`references/brand-profile.md`); when it asks for a look Kami does not do (dark, futurist, saturated multi-color), say so instead of bending the system.
+
 ---
 
 ## 1. Color
@@ -1154,7 +1166,7 @@ Every screenshot path must resolve from the repo or a stable public URL. Never r
 ### Layout
 
 - `max-width: 1120px` centered, padding `88px 64px 120px`
-- Sections numbered `00 · Label` through `04 · Label` with `section-num` / `section-title` / `section-lede` pattern
+- Each section opens with `section-title` and an optional `section-lede`. No numbered label above the title: gallery, features, pricing, and FAQ are not a sequence, and a counter over every heading is template chrome rather than information (one eyebrow on the hero is enough)
 - Two responsive breakpoints: `880px` (tablet) and `480px` (phone)
 - Section rhythm is a system, not per-gap. Run section spacing as one responsive ladder (e.g. desktop 96/72, tablet 72/54, phone 56/42). When a page reads too airy or too tight, scale the *whole* set by a single factor (about 0.75) across all breakpoints at once; nudging one gap leaves asymmetry, and asymmetry that survives tuning is structural. At the phone breakpoint step gutters down (64px to 16px) and shrink display sizes (hero title, price amount) in the same pass.
 

@@ -15,7 +15,7 @@ Commands and paths below are relative to this skill's directory. Keep the docume
 
 **Update check (non-blocking).** At the start of a task, run `bash scripts/check-update.sh`. It keeps a local daily marker and, at most once a day, reads Kami's latest published GitHub Release; it uploads no document or task content and stays silent when offline or sandboxed. When it prints a line about a newer Kami, relay it and continue.
 
-**Brand profile.** If `~/.config/kami/brand.md` (or the legacy `~/.kami/brand.md`) exists, read `references/brand-profile.md` and apply it. Precedence: explicit prompt > editorial judgment > habit notes > frontmatter defaults > built-in defaults. The profile fills gaps silently and never overrides the current conversation. When the user names another project as the visual reference, run the style scan in the same file.
+**Brand profile.** If `~/.config/kami/brand.md` (or the legacy `~/.kami/brand.md`) exists, read `references/brand-profile.md` and apply it. Precedence: explicit prompt > editorial judgment > habit notes > frontmatter defaults > built-in defaults. The profile fills gaps silently and never overrides the current conversation. When the user names another project as the visual reference, run the style scan in the same file. When they give only a brand website, `python3 scripts/brand_extract.py <url>` drafts a profile; show the draft and use it for this document only after they accept it.
 
 ## 1 · Lock the contract
 
@@ -78,7 +78,8 @@ Ask only in cases like "1.5 pages of career story, heavy visuals" (resume or por
 
 - **Changelog vs. release notes**: the changelog template is a styled document. GitHub release notes are a separate deliverable; use `/write`.
 - **Landing page**: screen-first HTML, no PDF. Fill the `{{PLACEHOLDER}}` values and comment blocks and save a ready-to-serve file. Companion files (`landing-page-*.example`) and the production site mode (docs, help, releases, legal pages, or more than two locales) live in `references/design.md` Section 11. Keep project-specific release artifacts, payment providers, appcast rules, and private local paths out of Kami.
-- **Diagrams inside a document** come from `assets/diagrams/` (eighteen types), not a template. `references/diagrams.md` section 1 picks the type; extract the `<svg>` block into a `<figure>`. The same file owns architecture boards, diagrams maintained in the user's repo, charts chosen from data (pick and embed them without asking), and generated raster illustrations.
+- **Diagrams inside a document** come from `assets/diagrams/` (eighteen types), not a template. `references/diagrams.md` section 1 picks the type; extract the `<svg>` block into a `<figure>`. The same file owns architecture boards, diagrams maintained in the user's repo, and generated raster illustrations.
+- **Charts from data** (pick and embed them without asking) are generated, never drawn by hand: write the numbers as a spec and run `python3 scripts/build.py --chart spec.json -o chart.svg` (`references/diagrams.md` section 9).
 - **Slides**: read `references/deck-preflight.md` before drafting.
 
 ## 2 · Sources, materials, and content
@@ -154,7 +155,7 @@ Fill the four metadata placeholders in `<head>`; WeasyPrint writes them into the
 
 Keep `<meta name="generator" content="Kami">` as is.
 
-**Output formats.** Do not ask; decide from context. Any document: HTML + PDF (PDF is the deliverable, HTML the source). Slides: HTML + PDF, plus PPTX only when an editable deck is requested. "分享 / 发朋友圈 / share / post / preview": add PNG. "嵌入 / 插图 / embed in another doc": PNG only. Landing page: the static HTML file. An explicit format request overrides all of this.
+**Output formats.** Do not ask; decide from context. Any document: HTML + PDF (PDF is the deliverable, HTML the source). Slides: HTML + PDF, plus PPTX only when an editable deck is requested. "分享 / 发朋友圈 / share / post / preview": add PNG. "嵌入 / 插图 / embed in another doc": PNG only. Landing page: the static HTML file. Word or `.docx` for long-doc, proposal, or equity-report: the PDF plus a DOCX through `references/production.md` Part 5. An explicit format request overrides all of this.
 
 ## 5 · Deliver
 
@@ -164,9 +165,9 @@ One command finishes a document. Run it from the document's directory, fix every
 python3 scripts/build.py --deliver filled.html content.json
 ```
 
-It checks the HTML (placeholders, strict math rendered in place, Markdown residue, template style, content coverage), renders the PDF next to it, then checks the PDF (page contract, resume balance, the font that actually drew CJK text, residue, density, orphans) and exports page images. `WARN` lines point at where to look, not at failures. `GAP` lines are the `[DATA NEEDED]` markers you must report.
+It checks the HTML (placeholders, strict math rendered in place, Markdown residue, generated charts against their data, template style, content coverage), renders the PDF next to it, then checks the PDF (page contract, resume balance, the font that actually drew CJK text, residue, density, orphans) and exports page images. `WARN` lines point at where to look, not at failures. `GAP` lines are the `[DATA NEEDED]` markers you must report.
 
-Then do the part no script can: open every page image and walk the printed checklist. One hit means a whole-document sweep for that class of issue. If the host cannot view images, send the image paths and the checklist to the user instead of skipping the pass. A missing CJK serif shows no fallback boxes, only a heavier, flatter page, which is why the font gate exists; never call a CJK document visually verified without it.
+Then do the part no script can: open every page image and walk the printed checklist. One hit means a whole-document sweep for that class of issue. Fix the three most visible defects per round, re-run `--deliver`, and stop after three rounds; list what is still wrong rather than looping. If the host cannot view images, send the image paths and the checklist to the user instead of skipping the pass. A missing CJK serif shows no fallback boxes, only a heavier, flatter page, which is why the font gate exists; never call a CJK document visually verified without it.
 
 Other surfaces:
 

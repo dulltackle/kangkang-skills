@@ -40,6 +40,8 @@ Common failures when AI generates professional documents. Organized by failure t
 | 17 | Chart with no insight title | Chart titled "Revenue by Quarter" | Title states the insight: "Revenue accelerated after Q2 price change" |
 | 18 | Decorative chart that restates the text | Bar chart showing the same three numbers the paragraph just listed | If the text already communicates it, the chart must add a dimension (comparison, trend, distribution) |
 | 19 | Icon or emoji as section marker | Sections led by decorative icons with no semantic value | Use typographic hierarchy (size, weight, spacing) instead |
+| 55 | Label chrome over every heading | `01 · FEATURES` above each section of a page whose sections are not a sequence; `Design · Build · Ship` joining words that are not data fields | Number only real sequences (chapters, slides, steps); keep one eyebrow on the cover or hero at most; a middle dot only separates data fields on one line |
+| 56 | Hand-placed chart geometry | Bar heights or arc endpoints typed into the SVG, so a bar and its label disagree | Write the numbers as a spec and generate the chart with `build.py --chart`; change data in the spec, never in the SVG |
 
 ## Source Gaps
 
