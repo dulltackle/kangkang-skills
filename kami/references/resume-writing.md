@@ -223,7 +223,7 @@ Measure before tuning. Add the two page fills `--check-resume-balance` prints af
 - Keep `.page-break` on the template's first page-2 section only. Never open a continuation section (`工作经历（续）`, `Experience (cont.)`) with `class="page-break"`: the break cuts page 1 wherever the last project ends and turns one shortfall into two half-empty pages, measured at 56-69% and 63-65%.
 - Keep two pages. Collapsing to one page breaks the contract instead of the balance gate.
 - Stop at the 3-project row of «Density tuning by project count». Raising body type, line-height, or section spacing past it reaches the floor with whitespace, and the gate passes a page that still reads empty, because it only reads where the last ink sits.
-- Remove page-2 sections the source has nothing for (AI judgment, public impact) rather than inventing content for them, list the missing material as `[DATA NEEDED]` gaps, and say in the handoff that the balance gate fails because the source is thin and which facts would close it.
+- Remove page-2 sections the source has nothing for (AI judgment, public impact) rather than inventing content for them, list the missing material as `[DATA NEEDED]` gaps, and say in the handoff which facts would close the shortfall. `--deliver` recognizes this case (two pages under the ceiling, less than 166% of ink in total) and reports the balance as a WARN with the totals instead of an ERROR; any other imbalance is still a layout error to fix.
 
 ---
 

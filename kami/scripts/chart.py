@@ -190,8 +190,17 @@ class _Svg:
         return head + "\n" + "\n".join(f"  {p}" for p in body) + "\n</svg>\n"
 
 
+def _step_decimals(step: float) -> int:
+    """Tick labels carry the precision of the step, not of the data (0-20 by 5, not 0.0-20.0)."""
+    for dec in range(5):
+        if abs(step * 10 ** dec - round(step * 10 ** dec)) < 1e-9:
+            return dec
+    return 4
+
+
 def _axis(svg: _Svg, x0: float, x1: float, lo: float, hi: float, step: float,
-          ymap, decimals: int, unit: str | None) -> None:
+          ymap, unit: str | None) -> None:
+    decimals = _step_decimals(step)
     ticks = round((hi - lo) / step)
     for i in range(ticks + 1):
         v = lo + i * step
@@ -286,7 +295,7 @@ def _bar(spec: dict) -> _Svg:
     def ymap(v: float) -> float:
         return BASE - (v - lo) / (hi - lo) * PLOT_H
 
-    _axis(svg, x0, x1, lo, hi, step, ymap, dec, spec.get("unit"))
+    _axis(svg, x0, x1, lo, hi, step, ymap, spec.get("unit"))
     zero = ymap(0)
     svg.add(f'<line x1="{x0}" y1="{_c(zero)}" x2="{x1}" y2="{_c(zero)}" stroke="{NEAR_BLACK}" stroke-width="0.8"/>')
     n, s = len(cats), len(series)
@@ -333,7 +342,7 @@ def _line(spec: dict) -> _Svg:
 
     n = len(cats)
     xs = [(x0 + x1) / 2] if n == 1 else [x0 + i * (x1 - x0) / (n - 1) for i in range(n)]
-    _axis(svg, x0, x1, lo, hi, step, ymap, dec, spec.get("unit"))
+    _axis(svg, x0, x1, lo, hi, step, ymap, spec.get("unit"))
     for x in xs[1:-1]:
         svg.add(f'<line x1="{_c(x)}" y1="{TOP}" x2="{_c(x)}" y2="{BASE}" stroke="{GRID}" '
                 f'stroke-width="0.5" stroke-dasharray="3 4"/>')
@@ -532,7 +541,7 @@ def _candlestick(spec: dict) -> _Svg:
     def ymap(v: float) -> float:
         return BASE - (v - lo) / (hi - lo) * PLOT_H
 
-    _axis(svg, x0, x1, lo, hi, step, ymap, dec, spec.get("unit"))
+    _axis(svg, x0, x1, lo, hi, step, ymap, spec.get("unit"))
     n = len(rows)
     stepx = (x1 - x0) / n
     bw = min(16.0, stepx * 0.5)
@@ -590,7 +599,7 @@ def _waterfall(spec: dict) -> _Svg:
     def ymap(v: float) -> float:
         return BASE - (v - lo) / (hi - lo) * PLOT_H
 
-    _axis(svg, x0, x1, lo, hi, step, ymap, dec, spec.get("unit"))
+    _axis(svg, x0, x1, lo, hi, step, ymap, spec.get("unit"))
     n = len(rows)
     stepx = (x1 - x0) / n
     bw = min(64.0, stepx * 0.75)

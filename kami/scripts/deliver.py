@@ -33,6 +33,7 @@ from checks import (
     check_orphans,
     check_placeholders,
     check_resume_balance,
+    resume_thin_source,
 )
 from content import check_content
 from lint import check_style
@@ -246,7 +247,11 @@ def deliver(args: list[str], result: dict | None = None) -> int:
             report.line("OK", "render", f"{pdf.name} ({pages} page(s))")
             _page_contract(report, fam, pages, page_target)
             if fam == "resume":
-                report.check("resume balance", check_resume_balance, [str(pdf)])
+                thin = resume_thin_source(pdf) if pages == 2 else None
+                if thin:
+                    report.line("WARN", "resume balance", thin)
+                else:
+                    report.check("resume balance", check_resume_balance, [str(pdf)])
             report.check("fonts", check_fonts, [str(pdf)])
             report.check("markdown residue (pdf)", check_markdown_residue, [str(pdf)])
             report.check("density", check_density, [str(pdf)], warn_only=True)
