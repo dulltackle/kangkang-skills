@@ -21,6 +21,7 @@ Common failures when AI generates professional documents. Organized by failure t
 | 8 | Metric-narrative disconnect | Chart shows flat revenue, text says "strong momentum" | Text must match what the chart shows |
 | 9 | Invented comparison baselines | "3x faster than alternatives" with no benchmark | Name the alternative and the benchmark method, or remove |
 | 10 | Mixing time periods | YoY growth next to QoQ growth as if comparable | Label every comparison window explicitly |
+| 57 | Unlabelled derived figure | "About 60% less waiting" as a slide headline when the source gave 23 and 9 minutes | Keep the inputs beside it ("23 to 9 minutes, about 61% less") or mark it derived (推算); check the arithmetic |
 
 ## Structure Mimicry
 
