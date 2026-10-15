@@ -889,26 +889,26 @@ body {
 }
 ```
 
-Heading scale:
+Heading scale (a 280mm slide is read from across a room, so body type sits near 13pt, matching the approved `demo-agent-slides` scale, not the 9-11pt of a printed page):
 
 | Element | Size | Weight | Notes |
 |---|---|---|---|
-| `h2` | 24pt | 500 | Page title; `margin-bottom: 14pt` |
-| `h3` | 15pt | 500 | Section heading; `color: var(--brand)` |
-| `.eyebrow` | 9.5pt | 400 | Mono, `letter-spacing: 2pt`, `color: var(--stone)` |
-| `.lead` | 12pt | 400 | Below `h2`; `color: var(--olive)` |
+| `h2` | 32pt | 500 | Page title; `margin-bottom: var(--rhythm-module)` (16pt) |
+| `h3` | 18pt | 500 | Section heading; `color: var(--brand)` |
+| `.eyebrow` | 10pt | 400 | Mono, `letter-spacing: 2pt`, `color: var(--stone)` |
+| `.lead` | 16pt | 400 | Below `h2`; `color: var(--olive)` |
 
 Content element scale:
 
 | Class | Size | Notes |
 |---|---|---|
-| `.mt` | 16pt | Module title, used with `.ml` |
-| `.ml` | 24pt | Large letter prefix in `var(--brand)`, paired with `.mt` |
-| `.ms` | 7.5pt mono | Module sub-label; `border-bottom` separator |
-| `.mb` | 11pt | Module body description |
-| `.mi` | 11pt | Module line item; `padding: 8pt 0` |
-| `.mc` | 9.5pt | Delivery rhythm or cadence note; `border-top` |
-| `.co` | 11pt bold | Bottom callout; `position: absolute; bottom: 12mm` |
+| `.mt` | 19pt | Module title, used with `.ml` |
+| `.ml` | 28pt | Large letter prefix in `var(--brand)`, paired with `.mt` |
+| `.ms` | 9pt mono | Module sub-label; `border-bottom` separator |
+| `.mb` | 13pt | Module body description |
+| `.mi` | 13pt | Module line item; `padding: 8pt 0` |
+| `.mc` | 11pt | Delivery rhythm or cadence note; `border-top` |
+| `.co` | 14pt bold | Bottom callout; `position: absolute; bottom: 22mm`, clear of the 10mm footer line |
 
 ### Layout patterns
 
@@ -963,7 +963,7 @@ table.data td:first-child {
 | One line per bullet | Trim until each item fits on one line; never let it wrap |
 | Empty space ≥50% | Draft defect. Order: merge with a neighbor > remove the slide and fold its useful point into another slide > convert existing evidence only when another form is clearer. Never add a callout, chart, or image just to occupy space. |
 | Empty space 25-50% | Acceptable when one complete assertion and its proof genuinely need the room. Otherwise merge or tighten the slide; do not add supporting matter solely for density. |
-| Cover | No horizontal rule; title centered `38pt`; subtitle on one line; bottom meta centered |
+| Cover | No horizontal rule; title centered `44pt`; subtitle on one line; bottom meta centered |
 
 Image-heavy decks carry two acceptance bars: the visual brief (crop notes, prompt fragments, generation instructions) is internal working material and never appears in slide titles, body copy, or captions; and the deck uses the existing `.c2`, `table.t2x2`, `.co`, data table, and inline figure patterns unless the source material clearly needs something else. How you plan toward that (slot map, outline, or otherwise) is your call; whatever you sketch is a rhythm check, not a locked layout registry.
 

@@ -1016,6 +1016,18 @@ instead of overflowing. Do not add joiners or per-word spans to the source HTML.
 Word-level breaking fills lines less tightly than syllable breaking, so a Korean
 document near its page ceiling may need a shorter line or two.
 
+### 27. A grid item set to `grid-column: 1 / -1` stays in one column
+
+**Symptom**: an item meant to span a two-column grid in a PDF stays in the first
+column, so whatever sits at its right edge (a star count, a date) stops mid-page.
+
+**Root cause**: WeasyPrint ignores negative grid line numbers; the declaration is
+dropped without a warning. Browsers honor it, so a landing page looks right.
+
+**Fix**: in PDF templates span by count (`grid-column: span 2`) or with positive
+lines (`1 / 3`). The resume templates use `.os-item:only-child { grid-column: span 2; }`
+so a single open-source project spans the row.
+
 ---
 
 ## Part 5 · HTML -> DOCX (pandoc + SVG-to-PNG)

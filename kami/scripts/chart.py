@@ -73,8 +73,31 @@ LIMITS = {
     "donut": (6, 1), "candlestick": (30, 1), "waterfall": (8, 1),
 }
 
-TOP, BASE = 40, 320           # plot area y range
+# One layout for every chart, sized for a document column: a 680-unit-wide
+# chart set across a ~170mm column lands near 0.7 scale, so 12-unit labels
+# print at about 8.5pt, just under body text.
+TOP, BASE = 24, 224           # plot area y range
 PLOT_H = BASE - TOP
+LABEL_Y = BASE + 22           # category labels under the axis
+LEGEND_Y = BASE + 44          # hairline above the legend row
+FS_TICK, FS_LABEL, FS_VALUE, FS_LEGEND, FS_NOTE = 11, 12, 12, 12, 11
+
+
+def _width(spec: dict, base: int) -> int:
+    """Canvas width. "size": "compact" narrows the canvas, not the type, for a
+    chart shown small (a half-column slide, two charts side by side): drawn at
+    the same physical width, its labels come out about 1.5 times larger."""
+    size = spec.get("size", "full")
+    if size not in ("full", "compact"):
+        raise ChartError('size must be "full" or "compact"')
+    return round(base * 0.65) if size == "compact" else base
+
+
+def _height(legend: bool, spec: dict) -> int:
+    """Chart height: plot, labels, optional legend row, optional source line."""
+    height = LEGEND_Y + 32 if legend else LABEL_Y + 16
+    src = spec.get("source")
+    return height + (22 if isinstance(src, str) and src.strip() else 0)
 
 
 class ChartError(ValueError):
@@ -169,7 +192,7 @@ class _Svg:
     def add(self, line: str) -> None:
         self.parts.append(line)
 
-    def text(self, x: float, y: float, value: str, *, size: float = 10, fill: str = NEAR_BLACK,
+    def text(self, x: float, y: float, value: str, *, size: float = FS_LABEL, fill: str = NEAR_BLACK,
              anchor: str = "start", weight: str | None = None, extra: str = "") -> None:
         attrs = f'x="{_c(x)}" y="{_c(y)}" fill="{fill}" font-size="{size:g}" font-family="{self.font}"'
         if anchor != "start":
@@ -198,6 +221,14 @@ def _step_decimals(step: float) -> int:
     return 4
 
 
+def _plot_left(lo: float, hi: float, step: float, unit) -> float:
+    """Left edge of the plot: tick labels start at the chart's own left edge, so
+    the chart lines up with the text column it sits in."""
+    dec = _step_decimals(step)
+    ticks = [fmt(lo + i * step, dec) for i in range(round((hi - lo) / step) + 1)]
+    return (22 if unit else 0) + max(text_width(t, FS_TICK) for t in ticks) + 10
+
+
 def _axis(svg: _Svg, x0: float, x1: float, lo: float, hi: float, step: float,
           ymap, unit: str | None) -> None:
     decimals = _step_decimals(step)
@@ -206,11 +237,11 @@ def _axis(svg: _Svg, x0: float, x1: float, lo: float, hi: float, step: float,
         v = lo + i * step
         y = ymap(v)
         svg.add(f'<line x1="{_c(x0)}" y1="{_c(y)}" x2="{_c(x1)}" y2="{_c(y)}" stroke="{GRID}" stroke-width="0.8"/>')
-        svg.text(x0 - 8, y + 4, fmt(v, decimals), fill=STONE, anchor="end")
+        svg.text(x0 - 8, y + 4, fmt(v, decimals), size=FS_TICK, fill=STONE, anchor="end")
     if unit:
         mid = (TOP + BASE) / 2
-        svg.text(16, mid, unit, size=9, fill=STONE, anchor="middle",
-                 extra=f'transform="rotate(-90 16 {_c(mid)})"')
+        svg.text(8, mid, unit, size=FS_NOTE, fill=STONE, anchor="middle",
+                 extra=f'transform="rotate(-90 8 {_c(mid)})"')
 
 
 def _legend(svg: _Svg, x0: float, x1: float, y: float, entries: list[tuple[str, str]]) -> None:
@@ -218,16 +249,17 @@ def _legend(svg: _Svg, x0: float, x1: float, y: float, entries: list[tuple[str, 
     svg.add(f'<line x1="{_c(x0)}" y1="{_c(y)}" x2="{_c(x1)}" y2="{_c(y)}" stroke="{GRID}" stroke-width="0.8"/>')
     x = x0
     for swatch, label in entries:
-        svg.add(swatch.format(x=_c(x), y=_c(y + 12)))
+        svg.add(swatch.format(x=_c(x), y=_c(y + 13)))
         tx = x + 18
-        svg.text(tx, y + 23, label, fill=OLIVE)
-        x = tx + text_width(label, 10) + 32
+        svg.text(tx, y + 24, label, size=FS_LEGEND, fill=OLIVE)
+        x = tx + text_width(label, FS_LEGEND) + 32
 
 
-def _source(svg: _Svg, spec: dict, x: float, y: float) -> None:
+def _source(svg: _Svg, spec: dict, x: float) -> None:
+    """The source line sits on the last row _height reserved for it."""
     src = spec.get("source")
     if isinstance(src, str) and src.strip():
-        svg.text(x, y, src.strip(), size=9, fill=STONE)
+        svg.text(x, svg.height - 6, src.strip(), size=FS_NOTE, fill=STONE)
 
 
 def _square(color: str) -> str:
@@ -289,8 +321,8 @@ def _bar(spec: dict) -> _Svg:
     lo, hi, step = nice_scale(min(allv), max(allv), include_zero=True)
     legend = len(series) > 1
     lang = _lang(spec, cats + [n for n, _ in series])
-    svg = _Svg(spec, "bar", 680, 420 if legend else 368, _font(lang))
-    x0, x1 = 60, 620
+    svg = _Svg(spec, "bar", _width(spec, 680), _height(legend, spec), _font(lang))
+    x0, x1 = _plot_left(lo, hi, step, spec.get("unit")), svg.width - 4
 
     def ymap(v: float) -> float:
         return BASE - (v - lo) / (hi - lo) * PLOT_H
@@ -300,7 +332,9 @@ def _bar(spec: dict) -> _Svg:
     svg.add(f'<line x1="{x0}" y1="{_c(zero)}" x2="{x1}" y2="{_c(zero)}" stroke="{NEAR_BLACK}" stroke-width="0.8"/>')
     n, s = len(cats), len(series)
     gw = (x1 - x0) / n
-    bw = min(32.0, (gw * 0.7 - 8 * (s - 1)) / s)
+    # One series gets a bar about half its slot; grouped bars stay narrow so
+    # the gap between groups still reads as the category break.
+    bw = min(56.0, gw * 0.5) if s == 1 else min(32.0, (gw * 0.7 - 8 * (s - 1)) / s)
     total = s * bw + 8 * (s - 1)
     for i, cat in enumerate(cats):
         cx = x0 + gw * (i + 0.5)
@@ -311,13 +345,12 @@ def _bar(spec: dict) -> _Svg:
             svg.add(f'<rect x="{_c(bx)}" y="{_c(top)}" width="{_c(bw)}" height="{_c(bottom - top)}" '
                     f'fill="{SERIES[si]}" rx="2"/>')
             ly = top - 4 if v >= 0 else bottom + 12
-            svg.text(bx + bw / 2, ly, fmt(v, dec, prefix, suffix), anchor="middle",
+            svg.text(bx + bw / 2, ly, fmt(v, dec, prefix, suffix), size=FS_VALUE, anchor="middle",
                      weight="500" if si == 0 else None)
-        label_y = max(zero, ymap(min(0.0, lo))) + 20 if lo < 0 else BASE + 20
-        svg.text(cx, label_y, cat, size=11, anchor="middle")
+        svg.text(cx, LABEL_Y, cat, size=FS_LABEL, anchor="middle")
     if legend:
-        _legend(svg, x0, x1, 368, [(_square(SERIES[i]), name) for i, (name, _) in enumerate(series)])
-    _source(svg, spec, x0, svg.height - 6 if legend else 356)
+        _legend(svg, x0, x1, LEGEND_Y, [(_square(SERIES[i]), name) for i, (name, _) in enumerate(series)])
+    _source(svg, spec, 0)
     return svg
 
 
@@ -334,8 +367,9 @@ def _line(spec: dict) -> _Svg:
     lo, hi, step = nice_scale(min(allv), max(allv), include_zero=min(allv) >= 0 and spec.get("zero", True))
     legend = len(series) > 1
     lang = _lang(spec, cats + [n for n, _ in series])
-    svg = _Svg(spec, "line", 680, 420 if legend else 368, _font(lang))
-    x0, x1 = 60, 620
+    svg = _Svg(spec, "line", _width(spec, 680), _height(legend, spec), _font(lang))
+    end_w = max(text_width(fmt(vals[-1], dec, prefix, suffix), FS_VALUE) for _, vals in series)
+    x0, x1 = _plot_left(lo, hi, step, spec.get("unit")), svg.width - end_w - 12
 
     def ymap(v: float) -> float:
         return BASE - (v - lo) / (hi - lo) * PLOT_H
@@ -366,13 +400,13 @@ def _line(spec: dict) -> _Svg:
     for i in range(1, len(ends)):  # keep end labels at least 12px apart
         ends[i][0] = max(ends[i][0], ends[i - 1][0] + 12)
     for y, si, v in ends:
-        svg.text(xs[-1] + 8, y, fmt(v, dec, prefix, suffix), size=11 if si == 0 else 10,
+        svg.text(xs[-1] + 8, y, fmt(v, dec, prefix, suffix), size=FS_VALUE,
                  fill=SERIES[si], weight="500" if si == 0 else None)
     for x, cat in zip(xs, cats):
-        svg.text(x, BASE + 20, cat, size=11, anchor="middle")
+        svg.text(x, LABEL_Y, cat, size=FS_LABEL, anchor="middle")
     if legend:
-        _legend_lines(svg, x0, x1, 368, [name for name, _ in series])
-    _source(svg, spec, x0, svg.height - 6 if legend else 356)
+        _legend_lines(svg, x0, x1, LEGEND_Y, [name for name, _ in series])
+    _source(svg, spec, 0)
     return svg
 
 
@@ -388,8 +422,8 @@ def _legend_lines(svg: _Svg, x0: float, x1: float, y: float, names: list[str]) -
             svg.add(f'<circle cx="{_c(x + 12)}" cy="{_c(cy)}" r="3.5" fill="{color}"/>')
         else:
             svg.add(f'<circle cx="{_c(x + 12)}" cy="{_c(cy)}" r="3" fill="{PARCHMENT}" stroke="{color}" stroke-width="1.5"/>')
-        svg.text(x + 32, cy + 4, name, fill=OLIVE)
-        x = x + 32 + text_width(name, 10) + 32
+        svg.text(x + 32, cy + 4, name, size=FS_LEGEND, fill=OLIVE)
+        x = x + 32 + text_width(name, FS_LEGEND) + 32
 
 
 # ------------------------------------------------------------------- hbar
@@ -417,28 +451,29 @@ def _hbar(spec: dict) -> _Svg:
     if focus is not None and (not isinstance(focus, int) or not 0 <= focus < len(items)):
         raise ChartError("hbar: focus must be an item index or null")
     lang = _lang(spec, [l for l, _ in items])
-    row = 28
-    height = TOP + len(items) * row + 12
+    unit = spec.get("unit") if isinstance(spec.get("unit"), str) and spec.get("unit") else None
+    row, bar = 30, 18
+    top = 34 if unit else 10
     has_source = isinstance(spec.get("source"), str) and spec["source"].strip()
-    svg = _Svg(spec, "hbar", 680, height + (24 if has_source else 0), _font(lang))
-    label_w = min(200.0, max(text_width(l, 11) for l, _ in items))
-    x0 = 60 + label_w + 12
+    height = top + len(items) * row + 6 + (26 if has_source else 0)
+    svg = _Svg(spec, "hbar", _width(spec, 680), height, _font(lang))
+    label_w = min(200.0, max(text_width(l, FS_LABEL) for l, _ in items))
+    x0 = label_w + 14
     vmax = max(v for _, v in items) or 1.0
     labels = [fmt(v, dec, prefix, suffix) for _, v in items]
-    span = 620 - x0 - max(text_width(t, 10) for t in labels) - 8
-    unit = spec.get("unit")
-    if isinstance(unit, str) and unit:
-        svg.text(x0, TOP - 16, unit, size=9, fill=STONE)
+    span = svg.width - 20 - x0 - max(text_width(t, FS_VALUE) for t in labels) - 10
+    if unit:
+        svg.text(x0, top - 14, unit, size=FS_NOTE, fill=STONE)
     for i, (label, v) in enumerate(items):
-        y = TOP + i * row
+        y = top + i * row
         w = v / vmax * span
         color = BRAND if i == focus else LIGHT_STONE
-        svg.text(x0 - 12, y + 13, label, size=11, anchor="end")
-        svg.add(f'<rect x="{_c(x0)}" y="{_c(y + 2)}" width="{_c(w)}" height="16" fill="{color}" rx="2"/>')
-        svg.text(x0 + w + 8, y + 14, labels[i], weight="500" if i == focus else None)
-    svg.add(f'<line x1="{_c(x0)}" y1="{TOP - 4}" x2="{_c(x0)}" y2="{_c(TOP + len(items) * row - 4)}" '
+        svg.text(x0 - 14, y + 14, label, size=FS_LABEL, anchor="end")
+        svg.add(f'<rect x="{_c(x0)}" y="{_c(y + 1)}" width="{_c(w)}" height="{bar}" fill="{color}" rx="2"/>')
+        svg.text(x0 + w + 8, y + 14, labels[i], size=FS_VALUE, weight="500" if i == focus else None)
+    svg.add(f'<line x1="{_c(x0)}" y1="{top - 3}" x2="{_c(x0)}" y2="{_c(top + len(items) * row - 7)}" '
             f'stroke="{NEAR_BLACK}" stroke-width="0.8"/>')
-    _source(svg, spec, 60, svg.height - 8)
+    _source(svg, spec, 0)
     return svg
 
 
@@ -463,6 +498,7 @@ def _arc_point(cx: float, cy: float, r: float, deg: float) -> tuple[float, float
 
 
 def _donut(spec: dict) -> _Svg:
+    """Ring on the left, legend beside it at reading size, one composition."""
     items = _items(spec, "donut")
     if any(v <= 0 for _, v in items):
         raise ChartError("donut: every value must be positive")
@@ -470,8 +506,13 @@ def _donut(spec: dict) -> _Svg:
     shares = _shares([v for _, v in items], dec)
     lang = _lang(spec, [l for l, _ in items] + [str(spec.get("center_label", ""))])
     has_source = isinstance(spec.get("source"), str) and spec["source"].strip()
-    svg = _Svg(spec, "donut", 680, 404 if has_source else 360, _font(lang))
-    cx, cy, R, r = 300, 200, 136, 76
+    cx, cy, R, r = 114, 128, 112, 68
+    pct = [fmt(s, dec, suffix="%") for s in shares]
+    pct_w = max(text_width(p, 14) for p in pct)
+    lx = cx + R + 44
+    need = lx + 22 + pct_w + 14 + max(text_width(l, FS_LABEL) for l, _ in items) + 8
+    width = max(_width(spec, 680), round(need))
+    svg = _Svg(spec, "donut", width, 260 + (26 if has_source else 0), _font(lang))
     total = sum(v for _, v in items)
     angle = -90.0
     for i, (_, v) in enumerate(items):
@@ -496,22 +537,21 @@ def _donut(spec: dict) -> _Svg:
         angle += span
     svg.add(f'<circle cx="{cx}" cy="{cy}" r="{R}" fill="none" stroke="{PARCHMENT}" stroke-width="1.5"/>')
     svg.add(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{PARCHMENT}" stroke-width="1.5"/>')
-    pct = [fmt(s, dec, suffix="%") for s in shares]
     center = spec.get("center_label")
-    svg.text(cx, cy + (-7 if center else 9), pct[0], size=26, fill=BRAND, anchor="middle", weight="500")
-    if isinstance(center, str) and center:
-        svg.text(cx, cy + 14, center, fill=STONE, anchor="middle")
+    has_center = isinstance(center, str) and center
+    svg.text(cx, cy + (-2 if has_center else 10), pct[0], size=30, fill=BRAND, anchor="middle", weight="500")
+    if has_center:
+        svg.text(cx, cy + 20, center, size=FS_NOTE, fill=STONE, anchor="middle")
     n = len(items)
-    y0 = 208 - n * 12
-    svg.add(f'<line x1="460" y1="{y0 - 16}" x2="460" y2="{y0 + n * 24 + 20}" stroke="{GRID}" stroke-width="0.8"/>')
+    rowh = 32
+    y0 = cy - n * rowh / 2
     for i, (label, _) in enumerate(items):
-        y = y0 + i * 24
-        svg.add(_square(SERIES[i]).format(x="472", y=_c(y)))
-        svg.text(492, y + 11, pct[i], size=9.5, weight="500" if i == 0 else None)
-        svg.text(536, y + 11, label, size=9, fill=OLIVE)
-    if has_source:
-        svg.add(f'<line x1="60" y1="368" x2="620" y2="368" stroke="{GRID}" stroke-width="0.8"/>')
-        _source(svg, spec, 60, 388)
+        y = y0 + i * rowh
+        svg.add(_square(SERIES[i]).format(x=_c(lx), y=_c(y + 10)))
+        svg.text(lx + 22, y + 21, pct[i], size=14, fill=BRAND if i == 0 else NEAR_BLACK,
+                 weight="500" if i == 0 else None)
+        svg.text(lx + 22 + pct_w + 14, y + 21, label, size=FS_LABEL, fill=OLIVE)
+    _source(svg, spec, 0)
     return svg
 
 
@@ -535,8 +575,8 @@ def _candlestick(spec: dict) -> _Svg:
     lo, hi, step = nice_scale(min(r[3] for r in rows), max(r[2] for r in rows), include_zero=False)
     lang = _lang(spec, [r[0] for r in rows])
     words = WORDS[lang]
-    svg = _Svg(spec, "candlestick", 760, 420, _font(lang))
-    x0, x1 = 60, 700
+    svg = _Svg(spec, "candlestick", _width(spec, 760), _height(True, spec), _font(lang))
+    x0, x1 = _plot_left(lo, hi, step, spec.get("unit")), svg.width - 4
 
     def ymap(v: float) -> float:
         return BASE - (v - lo) / (hi - lo) * PLOT_H
@@ -555,9 +595,9 @@ def _candlestick(spec: dict) -> _Svg:
         svg.add(f'<rect x="{_c(cx - bw / 2)}" y="{_c(top)}" width="{_c(bw)}" '
                 f'height="{_c(max(1.0, bottom - top))}" fill="{color}" rx="1"/>')
         if i % every == 0 or (i == n - 1 and (n - 1) % every >= every / 2):
-            svg.text(cx, BASE + 20, label, fill=STONE, anchor="middle")
-    _legend(svg, x0, x1, 368, [(_square(BRAND), words["up"]), (_square(STONE), words["down"])])
-    _source(svg, spec, x0, 414)
+            svg.text(cx, LABEL_Y, label, size=FS_TICK, fill=STONE, anchor="middle")
+    _legend(svg, x0, x1, LEGEND_Y, [(_square(BRAND), words["up"]), (_square(STONE), words["down"])])
+    _source(svg, spec, 0)
     return svg
 
 
@@ -593,8 +633,8 @@ def _waterfall(spec: dict) -> _Svg:
     lo, hi, step = nice_scale(min(levels), max(levels), include_zero=True)
     lang = _lang(spec, [r[0] for r in rows])
     words = WORDS[lang]
-    svg = _Svg(spec, "waterfall", 720, 420, _font(lang))
-    x0, x1 = 60, 660
+    svg = _Svg(spec, "waterfall", _width(spec, 720), _height(True, spec), _font(lang))
+    x0, x1 = _plot_left(lo, hi, step, spec.get("unit")), svg.width - 4
 
     def ymap(v: float) -> float:
         return BASE - (v - lo) / (hi - lo) * PLOT_H
@@ -618,12 +658,12 @@ def _waterfall(spec: dict) -> _Svg:
                 f'fill="{color}" rx="2"/>')
         text = fmt(v, dec, prefix, suffix, sign=kind == "delta")
         ly = bottom + 14 if (kind == "delta" and v < 0) else top - 8
-        svg.text(cx, ly, text, size=11, anchor="middle", weight="500")
-        svg.text(cx, BASE + 20, label, anchor="middle")
+        svg.text(cx, ly, text, size=FS_VALUE, anchor="middle", weight="500")
+        svg.text(cx, LABEL_Y, label, size=FS_LABEL, anchor="middle")
         prev_edge = bx + bw
-    _legend(svg, x0, x1, 368, [(_square(BRAND), words["increase"]), (_square(STONE), words["decrease"]),
+    _legend(svg, x0, x1, LEGEND_Y, [(_square(BRAND), words["increase"]), (_square(STONE), words["decrease"]),
                                (_square(CHARCOAL), words["total"])])
-    _source(svg, spec, x0, 414)
+    _source(svg, spec, 0)
     return svg
 
 

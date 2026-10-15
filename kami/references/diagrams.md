@@ -591,7 +591,7 @@ Six chart types for investment reports, financial comparisons, and market-share 
 python3 scripts/build.py --chart revenue.json -o revenue.svg
 ```
 
-Paste the generated `<svg>` into a `<figure>` whose caption states the insight, not the data range. The SVG carries its spec in `data-kami-spec`; `--deliver` (and `--check-charts`) regenerates every chart from that spec and fails when a mark or label was edited afterwards. To change a number, edit the spec and regenerate. Styling the root `<svg>` tag for layout (width, margins) is fine; the marks inside are not.
+Paste the generated `<svg>` into a `<figure>` at the full width of its column and give it no `height` or `max-height`: the chart is sized for a document column (about 75mm tall at 170mm wide, labels near 8.5pt), and a height cap shrinks every label with it. For a chart shown small, a half-column slide or two charts side by side, add `"size": "compact"` to the spec instead of scaling the SVG down. The caption states the insight, not the data range. The SVG carries its spec in `data-kami-spec`; `--deliver` (and `--check-charts`) regenerates every chart from that spec and fails when a mark or label was edited afterwards. To change a number, edit the spec and regenerate. Styling the root `<svg>` tag for layout (width, margins) is fine; the marks inside are not.
 
 **Choosing the chart.** When content carries numbers, pick the chart yourself and embed it without asking. Two house calls differ from the common default: a share that sums to about 100% renders as a donut only up to 6 items, and 7 or more becomes an hbar; a single time series whose absolute count changes dominate (not the rate) renders as bars, not a line. When several types fit, prefer the one that shows variance most clearly.
 
@@ -613,13 +613,13 @@ Paste the generated `<svg>` into a `<figure>` whose caption states the insight, 
 | `candlestick` | `points[].label`, `open`, `high`, `low`, `close` | 30 points |
 | `waterfall` | `items[].label`, `items[].value`; `"total": true` marks an opening or closing total (a closing total may omit `value`; if given it must equal the running sum) | 8 bars |
 
-Optional on every type: `unit` (axis caption), `prefix` / `suffix` (value labels), `decimals`, `source` (footnote), `lang` (`cn`, `en`, `ko`; inferred from the labels otherwise, which also picks the font chain), and `title` (accessible name only; the chart draws no title, the figure caption carries it).
+Optional on every type: `size` (`full`, or `compact` for a slide or narrow column), `unit` (axis caption), `prefix` / `suffix` (value labels), `decimals`, `source` (footnote), `lang` (`cn`, `en`, `ko`; inferred from the labels otherwise, which also picks the font chain), and `title` (accessible name only; the chart draws no title, the figure caption carries it).
 
 The generator refuses data that cannot be drawn honestly: a candle whose high and low do not contain its open and close, a waterfall total that disagrees with its running sum, more items than the limit. Fix the data or ask for it; never loosen the spec to get past the error.
 
 ### Palette and geometry (owned by `scripts/chart.py`)
 
-Series run ink-blue `#1B365D`, olive `#504e49`, stone `#6b6a64`, light-stone `#b8b7b0`, mist `#d4d3cd`, brand-tint `#EEF2F7`. Grid lines `#e8e7e1`, value labels near-black `#141413`. Up candles and increases are ink-blue, down candles and decreases stone, waterfall totals charcoal `#4d4c48`. Axes round out to a 1 / 2 / 2.5 / 5 step, bars and areas start at zero, and the plot area is fixed (x 60, y 40 to 320) so charts in one document line up. The five chart files in `assets/diagrams/` are generated demos of this output; open them to preview, but fill a document through a spec.
+Series run ink-blue `#1B365D`, olive `#504e49`, stone `#6b6a64`, light-stone `#b8b7b0`, mist `#d4d3cd`, brand-tint `#EEF2F7`. Grid lines `#e8e7e1`, value labels near-black `#141413`. Up candles and increases are ink-blue, down candles and decreases stone, waterfall totals charcoal `#4d4c48`. Axes round out to a 1 / 2 / 2.5 / 5 step and bars and areas start at zero. Every chart shares one plot height and one type scale, and its tick labels start at the chart's own left edge, so charts in one document line up with each other and with the text column. The five chart files in `assets/diagrams/` are generated demos of this output; open them to preview, but fill a document through a spec.
 
 ---
 
