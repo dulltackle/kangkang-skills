@@ -122,3 +122,19 @@ The old `run.json` records worktree A and preview session S, with their creation
 ## Q: Individual cleanup and retries
 
 Handoff is complete. A is this run's ordinary Git worktree: its code is integrated, recovery files passed hash and restoration checks, and actual-host observation confirms no active use. B has unsaved source or an active process. C is an app-managed worktree whose original interface refuses cleanup. D satisfies normal cleanup conditions. A's removal request succeeded, but its post-removal state has not been queried. On the next resume, A is absent, B is still in use, and D is unprocessed. Describe individual disposition, evidence, and reporting without performing cleanup.
+
+## R: Shared performance budget
+
+At phase start user accepted defaults. A worked 20 minutes; user wait took 20 minutes; B then worked 10 minutes. Report elapsed/checkpoint. Comparable complete entry measurements are 100,98,97 seconds. Explain next experiments, user choice, cleanup/review and pending performance criteria. Variant: user pre-approved 60 minutes. Variant: samples measure different entry/cache conditions.
+
+## S: Major-stage handoff
+
+Functional implementer A/reviewer R have one active check and an unresolved issue. A replacement context proposes starting performance and replacing R. After repair, all checks end and R accepts. Explain handoff packet and context/reviewer choices through final acceptance, including cross-ticket review.
+
+## T: Actual result capture
+
+Codex exec_command returned session_id123; bookkeeping failed. Later write_stdin cannot query it; a local Python child returns0. Explain original-result preservation, registration recovery and outer session/descendant state. Variant: original write_stdin later returns exit_code0.
+
+## U: Evidence plan
+
+Two mapped criteria have complete metadata. One raw file hash changed; another has only the implementer's semantic claim. An old formal run has a different target commit. Explain plan output, missing review, original identity and actual writeback status.

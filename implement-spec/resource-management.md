@@ -83,3 +83,13 @@ python3 <skill-dir>/evals/test_resources.py -v
 ```
 
 Tests use temporary directories and Git repositories, without connecting to actual run resources, hosts, or trackers. Scenarios O–Q in `evals/scenarios.md` evaluate agent decisions separately; tool tests do not replace behavioral evaluation.
+
+## 原接口结果自动登记
+
+`resources.py ... capture --input <调用信封.json>` 自动保存不可覆盖的原件、SHA256、执行记录及适用的资源身份；默认返回摘要和原件路径。信封含 id（唯一安全文件名）、owner、purpose、location、manager、operation、observedAt、result（未经改写的真实返回对象）。日志先在生产端剔除凭据，不传环境/认证原文。
+
+首轮支持 `manager:exec_command, operation:start` 的 Codex/Linux 返回：exit_code 只形成已结束执行记录，session_id 则登记持续 process/handle。后续实际 `write_stdin` 查询用 manager:write_stdin、operation:observe，带 resourceId 和原 handle；退出码只证明该宿主会话结束，全部后代和正式任务仍按原接口各自核对。查询失败或未知接口结果保持 unknown，本地 subprocess.returncode 不建立宿主终态。
+
+普通 Git worktree 创建后用 manager:git、operation:create，location/repository 保存实际目标路径，result 保留原执行接口的 exit_code/output 等实际返回对象；入口实际查询 Git 登记及 HEAD 后登记身份。应用管理工作树及项目正式任务继续原入口，沿用 register/record 协议，不发明通用进程管理器。
+
+capture 不执行资源创建。原始调用成功而登记失败时，保留输入/原结果和句柄，排除登记故障后原输入重试，不能重启命令或新建替代资源。原件写盘之后其他字段失败也保留文件。旧 schemaVersion:1 登记表兼容，只按实际使用核对；inspect 输出旧未知，绝不批量重写历史或据空表断言无资源。

@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
+from types import SimpleNamespace
 from pathlib import Path
 import subprocess
 import sys
@@ -182,7 +184,75 @@ def inspect(data):
                 row["gitCheckError"] = str(error)
         rows.append(row)
     return {"runId": data["runId"], "count": len(rows), "resources": rows,
+            "executionCount": len(data.get("executions", {})),
             "note": "Read-only local checks; historical events neither establish current host state nor authorize cleanup"}
+
+
+def capture(data, args):
+    """接收原接口调用结果；原件先落盘，登记失败后用相同输入重试。"""
+    call = read_json(args.input)
+    for field in ('id','owner','purpose','manager','operation','observedAt','location'):
+        require(nonempty(call.get(field)), 'Missing capture field: '+field)
+    require(re.fullmatch(r'[A-Za-z0-9_-]{1,128}',call['id']), 'Invalid capture ID')
+    require(isinstance(call.get('result'),dict), 'Capture requires the actual result object')
+    when = datetime.fromisoformat(call['observedAt'].replace('Z','+00:00'))
+    require(when.tzinfo is not None, 'Capture time must include timezone')
+    directory = args.registry.resolve().with_suffix('.results')
+    directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+    raw = directory/(call['id']+'.json')
+    content = (json.dumps(call,ensure_ascii=False,indent=2)+'\n').encode()
+    if raw.exists():
+        require(raw.read_bytes()==content, 'Capture ID conflicts with saved original; preserve it')
+    else:
+        fd=os.open(raw,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        with os.fdopen(fd,'wb') as stream:
+            stream.write(content);stream.flush();os.fsync(stream.fileno())
+    proof=evidence(raw)
+    runs=data.setdefault('executions',{})
+    if call['id'] in runs:
+        require(runs[call['id']]['source']==proof,'Capture original changed')
+        return dict(id=call['id'],status='already-captured',source=proof)
+    result=call['result']; manager=call['manager']; operation=call['operation']
+    host = manager in ('exec_command','write_stdin')
+    handle=result.get('session_id')
+    ended=host and isinstance(result.get('exit_code'),int) and not isinstance(result.get('exit_code'),bool)
+    state='ended' if ended else 'running' if host and handle is not None else 'unknown'
+    if operation=='observe':
+        rid=call['resourceId']; entry=data['resources'].get(rid)
+        require(entry is not None,'Unknown resource; recover its creation registration first')
+        spec=entry['registration']
+        require(spec['kind']=='process' and spec['manager']=='exec_command' and manager=='write_stdin','Original session interface required')
+        require(str(call.get('handle'))==spec['handle'],'Observation handle mismatch')
+        require(handle is None or str(handle)==spec['handle'],'Returned session changed')
+        report=dict(resourceId=rid,identity=spec['identity'],type='observation',observedAt=call['observedAt'],
+            hostScope='actual-host' if ended or handle is not None else 'unverified',
+            presence='absent' if ended else 'present' if handle is not None else 'unknown',
+            activeUse='inactive' if ended else 'active' if handle is not None else 'unknown',
+            reason='Original host session result; session termination does not prove all descendants stopped')
+        event_file=directory/(call['id']+'.observation.json')
+        save(event_file,report)
+        record(data,SimpleNamespace(input=event_file,evidence=raw,recovery=[]))
+    elif host and handle is not None:
+        require(manager=='exec_command' and operation=='start','Register from original exec_command creation')
+        spec=dict(id=call['id'],kind='process',owner=call['owner'],purpose=call['purpose'],manager=manager,
+            identity=data['runId']+'/exec_command/'+str(handle)+'/'+call['observedAt'],
+            handle=str(handle),location=absolute(call['location']))
+        spec_file=directory/(call['id']+'.registration.json');save(spec_file,spec)
+        register(data,SimpleNamespace(input=spec_file,evidence=raw))
+    elif manager=='git' and operation=='create':
+        require(result.get('exit_code')==0,'Git creation command must have completed successfully')
+        location=absolute(call['location']); repository=absolute(call['repository'])
+        listing=subprocess.check_output(['git','-C',repository,'worktree','list','--porcelain','-z'])
+        require(('worktree '+location).encode() in listing.split(b'\0'),'Worktree not registered in Git')
+        head=subprocess.check_output(['git','-C',location,'rev-parse','HEAD'],text=True).strip()
+        spec=dict(id=call['id'],kind='worktree',owner=call['owner'],purpose=call['purpose'],manager='git',
+            identity=data['runId']+'/git/'+location+'/'+head+'/'+call['observedAt'],location=location,repository=repository)
+        spec_file=directory/(call['id']+'.registration.json');save(spec_file,spec)
+        register(data,SimpleNamespace(input=spec_file,evidence=raw));state='managed'
+    runs[call['id']]=dict(source=proof,state=state,manager=manager,operation=operation,
+        resourceId=call.get('resourceId',call['id'] if call['id'] in data['resources'] else None))
+    return dict(id=call['id'],status='captured',state=state,source=proof,
+        resourceId=runs[call['id']]['resourceId'],descendants='unknown')
 
 
 def main():
@@ -196,6 +266,8 @@ def main():
         command.add_argument("--evidence", required=True, type=Path)
         if name == "record":
             command.add_argument("--recovery", action="append", default=[], type=Path)
+    capture_parser = subs.add_parser("capture")
+    capture_parser.add_argument("--input", required=True, type=Path)
     subs.add_parser("inspect")
     args = parser.parse_args()
     try:
@@ -207,10 +279,10 @@ def main():
         else:
             with locked(path):
                 data = load(path, args.run_id)
-                result = register(data, args) if args.command == "register" else record(data, args)
+                result = {"register": register, "record": record, "capture": capture}[args.command](data, args)
                 save(path, data)
         print(json.dumps(result, ensure_ascii=False))
-    except (ValueError, OSError, KeyError, TypeError) as error:
+    except (ValueError, OSError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         print("Resource registry error: " + str(error), file=sys.stderr)
         return 1
     return 0

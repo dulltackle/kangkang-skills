@@ -6,7 +6,7 @@ Every acceptance tick requires matching execution results, independent technical
 
 ## 1. Verify the final state
 
-Run [task discovery](task-discovery.md) to rediscover the complete ticket set and reconcile it with the run record. Apply its global stop for incomplete queries and its recovery procedure for added, missed, or changed relationships. Complete affected implementation and review before returning to acceptance. Track commits, review, acceptance evidence, and write-back state against each ticket's current criteria; parent acceptance, apparent code coverage, and closed status cannot replace child-ticket evidence.
+Run [task discovery](task-discovery.md) to rediscover the complete ticket set and reconcile it with the run record. Pause integration, write-back and handoff for incomplete queries under its failure boundaries and its recovery procedure for added, missed, or changed relationships. Complete affected implementation and review before returning to acceptance. Track commits, review, acceptance evidence, and write-back state against each ticket's current criteria; parent acceptance, apparent code coverage, and closed status cannot replace child-ticket evidence.
 
 Re-read each ticket from the tracker. Match evidence to the **exact text** of its current acceptance criteria. Verify added or changed criteria; evidence with no matching criterion pauses that ticket's write-back. Leave unverified criteria unchecked.
 
@@ -26,6 +26,8 @@ Batch only `user` items into one request, grouped by ticket. Leave declined or u
 A failing check loses its existing tick: report the regression and its reason. Reopen a previously closed ticket that has lost acceptance, using the tracker's rules. It can close again only after acceptance is earned again.
 
 Later code fixes require affected regressions and complete formal project checks for the new integration commit; have an independent reviewer reassess changed reading criteria. Reuse a qualifying run already performed on that new commit rather than running it again at handoff. Changes to relevant dependencies, configuration, environment, criteria, or check scope also require renewed matching evidence. Tracker-only remote writes do not change the tested commit. Local acceptance or closure commits must follow the repository's evidence policy; absent an explicit rule allowing record-only commits, formally verify the new delivery commit. Reconcile evidence with the delivery target before handoff.
+
+可用 [验收证据计划](evidence-plan.md) 核对提交、来源哈希和映射；计划存在不等于条款通过或已经写回。
 
 ## 2. Write earned acceptance back
 

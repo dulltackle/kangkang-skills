@@ -6,104 +6,24 @@ disable-model-invocation: true
 
 # Implement Spec
 
-Implement the entire spec on one **integration branch**, with every ticket resolved the way the issue tracker closes work.
+在一个集成分支实现规格。事项构成依赖图：持续并行推进已就绪的独立工作，协调者统一记录状态，通过事项、提交和证据路径传递上下文。
 
-The tickets are a **task graph**, not a list of steps. The **frontier** is the set of tickets whose dependencies have landed and whose requirements are settled. Keep independent ready work running in parallel; reducing token use must not turn the frontier into a default serial queue.
+## 执行步骤
 
-Communicate through **context pointers** to the spec, tickets, research notes, and commits. Keep shared exploration notes outside the repo, accessible to every subagent.
+1. **建立范围**：读取项目 `docs/agents/issue-tracker.md`，执行 [事项发现](task-discovery.md)。首次完整快照及关系分类完成后开始实现。缺少验收标准时提出标准并等待用户确认；独立路径继续。
+2. **建立运行**：读取 [分支与运行记录](run-record.md)，保存基线，在仓库外建立 `run.json`，报告绝对路径。创建持续资源或恢复任务前，读取 [资源协议](resource-management.md)。资源详情保留在登记表。
+3. **实现就绪事项**：读取 [实现、审查与合并](implementation.md)，在确认的最高层接口用 TDD，执行定向测试和类型检查；每项独立只读 OCR 审查，修复后由同 reviewer 复核。协调者依次合并，立即推进新就绪事项。正式完整检查留到改动稳定后。
+4. **阶段交接**：功能实现→性能收敛→最终验收前读取 [协作与性能投入](collaboration.md)。原拥有者收尾活动检查；用简短交接包进入新的实现/审查上下文。同问题修复循环保持 reviewer，未解决则延后交接。最终审查覆盖跨事项交互与缺口。
+5. **整体审查**：读取 [集成审查](integration-review.md)，用 OCR 全范围清单对齐已有覆盖；复核交互、冲突解决及缺口。有效问题全部修复且受影响检查通过后进入验收。
+6. **验收与写回**：读取 [验收和交付](acceptance.md)，交付前完整发现，固定候选提交。使用现有正式入口补齐失效/缺失证据，复用仍有效的原来源；按准确条款核对后写回。可用 [证据计划工具](evidence-plan.md) 整理机械核对；语义要求由独立 reviewer 判断。
+7. **交付及清理**：所有事项具有非空验收区且全部 earned、写回成功后，按验收协议推送、转 PR 就绪或直接关闭，再逐项清理本次临时资源。交付和清理分别报告；未知资源保留。
 
-## Which tracker
+## 条件导航
 
-Read `docs/agents/issue-tracker.md` and the configuration it points to. If none has been provided, tell the user to run `/setup-matt-pocock-skills` before continuing.
+- 开始性能优化：先读 [投入预算](collaboration.md#性能阶段)，共享阶段默认 45 分钟、30 分钟检查点。并行/换人不重置。到期或连续两轮可比完整入口改善均 <5% 时停止新实验，呈现收益、差距和理由，请用户选择继续或分期；必要修复、审查及独立工作继续，未达条款开放。
+- 查询失败、压缩续接或外部状态可能变化的恢复：读 [发现恢复](task-discovery.md#恢复与失败)，区分首次完整发现与已有快照；暂停新调度、集成、写回，已有分配的本地开发/测试可继续。
+- 等待 agent 或长检查：用通知/有界等待，完成、阻塞、接口变化时更新统一状态；只有具体失败才读取详细日志，保持宿主要求的进度沟通。
+- 创建/观察/清理会话、服务、正式任务或工作树：读 [资源协议](resource-management.md)，通过原接口结果登记；登记失败恢复登记，不重复创建。短同步命令只留执行记录。
+- 修改本技能维护源或安装副本：读 [维护与评估](maintenance.md)。验证后备份并显式同步，核对实际管理方式、范围和哈希，未证实收益保持试点。
 
-## Process
-
-### 1. Read the task graph
-
-Run [task discovery](task-discovery.md) first. Establish query completeness and record the ticket set and relationship evidence, then classify tickets as ready, waiting on dependencies, or blocked. Repeat discovery on resume and at close-out. Incomplete queries stop all implementation; missing dependencies, cycles, and unresolved requirements block affected paths.
-
-Every ticket needs acceptance criteria before implementation. Propose missing criteria for the user's confirmation; only confirmed criteria become the ticket's requirements. Continue independent tickets while that decision is pending.
-
-Optionally use an exploration subagent to investigate code or external documentation and save shared notes. Implementers should be able to follow those pointers straight into implementation.
-
-### 2. Prepare the integration branch
-
-Confirm and record the baseline, then create the integration branch. Preserve existing staged and unrelated work; use an isolated worktree when needed. On resume, reconcile the recorded state with the actual branches and tracker before reusing work.
-
-Create a durable **run record** outside the repo and report its path. Update it after reviews, merges, user confirmations, and tracker writes. Keep:
-
-- Baseline and integration commits; each ticket's branch, worktree, status, and blockers.
-- The resource registry's absolute path (`resourceRegistry`) and unique `runId`; keep resource details in the registry rather than duplicating them in the run record.
-- Review coverage: reviewer, baseline and head, files and changes covered, applicable rules, findings and dispositions, and correspondence to the integration diff. Acceptance evidence and the commits it verifies.
-- The exact criteria and relevant content the user confirmed.
-- Completed and pending tracker operations.
-- Discovery snapshots and changes: query scope, sources, pagination and access status, inclusion and exclusion evidence, unresolved relationships, the dependency graph, and each ticket's implementation, review, acceptance, and write-back state. Save discovery results before incorporating them into this record.
-
-Read [run resources](resource-management.md) before creating worktrees, starting preview services or long checks, or resuming a run. Save and register each successful creation result immediately; complete the step when the registration reads back correctly. Reconcile registered resources with the actual host before reuse. Resource reconciliation does not replace complete task discovery.
-
-If the tracker closes work through PRs, or the user asks for one, open a draft PR **after the first merge**, with the appropriate closing references for the spec and tickets. Otherwise the integration branch is the deliverable.
-
-#### Configuration and continuing authorization
-
-For implementation, resume, and close-out under this skill, make configuration changes required by the confirmed spec or tickets. Before editing, save recoverable originals or exact diffs; record the target, scope of impact, and completion evidence.
-
-On resume, reconcile existing authorization, its scope, and current state. Continue when the target and impact remain materially unchanged. For new costs, broader permissions, unrelated configuration, or discarding user content, complete independent preparation and ask the user to decide. Identify the missing evidence when prior authorization cannot be verified.
-
-Follow host approval requirements. If approval is denied, preserve work and report the denied action and reason; keep the same boundary across paths and tools.
-
-### 3. Implement and review each ready ticket
-
-Use separate branches and worktrees for concurrent implementers. Reuse an available implementer for a compatible ready ticket instead of creating an agent for each lifecycle stage; keep enough implementers active to advance independent work in parallel. Give overlapping edits clear ownership and synchronize their shared changes. For resumed or newly discovered tickets, reconcile existing work through [task discovery](task-discovery.md) and dispatch only missing work. Each implementer:
-
-1. Confirms its branch is based on the integration branch. Recreate an unused branch from the correct base; preserve existing work before correcting a mistaken base. Never discard work with a hard reset.
-2. Calls the Skill tool with `tdd` to build the ticket. Runs typechecking, the ticket's acceptance tests, and affected regressions before merge; for changed behavior, identify existing tests of the old interaction before starting expensive checks. Record the tested revision or source identity, scope, environment, results, and omissions. Run the complete project checks at final acceptance rather than automatically per ticket, unless the repository requires them earlier. Development results do not become formal acceptance merely by being reused.
-3. Hands the ticket to an independent **read-only review subagent** using `open-code-review-delegate`, ticket context, and explicit baseline and head. Keep the same reviewer for fixes and synchronization of this ticket; give it the new diff and prior findings. Independent tickets may use parallel reviewers. Reviewers must not have implemented the content they assess. If a reviewer becomes unavailable or its context becomes unwieldy, hand off the compact coverage record and source pointers to a replacement.
-4. Validates the findings, fixes every valid issue, and reruns affected checks. Record reasons for dismissing false positives. Route decisions requiring the user through the coordinator; a missing or failed review tool is a blocker.
-5. Merges the integration tip into its branch and verifies affected behavior. Changes introduced by synchronization or conflict resolution receive a follow-up review.
-6. Reports commits, review coverage and dispositions, per-criterion evidence, pending human checks, and blockers. For technical reading criteria, an independent reviewer records each criterion verbatim, the reviewed commit, file locations, and reasoning. Lists items requiring a user decision separately. Collect evidence here; formal acceptance ticks and closure belong to final acceptance.
-
-A ticket is ready to merge when implementation and review are complete, every valid finding is resolved, affected checks pass, and its branch is synchronized.
-
-#### Coordinate by events
-
-While agents or checks run, advance other independent work. Prefer completion or state-change notifications; when nothing is actionable, use the host's blocking wait or suspension within its response constraints. If notifications are unavailable, use bounded queries with backoff, resetting only on meaningful progress or new input. An unchanged status is a reason to wait longer, not to repeat inspection or dispatch replacement work.
-
-Start a long check once and retain its process or job identity and full logs outside the conversation. Read its terminal summary, or bounded failure evidence when needed; use detailed logs to investigate a concrete problem. Agent handoffs carry source pointers, commits, changes, findings, and blockers rather than replaying the conversation. Report meaningful progress and honor required host updates without additional status queries solely to produce an update.
-
-### 4. Merge and advance the frontier
-
-The coordinator lands tickets one at a time, without a dedicated merger agent. Recheck the integration tip before each merge; if it advanced, synchronize the ticket again, verify, and review any resulting changes before landing it.
-
-Land each ticket initially as **one Conventional Commit**, using a squash merge when needed. Describe delivered behavior, verification performed and omitted, and reference the ticket with `Refs:`. Preserve implementer branches for recovery and leave existing integration history intact.
-
-Follow the repo's staging and hook rules. If a hook only reformats this run's files, restage those files and retry once. A refusal or second failure blocks the merge; report it without bypassing the hook.
-
-Each successful merge may unlock more tickets: dispatch them immediately. Create the conditional draft PR after the first merge, as described in step 2.
-
-A blocked ticket pauses that ticket and its dependents; confirmed independent paths may continue. Incomplete discovery queries trigger the global stop in [task discovery](task-discovery.md). Preserve recovery commits and worktrees and report blockers. Keep the spec incomplete, the PR in draft, and unfinished tickets open until all delivery conditions are met.
-
-Proceed when every ticket has landed.
-
-### 5. Review the integration branch
-
-Assign an independent read-only reviewer, reusing a suitable ticket reviewer, to the final integration review. Use OCR's full baseline-to-integration file inventory and current rules to reconcile cumulative ticket-review coverage. For every reviewable entry, record matching prior coverage or perform the missing review; retain OCR's explicit skip reasons and coverage accounting. Reuse prior review only where the reviewed changes, requirements, and applicable rules still match. A file name or earlier “passed” result alone is insufficient.
-
-Focus fresh review on cross-ticket behavior, shared contracts, conflict resolutions, new changes, and coverage gaps. Individually reviewed changes can still interact incorrectly: expand the review wherever their combined behavior is uncertain. Re-read the full diff when coverage cannot be established. Keep per-criterion technical review evidence in addition to OCR coverage.
-
-Return valid findings to the responsible implementer, reusing available agents. Record false-positive dispositions and bring user decisions to the coordinator. Rerun affected checks and have the independent reviewer assess the changed portions again.
-
-Land final fixes as separate commits referencing affected tickets. Keep the initial ticket commits intact.
-
-Proceed when the full diff is accounted for under OCR's coverage rules, every valid finding is resolved, and affected checks pass.
-
-### 6. Verify acceptance and write back
-
-Read [acceptance and handoff](acceptance.md) now. Rediscover and reconcile the ticket set, complete work affected by changes, and match each ticket to valid evidence for the pinned integration commit, running missing or invalidated checks. Check independent technical review evidence, batch only items requiring user decisions, and write back earned acceptance ticks.
-
-Proceed to handoff only when every ticket has a nonempty acceptance region, every criterion is earned, and write-back has succeeded. Report anything still pending.
-
-### 7. Hand off and clean up
-
-Follow the handoff rules in [acceptance.md](acceptance.md): push before making a draft PR ready or closing tickets directly. Report the branch, PR if present, acceptance results, and actual closure state.
-
-After successful handoff, [clean up temporary worktrees](acceptance.md#4-clean-up-temporary-worktrees). On resume, use that procedure to verify ownership of earlier worktrees, continuing cleanup authorization, and recovery evidence. Report what was cleaned up and what remains.
+完成条件来自各协议；未验证的可执行要求保持未勾选，范围及费用变化遵守用户授权和宿主审批。

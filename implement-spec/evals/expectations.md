@@ -3,7 +3,7 @@
 When evaluating skill changes, give an isolated agent only `SKILL.md`, necessary references, and `scenarios.md`; ask it to report scheduling decisions. Keep this evaluator file out of its context. Use no real tracker connections, real implementation dispatches, or external writes. Evaluate each decision rather than keyword counts.
 
 - **A:** Discover 43, 44, 45, and 46; exclude background ticket 70. Tickets 43 and 46 are ready; 44 and 45 wait for 43.
-- **B1, B2, B3:** Stop all implementation in every case, including active implementers. Stop new dispatches, merges, write-back, and handoff. Preserve work. Recover the failed query, complete pagination, or restore access, then rediscover and verify before resuming.
+- **B1, B2, B3:** 有已保存完整快照时，43 的已分配本地开发/测试继续；新调度、集成、写回及交付暂停，恢复完整查询并核对变化后再推进。首次完整快照缺失的变体停止实现。
 - **C:** Add all four tickets. Preserve `abc`; map each ticket to commits, review, acceptance, and write-back evidence. Complete missing work and final verification. Parent review and acceptance cannot substitute for child-ticket evidence; preserve existing implementation rather than recreating per-ticket commits.
 - **D:** Include 46 and return to reconciliation, missing implementation or review, and acceptance. Keep the PR in draft and full-spec closure and completion claims pending.
 - **E:** Leave 46 unaccepted; parent reading confirmation cannot replace executable checks. Block handoff, record the parent's actual closed state, and correct it under tracker rules and authorization.
@@ -23,3 +23,8 @@ Report actual output against each expectation. If the old version also passes a 
 - **O:** Preserve the successful creation result, handle, and resource; repair registration and read it back before handoff. Registration failure does not establish creation failure or justify repeating creation for the same purpose.
 - **P:** Reconcile resources first. Do not treat an empty sandbox process list as actual-host evidence of no use; record S as active and retain A. B lacks established ownership: retain it and consult reliable sources. Resource reconciliation does not replace discovery; preserve the global implementation stop until the second page is fetched and queries are complete.
 - **Q:** Verify the original interface, actual use, staged/unstaged/untracked/ignored content, and recovery evidence. Record A as removed only after actual-host observation confirms absence. Record B and C's retention or failure reasons individually; respect C's management refusal and continue normal cleanup of D. On resume, reconcile A's absence and supplement missing records rather than deleting again; retain B and independently advance D. Report completed handoff separately from remaining resources.
+
+- **R:** 并行/接手共享45分钟预算，30分钟检查点；排除明确等待，用户覆盖有效。连续完整可比100→98→97秒触发两次<5%取舍，停止新实验，继续必要收尾，性能条款保持开放。
+- **S:** 功能→性能→最终验收采用简短交接包及新上下文；同问题修复保留 reviewer；原拥有者活动检查未收尾则延后交接；最后审查跨事项交互与覆盖缺口。
+- **T:** 宿主会话创建成功登记失败时保留原结果并恢复登记，不重建。查询失联或仅本地子进程退出时保持外层未知；同一实际接口查询终态只证明该会话，后代/正式任务另核对。
+- **U:** 证据缺失、损坏、身份不符或映射缺口不能通过。即使材料完整，也只有独立 reviewer 语义确认才形成 earned 候选；计划仍未写回。旧证据保持原身份/时间。
