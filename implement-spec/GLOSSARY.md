@@ -10,7 +10,7 @@ This glossary defines execution, resource-management, and acceptance terms for s
 
 **Acceptance write-back plan:** proposed changes mapping established acceptance judgments to a ticket's exact criteria. A saved plan does not establish that the ticket was updated.
 
-**Shared phase budget:** one investment window shared by parallel agents and incoming contexts in the same performance phase, excluding only explicit user waits and external blocks.
+**Shared performance phase:** cumulative work and evidence shared by parallel agents and incoming contexts, excluding only explicit user waits and external blocks. Periodic reviews guide the next action; a time limit applies only when the user sets one.
 
 **Handoff packet:** a compact record carrying the target, pinned commit, interface contracts, unresolved issues, and evidence index across major stages.
 

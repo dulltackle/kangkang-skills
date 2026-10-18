@@ -1,6 +1,6 @@
 # Agent execution cost design
 
-Status: Q1-Q14 and the overall design are confirmed. The spec is published as [ClapGrid #158](https://github.com/dulltackle/ClapGrid/issues/158) with `ready-for-agent`. Skill, tool, and project-check changes have been implemented in the confirmed order. CLI and behavioral regressions have run; cost benefits remain a pilot. Consult #158 and the delivery record for final-commit acceptance and actual CI status.
+Status: Q1-Q14 and the overall design are confirmed. The later autonomy revision below supersedes the original Q2/Q4 time and low-gain gates; other decisions retain their scope. The spec is published as [ClapGrid #158](https://github.com/dulltackle/ClapGrid/issues/158) with `ready-for-agent`. Skill, tool, and project-check changes have been implemented in the confirmed order. CLI and behavioral regressions have run; cost benefits remain a pilot. Consult #158 and the delivery record for final-commit acceptance and actual CI status.
 
 ## Scope
 
@@ -21,7 +21,7 @@ Existing performance acceptance remains tracked in ClapGrid #148, #150, #151, an
 The user answered "Use all recommendations" (translated), confirming:
 
 - **Q1:** Prioritize eliminating repeated model overhead while limiting deterioration in actual execution time. Present metrics separately; cumulative cached input is not actual cost.
-- **Q2:** When the performance budget expires, stop new experiments and present measured gains, remaining gaps, and the reason for further investment. Let the user choose continued investigation or phased delivery. Continue necessary repairs, review, and independent work introduced so far; keep unmet criteria open.
+- **Q2 (superseded by the autonomy revision):** When the performance budget expires, stop new experiments and present measured gains, remaining gaps, and the reason for further investment. Let the user choose continued investigation or phased delivery. Continue necessary repairs, review, and independent work introduced so far; keep unmet criteria open.
 - **Q3:** Retain the original reviewer through the same issue's repair loop; allow a fresh agent after a stage completes. Pass the target, pinned commit, interface contracts, unresolved issues, and verifiable review and execution evidence. The original owner closes out active checks first; the incoming agent independently decides what conclusions are reusable.
 
 ## Verified tool boundaries
@@ -34,7 +34,7 @@ Local Python can record the return code of a child it starts and waits for. That
 
 The user answered "Use all recommendations" (translated), confirming:
 
-- **Q4:** Default performance budget: 45 minutes, with a gain checkpoint at 30 minutes. Include analysis, implementation, and experiments. Parallel agents share the budget; changing agents preserves it. Exclude user waits and explicit external blocks. Two consecutive comparable complete-entry improvements below 5% trigger an earlier tradeoff decision, separate from formal performance acceptance. The user may override defaults before starting.
+- **Q4 (superseded by the autonomy revision):** Default performance budget: 45 minutes, with a gain checkpoint at 30 minutes. Include analysis, implementation, and experiments. Parallel agents share the budget; changing agents preserves it. Exclude user waits and explicit external blocks. Two consecutive comparable complete-entry improvements below 5% trigger an earlier tradeoff decision, separate from formal performance acceptance. The user may override defaults before starting.
 - **Q5:** Use fresh implementation and review contexts when moving from functional implementation to performance work and then final acceptance. Retain the reviewer through the same issue's repair loop; defer handoff until resolution. Pass a compact summary and evidence index, with detailed history available on demand. The coordinator maintains shared state; final review emphasizes cross-ticket interactions and coverage gaps.
 - **Q6:** T1 initially supports current Codex/Linux execution sessions and ordinary Git worktrees: save original interface results, register identities, append observations, and generate summaries. Project formal jobs use established entry points. Preserve unknown terminal states. Cross-host support, other platforms, and a new process-management mechanism are outside the first iteration.
 
@@ -62,6 +62,12 @@ At source correction, the maintained directory had no Git repository or publicat
 Through `to-spec`, the user confirmed the overall design (Q14): edit and verify the maintained source, then explicitly synchronize to the installed copy after evaluation, retaining the old version and checking hashes. The maintained source remains authoritative. Preserve its non-Git state and inspect actual installation management and affected files before synchronization.
 
 The full spec was published as [ClapGrid #158](https://github.com/dulltackle/ClapGrid/issues/158); its body and `ready-for-agent` label were read back. Implementation entered verification and delivery. Acceptance ticks continue to require actual evidence on #158.
+
+## Autonomy revision
+
+The user subsequently requested autonomous completion, with questions reserved for goal or scope changes, additional authorization, and blockers the agent cannot remove. This supersedes Q2 and Q4's default stop-and-renew policy. [Performance work](../../collaboration.md#performance-work) is authoritative: periodic and low-gain reviews guide the agent's next action; only user-set budgets gate further experiments. Acceptance requirements remain unchanged.
+
+Q13's deterministic coverage now includes recurring review acknowledgment, continuation beyond the former default limit, explicit user budgets, evidence-preserving legacy migration, and preservation of user-selected phase delivery. Behavioral scenarios test these decisions separately from cost-benefit claims. This change establishes the requested execution policy; token, duration, and end-to-end delivery benefits still require measured evidence.
 
 ## Evidence
 

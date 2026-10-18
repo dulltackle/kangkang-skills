@@ -3,6 +3,7 @@
 import argparse
 from datetime import datetime
 import json
+import math
 from pathlib import Path
 import sys
 from resources import locked, save, read_json, require, evidence, digest
@@ -14,20 +15,65 @@ def stamp(value):
     return result
 
 
+def positive(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
+
+
+def phase_policy(request):
+    mode = request.get('mode', 'bounded' if request.get('limitMinutes') is not None else 'autonomous')
+    require(mode in ('autonomous', 'bounded'), 'Choose autonomous or bounded mode')
+    limit = request.get('limitMinutes')
+    if mode == 'bounded':
+        require(positive(limit), 'A user budget requires a positive finite limitMinutes')
+        source = evidence(request['source'])
+    else:
+        require(limit is None, 'Autonomous mode has no time limit')
+        source = evidence(request['source']) if 'source' in request else None
+    return dict(mode=mode, limitMinutes=limit, policySource=source)
+
+
+def migrate_phase(phase):
+    if 'policyVersion' in phase:
+        require(phase['policyVersion'] == 2, 'Unsupported phase policy version')
+        return
+    # Old numeric limits do not establish user intent. Preserve ambiguous choices for evidence-based reconciliation.
+    starts = [e for e in phase['events'] if e['event'] == 'start']
+    choices = [e for e in phase['events'] if e['event'] == 'decide']
+    known_default = (phase.get('limitMinutes') == 45 and bool(starts)
+                     and all('limitMinutes' not in e for e in starts) and not choices and not phase.get('userDecision'))
+    phase['legacyBudget'] = {k: phase[k] for k in ('limitMinutes', 'decisionPending', 'userDecision') if k in phase}
+    phase.update(policyVersion=2, mode='autonomous' if known_default else 'legacy',
+                 limitMinutes=None, policySource=None, lastReviewMinutes=0,
+                 reviewedMeasurements=0, reviews=[], decisionPending=bool(phase.get('phased')))
+
+
+def phase_elapsed(phase, at):
+    excluded = phase['excludedSeconds']
+    if phase['pausedAt']:
+        excluded += (at-stamp(phase['pausedAt'])).total_seconds()
+    return ((at-stamp(phase['startedAt'])).total_seconds()-excluded)/60
+
+
 def budget(data, request):
     phases = data.setdefault('budgets', {})
     key, event, at = request['phaseId'], request['event'], stamp(request['at'])
     if key not in phases:
-        require(event == 'start', 'Start the shared phase budget first')
-        limit = request.get('limitMinutes', 45)
-        checkpoint = request.get('checkpointMinutes', min(30, limit))
-        require(0 < checkpoint <= limit, 'Budget and checkpoint must be positive, with the checkpoint within the budget')
-        phases[key] = dict(startedAt=request['at'], lastAt=request['at'], limitMinutes=limit,
+        require(event == 'start', 'Start the shared performance phase first')
+        policy = phase_policy(request)
+        checkpoint = request.get('checkpointMinutes', 30)
+        require(positive(checkpoint), 'The review interval must be positive and finite')
+        phases[key] = dict(startedAt=request['at'], lastAt=request['at'],
                            checkpointMinutes=checkpoint, pausedAt=None, excludedSeconds=0,
-                           measurements=[], events=[], decisionPending=False)
+                           measurements=[], events=[], decisionPending=False, policyVersion=2,
+                           lastReviewMinutes=0, reviewedMeasurements=0, reviews=[], **policy)
     phase = phases[key]
     require(at >= stamp(phase['lastAt']), 'Shared timestamps must be monotonic')
-    if event == 'pause':
+    migrate_phase(phase)
+    if event == 'policy':
+        require(request.get('mode') in ('autonomous', 'bounded'), 'A policy update requires an explicit mode')
+        proof = evidence(request['source'])
+        phase.update(phase_policy(request), policySource=proof)
+    elif event == 'pause':
         require(request.get('reason') in ('user-wait', 'external-block'), 'Exclude only user waits or explicit external blocks')
         require(phase['pausedAt'] is None, 'The phase is already paused')
         phase['pausedAt'] = request['at']
@@ -36,40 +82,62 @@ def budget(data, request):
         phase['excludedSeconds'] += (at-stamp(phase['pausedAt'])).total_seconds()
         phase['pausedAt'] = None
     elif event == 'measure':
-        require(request.get('durationSeconds', 0) > 0, 'Measurement duration must be positive')
-        # comparisonKey fixes entry point, source scope, model, environment, and cache state; incomplete samples break the sequence.
+        require(positive(request.get('durationSeconds')), 'Measurement duration must be positive and finite')
+        # comparisonKey fixes entry point, source scope, model, environment, cache state, and concurrency.
         complete = request.get('completeEntry') is True
         comparison = request.get('comparisonKey') if complete else None
         require(not complete or isinstance(comparison, str) and comparison.strip(), 'A complete measurement requires a comparison identity')
         phase['measurements'].append(dict(durationSeconds=request['durationSeconds'],
             comparisonKey=comparison, source=evidence(request['source'])))
+    elif event == 'review':
+        require(all(isinstance(request.get(k), str) and request[k].strip() for k in ('summary', 'nextAction')),
+                'A review requires findings and a concrete next action')
+        phase['reviews'].append(dict(at=request['at'], summary=request['summary'],
+            nextAction=request['nextAction'], source=evidence(request['source'])))
+        phase['lastReviewMinutes'] = phase_elapsed(phase, at)
+        phase['reviewedMeasurements'] = len(phase['measurements'])
     elif event == 'decide':
-        require(phase['decisionPending'], 'There is no pending tradeoff decision')
-        require(request.get('choice') in ('continue', 'phase'), 'Choose explicitly between continuing and phased delivery')
-        phase['userDecision'] = dict(choice=request['choice'], source=evidence(request['source']))
-        if request['choice'] == 'continue':
-            extension=request.get('extensionMinutes',0)
-            require(extension > 0, 'Continuing requires an explicit budget extension')
+        choice = request.get('choice')
+        require(choice in ('continue', 'autonomous', 'phase'), 'Choose continue, autonomous, or phase')
+        require(phase['mode'] != 'legacy' or choice == 'phase', 'Reconcile the legacy policy from saved authorization first')
+        elapsed = phase_elapsed(phase, at)
+        pending = phase.get('phased') or phase['mode'] == 'bounded' and elapsed >= phase['limitMinutes']
+        require(pending or choice == 'phase', 'There is no pending user budget or phased-delivery decision')
+        proof = evidence(request['source'])
+        if choice == 'continue' and phase['mode'] == 'bounded':
+            extension = request.get('extensionMinutes')
+            require(positive(extension), 'Continuing a user budget requires an explicit positive finite extensionMinutes')
             phase['limitMinutes'] += extension
-            phase['measurements'] = []
-            phase['decisionPending'] = False
-        else:
-            phase['phased'] = True
+        elif choice == 'autonomous':
+            phase.update(mode='autonomous', limitMinutes=None, policySource=proof)
+        phase['userDecision'] = dict(choice=choice, source=proof)
+        phase['phased'] = choice == 'phase'
     else:
         require(event in ('start', 'status'), 'Unknown budget event')
+        if event == 'start':
+            require(all(k not in request or request[k] == phase.get(k)
+                        for k in ('mode', 'limitMinutes', 'checkpointMinutes')),
+                    'Use policy to change an existing phase; start preserves its state')
     phase['events'].append(request)
     phase['lastAt'] = request['at']
-    excluded = phase['excludedSeconds'] + ((at-stamp(phase['pausedAt'])).total_seconds() if phase['pausedAt'] else 0)
-    elapsed = ((at-stamp(phase['startedAt'])).total_seconds()-excluded)/60
-    samples=phase['measurements'][-3:]
-    low = len(samples)==3 and samples[0]['comparisonKey'] is not None and len({x['comparisonKey'] for x in samples})==1 and all(
+    elapsed = phase_elapsed(phase, at)
+    samples = phase['measurements'][phase['reviewedMeasurements']:][-3:]
+    low = len(samples) == 3 and samples[0]['comparisonKey'] is not None and len({x['comparisonKey'] for x in samples}) == 1 and all(
         (a['durationSeconds']-b['durationSeconds'])/a['durationSeconds'] < .05 for a,b in zip(samples,samples[1:]))
-    if low or elapsed >= phase['limitMinutes'] or phase.get('phased'):
-        phase['decisionPending'] = True
-    decision = 'tradeoff' if phase['decisionPending'] else 'checkpoint' if elapsed>=phase['checkpointMinutes'] else 'continue'
-    return dict(phaseId=key, elapsedMinutes=elapsed, limitMinutes=phase['limitMinutes'], decision=decision,
-        newExperimentsAllowed=not phase['decisionPending'], allowedWork=['repair','review','independent'],
-        acceptanceChanged=False, stateFile=None)
+    reasons = []
+    if elapsed >= phase['lastReviewMinutes'] + phase['checkpointMinutes']:
+        reasons.append('interval')
+    if low:
+        reasons.append('low-gain')
+    expired = phase['mode'] == 'bounded' and elapsed >= phase['limitMinutes']
+    phase['decisionPending'] = bool(expired or phase.get('phased'))
+    decision = ('phased' if phase.get('phased') else 'reconcile' if phase['mode'] == 'legacy'
+                else 'tradeoff' if expired else 'paused' if phase['pausedAt'] else 'review' if reasons else 'continue')
+    return dict(phaseId=key, elapsedMinutes=elapsed, mode=phase['mode'], limitMinutes=phase['limitMinutes'],
+        decision=decision, decisionPending=phase['decisionPending'], reviewDue=bool(reasons), reviewReasons=reasons,
+        nextReviewMinutes=phase['lastReviewMinutes']+phase['checkpointMinutes'],
+        newExperimentsAllowed=not phase['decisionPending'] and phase['mode'] != 'legacy' and phase['pausedAt'] is None,
+        allowedWork=['repair','review','independent'], acceptanceChanged=False, stateFile=None)
 
 
 def handoff(data, request):

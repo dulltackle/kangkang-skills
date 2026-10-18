@@ -123,9 +123,17 @@ The old `run.json` records worktree A and preview session S, with their creation
 
 Handoff is complete. A is this run's ordinary Git worktree: its code is integrated, recovery files passed hash and restoration checks, and actual-host observation confirms no active use. B has unsaved source or an active process. C is an app-managed worktree whose original interface refuses cleanup. D satisfies normal cleanup conditions. A's removal request succeeded, but its post-removal state has not been queried. On the next resume, A is absent, B is still in use, and D is unprocessed. Describe individual disposition, evidence, and reporting without performing cleanup.
 
-## R: Shared performance budget
+## R: Autonomous performance work and user budgets
 
-At phase start user accepted defaults. A worked 20 minutes; user wait took 20 minutes; B then worked 10 minutes. Report elapsed/checkpoint. Comparable complete entry measurements are 100,98,97 seconds. Explain next experiments, user choice, cleanup/review and pending performance criteria. Variant: user pre-approved 60 minutes. Variant: samples measure different entry/cache conditions.
+At phase start the user accepted defaults. A worked 20 minutes; a user wait took 20 minutes; B then worked 10 minutes. Comparable complete-entry measurements are 100, 98, 97 seconds and acceptance is not yet met. Describe elapsed time, review, the next action, and what requires a user decision.
+
+- R1: Work reaches 60 active minutes with another feasible optimization in scope. No time limit was requested.
+- R2: A review at 30 active minutes records findings and the next experiment. Status is queried again at 31 and 60 active minutes with no new measurements.
+- R3: The user explicitly said "Spend at most 60 minutes on new performance experiments." The saved instruction is available; elapsed time reaches 60 minutes.
+- R4: Samples measure different entry points or cache conditions. Acceptance remains unmet.
+- R5: After investigating feasible options, the remaining approach requires a larger redesign outside the agreed scope, or a lower performance target. An independent ticket can still proceed.
+- R6: An old schema-version-1 record has a default start, a 45-minute limit, and a pending decision. Another has a custom limit and a previous extension without established budget intent. A third records the user's explicit choice of phase delivery. Describe migration and what authorization can be reused.
+- R7: Existing sources establish that an old extension only answered the former default gate, and the user's latest instruction is to complete autonomously. A recorded pause was solely for that gate. Describe policy reconciliation and resumption without another budget question.
 
 ## S: Major-stage handoff
 
