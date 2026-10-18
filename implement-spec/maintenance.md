@@ -1,9 +1,15 @@
-# 维护与评估
+# Maintenance and evaluation
 
-本技能的指定维护源为 `/home/forclaw/文档/implement-spec/`；当前目录无 Git，不自动初始化。修改前保存可恢复的原件及哈希，源改动和 ClapGrid 提交分别记录。
+The user-designated maintained source has no Git repository. Preserve that state. Its path, expressed as a JSON string, is:
 
-先运行 Python 资源、共享状态与证据 CLI 的公开入口测试，再在隔离上下文按 evals/scenarios.md 评估实际调度决策。原宿主会话持续性和终态必须通过创建/查询接口跨调用观察，本地 Python returncode 或模拟终态只证明本地行为。
+```json
+"/home/forclaw/\u6587\u6863/implement-spec/"
+```
 
-成本评估固定正常交付、低收益优化和执行中断三个小场景，保存同模型/环境/任务/覆盖的原版和新版输入、原始输出与用量。分别报告非缓存输入、缓存输入、输出 token、模型调用次数、实际执行时长，等待和明确外部阻塞单列。先建立基线，再固定改善目标与比较条件；小样本不外推整场任务或费用。重复收益且覆盖满足才推广；未证实的部分标为试点。
+Before editing, save recoverable originals and hashes. Record maintained-source changes separately from ClapGrid commits.
 
-验证后检查实际安装管理元数据，不把安装副本的仓库当作维护源。当前管理器 `skills-manager-cli skills show implement-spec` 指向 local source_ref；修改后备份安装目录、核对目标文件范围，用针对本技能的 update 同步（先核对 --help），避免全库 sync/update。记录命令、管理身份、旧/新文件哈希和部署链接状态；检查同步没有丢失原有内容或碰到无关技能。交付分别报告维护源、安装副本和实际宿主状态；真实宿主行为未验证时不能声称实际宿主已验收。
+Run the public CLI tests for resources, shared state, and evidence, then evaluate scheduling decisions in an isolated context using [the scenarios](evals/scenarios.md). Verify actual host-session persistence and terminal state through creation and query interfaces across separate calls. Local Python return codes and simulated terminal results establish only local behavior.
+
+For cost evaluation, use three small fixed scenarios: normal delivery, low-gain optimization, and execution interruption. Preserve original and candidate inputs, raw outputs, and usage under the same model, environment, task, and coverage. Report uncached input, cached input, output tokens, model calls, and actual execution time separately; list waits and explicit external blocks separately. Establish the baseline before fixing improvement targets and comparison conditions. Limit conclusions to the measured samples. Roll out only with repeatable benefits and complete coverage; keep unproven parts as a pilot.
+
+After verification, inspect actual installation metadata; the installed copy's repository does not establish the maintained source. The current manager's `skills-manager-cli skills show implement-spec` identifies a local `source_ref`. Before authorized synchronization, back up the installation, confirm the affected files, and check `--help` for a skill-specific update. Keep the operation scoped to this skill rather than a library-wide sync or update. Record the command, manager identity, old and new hashes, and deployment-link state. Verify preservation of existing content and unrelated skills. Report maintained-source, installed-copy, and actual-host states separately; actual-host acceptance requires verified host behavior.

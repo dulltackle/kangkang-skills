@@ -1,7 +1,7 @@
-# 集成审查
+# Integration review
 
-进入最终验收阶段默认用新上下文的独立只读 reviewer。基于 OCR 完整基线→集成文件清单及当前规则，对每个可审条目记录匹配的原覆盖或补充审查，保留 OCR 排除原因和覆盖统计。只有差异、要求和规则仍对应才复用旧审查，文件名和旧 passed 不足。
+At final acceptance, use an independent read-only reviewer in a fresh context by default. Reconcile every reviewable entry in OCR's complete baseline-to-integration inventory under the current rules with matching prior coverage or fresh review. Preserve OCR exclusion reasons and coverage counts. Reuse review only when the diff, requirements, and rules still correspond; file names and an old pass are insufficient.
 
-重点新审查跨事项交互、共享约定、冲突解决、新差异和覆盖缺口；单独审过的模块仍可能交互错误，不确定就扩大审查，无法建立对应时重读完整差异。逐条技术要求仍保留独立证据。
+Freshly review cross-ticket interactions, shared contracts, conflict resolutions, new diffs, and coverage gaps. Separately reviewed modules can still interact incorrectly. Broaden review when uncertain; read the full diff when correspondence cannot be established. Keep independent evidence for each technical criterion.
 
-有效发现回原实现者修复，原 reviewer 复核同问题循环；记录误报理由与用户决定。复验受影响检查。最终修复可单独提交引用事项，保留初始事项提交；全部清单已覆盖、有效问题解决、受影响检查通过后进入 [固定提交验收](acceptance.md)。
+Return valid findings to the original implementer and retain the reviewer through the same issue's fix loop. Record false-positive reasoning and user decisions. Rerun affected checks. Final fixes may use separate commits referencing the tickets while preserving their initial commits. Enter [fixed-commit acceptance](acceptance.md) when the full inventory is covered, valid findings are resolved, and affected checks pass.

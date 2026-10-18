@@ -58,7 +58,7 @@ class ResourceTests(unittest.TestCase):
                     result={"exit_code":0,"output":"done"})
         self.assertEqual(self.call("capture",call).returncode,0)
         self.assertEqual(self.data()["resources"]["start"]["events"][-1]["report"]["presence"],"absent")
-        # 本地子进程退出只留执行记录，不声称外层宿主/全部后代已终止。
+        # A local child exit creates only an execution record; outer-host and descendant termination remain unverified.
         call.update(id="local",manager="python-subprocess",operation="start",result={"returncode":0})
         self.assertEqual(self.call("capture",call).returncode,0)
         self.assertEqual(self.data()["executions"]["local"]["state"],"unknown")

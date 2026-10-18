@@ -1,20 +1,20 @@
-# 实现、审查和合并
+# Implementation, review, and merging
 
-## 实现就绪事项
+## Implement ready tickets
 
-并发实现者使用独立分支/工作树，以集成分支为基线。兼容事项复用空闲实现者，明确重叠编辑归属；恢复/新增事项先对齐已有成果，只补缺失工作。未使用分支基线有误可重建，已有工作先保存，保留历史。
+Give concurrent implementers separate branches and worktrees based on integration. Reuse available implementers for compatible tickets and assign ownership of overlapping edits explicitly. Reconcile existing work before resuming or adding tickets; complete only missing work. Recreate an unused branch with the wrong baseline if needed; preserve existing work and history first.
 
-1. 在确认的最高层可观察接口用 tdd。行为变化前找出现有交互测试。执行类型检查、事项验收及受影响回归，记录源码身份/提交、范围、环境、结果和遗漏；完整项目检查默认在最后稳定候选上执行，项目更严格要求优先。
-2. 将事项上下文、明确基线/目标交给独立只读 `open-code-review-delegate` reviewer。reviewer 未参与被审内容实现；同事项修复循环保持原 reviewer，新差异和发现一并交付。不可用/上下文过长时用简短覆盖记录和来源交接；缺失或失败的审查工具属于阻塞。
-3. 验证发现，修复有效问题，记录误报理由，复验受影响检查。用户取舍交协调者。合入集成最新状态后验证交互；同步/冲突解决引入的差异需追加审查。
-4. 报告提交、审查覆盖/处置、逐条证据及阻塞。技术阅读证据保留准确条款、提交、文件位置及独立 reviewer 理由；用户取舍单列。此处收集证据，正式验收写回在最后。
+1. Use TDD at the agreed highest observable seam. Find existing interaction tests before changing behavior. Run typechecking, ticket acceptance tests, and affected regressions; record source identity or commit, scope, environment, results, and omissions. Run full project checks on the final stable candidate by default, subject to stricter repository rules.
+2. Give an independent read-only `open-code-review-delegate` reviewer the ticket context and explicit baseline and target. The reviewer must be independent of that content's implementation. Keep the same reviewer through the ticket's fix loop, passing new diffs and findings together. If the reviewer is unavailable or its context is exhausted, hand off compact coverage records and source pointers. Missing or failed review tools block review.
+3. Validate findings, fix valid issues, record false-positive reasoning, and rerun affected checks. Refer user tradeoffs to the coordinator. Verify interactions after synchronizing with integration; review diffs introduced by synchronization or conflict resolution.
+4. Report the commit, review coverage and dispositions, per-criterion evidence, and blockers. Technical reading evidence includes the exact criterion, commit, file locations, and independent reviewer's reasoning. Record user tradeoffs separately. Collect evidence here; perform formal acceptance write-back at the end.
 
-实现、审查、有效问题修复、定向检查及同步全部完成才可合并。
+Merge only after implementation, review, valid-finding fixes, targeted checks, and synchronization are complete.
 
-## 协调和推进
+## Coordinate and advance
 
-独立工作持续并行；等待时推进其他可做工作。有通知则等待完成/状态变化，无通知才有界退避查询，状态不变就延长等待，不重复检查/替换 agent。长检查只启动一次，保存原会话/任务身份和完整日志；读终态摘要，具体失败才按需读细节。交接用来源路径和简短状态，不重播历史；遵守宿主进度更新要求。
+Keep independent work moving in parallel and advance other ready work while waiting. Prefer completion and state-change notifications; otherwise use bounded status queries with backoff. Increase waits when state is unchanged. Preserve running agents and checks rather than creating replacements to poll them. Start each long check once and save its original session or job identity and full logs. Read the terminal summary, then failure details as needed. Hand off source paths and compact state instead of replaying history; maintain host-required progress updates.
 
-协调者依次合并，无专职 merger。每次核对集成 tip，已前进则重新同步、验证并审查变化。每事项初始落一个 Conventional Commit，必要时 squash，说明行为/已验证/未验证及 Refs，保留实现分支和原集成历史。格式钩子只重暂存本次文件并重试一次；拒绝不绕过。
+The coordinator merges sequentially, without a dedicated merger. Check the integration tip before each merge; if it has advanced, synchronize again, validate, and review the resulting changes. Land one initial Conventional Commit per ticket, squashing when needed, describing behavior, verified and unverified work, and `Refs`. Preserve implementation branches and original integration history. A formatting hook permits one restage-and-retry of this run's files; respect a refusing hook.
 
-合并立即推进新 frontier；满足条件时首次合并后开 draft PR。单项阻塞只阻塞它和依赖路径；查询失败按 [发现恢复](task-discovery.md#恢复与失败) 暂停新调度/集成/写回，已有分配本地工作可继续。保留恢复材料和未完事项；全部事项落地后进入整体审查。
+Advance the newly ready frontier immediately after each merge. When the [run-record conditions](run-record.md) call for a PR, open the draft after the first merge. A ticket blocker affects that ticket and its dependents. For query failures, follow [failure and recovery](task-discovery.md#failure-and-recovery): pause new dispatch, integration, and write-back while permitting eligible preassigned local work. Preserve recovery materials and unfinished tickets. Once every ticket has landed, enter integration review.

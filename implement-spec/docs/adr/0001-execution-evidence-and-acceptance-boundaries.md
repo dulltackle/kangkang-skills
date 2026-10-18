@@ -2,8 +2,8 @@
 status: accepted
 ---
 
-# 执行事实、持续资源与验收结论分别管理
+# Separate execution facts, managed resources, and acceptance judgments
 
-自动化工具记录执行事实、跟踪持续管理资源并核对证据对应关系；独立审查者判断语义要求是否满足，事项写回沿用已确认的授权流程。同步结束的短命令无需进入持续资源清理流程，无法核实的宿主终态保留未知。选择这个分工，是为了降低模型维护机械账务的成本，同时避免将日志、子进程返回值或材料完整性误当作外层宿主终态和验收通过。
+Automation records execution facts, tracks managed resources, and checks evidence correspondence. Independent reviewers judge semantic requirements; ticket write-back follows established authorization. Short synchronous commands need execution records rather than persistent-resource cleanup. Preserve unknown host terminal states. This separation reduces model bookkeeping while keeping logs, child-process return codes, and material completeness distinct from outer-host termination and earned acceptance.
 
-此决策及整体设计已获用户确认，规格见 [ClapGrid #158](https://github.com/dulltackle/ClapGrid/issues/158)；实施已进入验证与交付阶段，功能执行和成本收益分别取证；未证收益保持试点。首轮 T1 限当前 Codex／Linux 和既有项目入口，T2 生成核对报告及验收写回计划。
+The user confirmed this decision and the overall design in [ClapGrid #158](https://github.com/dulltackle/ClapGrid/issues/158). Implementation entered verification and delivery. Collect functional and cost-benefit evidence separately; unproven benefits remain a pilot. T1 initially covers current Codex/Linux and existing project entry points. T2 produces correspondence reports and acceptance write-back plans.

@@ -27,7 +27,7 @@ A failing check loses its existing tick: report the regression and its reason. R
 
 Later code fixes require affected regressions and complete formal project checks for the new integration commit; have an independent reviewer reassess changed reading criteria. Reuse a qualifying run already performed on that new commit rather than running it again at handoff. Changes to relevant dependencies, configuration, environment, criteria, or check scope also require renewed matching evidence. Tracker-only remote writes do not change the tested commit. Local acceptance or closure commits must follow the repository's evidence policy; absent an explicit rule allowing record-only commits, formally verify the new delivery commit. Reconcile evidence with the delivery target before handoff.
 
-可用 [验收证据计划](evidence-plan.md) 核对提交、来源哈希和映射；计划存在不等于条款通过或已经写回。
+Use an optional [acceptance evidence plan](evidence-plan.md) to check commits, source hashes, and mappings. A saved plan establishes neither earned acceptance nor completed write-back.
 
 ## 2. Write earned acceptance back
 

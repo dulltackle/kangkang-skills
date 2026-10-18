@@ -1,20 +1,17 @@
-# 技能任务编排与验收
+# Skill orchestration and acceptance
 
-本术语表定义技能驱动任务中的执行、资源管理和验收概念。各技能处理的产品业务术语由对应项目维护。
+This glossary defines execution, resource-management, and acceptance terms for skill-driven work. Product-domain vocabulary belongs to the corresponding project.
 
-## 术语
+## Terms
 
-**执行记录**：
-一次命令或任务实际执行的事实记录，包含执行身份、观察及已确认的结果。结果尚不可确定时，记录保留未知状态。
+**Execution record:** the facts of one command or job execution, including its identity, observations, and confirmed result. Preserve an unknown state while the result cannot be established.
 
-**持续管理资源**：
-一次调用返回后仍可能占用执行环境、需要持续核对归属、使用和收尾状态的任务或工作空间。
+**Managed resource:** a job or workspace that may continue to occupy the environment after a call returns and needs ongoing ownership, usage, and close-out checks.
 
-**验收写回计划**：
-将已有验收结论映射到事项具体条款的拟变更集合。计划存在不表示事项已经更新。
+**Acceptance write-back plan:** proposed changes mapping established acceptance judgments to a ticket's exact criteria. A saved plan does not establish that the ticket was updated.
 
-**共享阶段预算**：同一性能阶段由所有并行和接手者共同使用的投入时间窗；只排除显式用户等待和外部阻塞。
+**Shared phase budget:** one investment window shared by parallel agents and incoming contexts in the same performance phase, excluding only explicit user waits and external blocks.
 
-**交接包**：跨主要阶段传递目标、固定提交、接口约定、未决事项和证据索引的简短记录。
+**Handoff packet:** a compact record carrying the target, pinned commit, interface contracts, unresolved issues, and evidence index across major stages.
 
-**宿主未知状态**：原管理接口无法提供可核对终态时保留的状态，不能由本地子进程退出或不可见 PID 替代。
+**Unknown host state:** the state retained when the original management interface cannot provide a verifiable terminal result. A local child-process exit or an invisible PID cannot substitute for it.

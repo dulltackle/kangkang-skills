@@ -189,7 +189,7 @@ def inspect(data):
 
 
 def capture(data, args):
-    """接收原接口调用结果；原件先落盘，登记失败后用相同输入重试。"""
+    """Capture an original interface result; persist it first and retry the same input after registration failure."""
     call = read_json(args.input)
     for field in ('id','owner','purpose','manager','operation','observedAt','location'):
         require(nonempty(call.get(field)), 'Missing capture field: '+field)

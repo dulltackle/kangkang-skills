@@ -6,24 +6,24 @@ disable-model-invocation: true
 
 # Implement Spec
 
-在一个集成分支实现规格。事项构成依赖图：持续并行推进已就绪的独立工作，协调者统一记录状态，通过事项、提交和证据路径传递上下文。
+Deliver the spec on one integration branch. Treat tickets as a dependency graph: keep ready, independent work moving in parallel. The coordinator owns the run record; pass context through ticket identities, commits, and evidence paths.
 
-## 执行步骤
+## Process
 
-1. **建立范围**：读取项目 `docs/agents/issue-tracker.md`，执行 [事项发现](task-discovery.md)。首次完整快照及关系分类完成后开始实现。缺少验收标准时提出标准并等待用户确认；独立路径继续。
-2. **建立运行**：读取 [分支与运行记录](run-record.md)，保存基线，在仓库外建立 `run.json`，报告绝对路径。创建持续资源或恢复任务前，读取 [资源协议](resource-management.md)。资源详情保留在登记表。
-3. **实现就绪事项**：读取 [实现、审查与合并](implementation.md)，在确认的最高层接口用 TDD，执行定向测试和类型检查；每项独立只读 OCR 审查，修复后由同 reviewer 复核。协调者依次合并，立即推进新就绪事项。正式完整检查留到改动稳定后。
-4. **阶段交接**：功能实现→性能收敛→最终验收前读取 [协作与性能投入](collaboration.md)。原拥有者收尾活动检查；用简短交接包进入新的实现/审查上下文。同问题修复循环保持 reviewer，未解决则延后交接。最终审查覆盖跨事项交互与缺口。
-5. **整体审查**：读取 [集成审查](integration-review.md)，用 OCR 全范围清单对齐已有覆盖；复核交互、冲突解决及缺口。有效问题全部修复且受影响检查通过后进入验收。
-6. **验收与写回**：读取 [验收和交付](acceptance.md)，交付前完整发现，固定候选提交。使用现有正式入口补齐失效/缺失证据，复用仍有效的原来源；按准确条款核对后写回。可用 [证据计划工具](evidence-plan.md) 整理机械核对；语义要求由独立 reviewer 判断。
-7. **交付及清理**：所有事项具有非空验收区且全部 earned、写回成功后，按验收协议推送、转 PR 就绪或直接关闭，再逐项清理本次临时资源。交付和清理分别报告；未知资源保留。
+1. **Establish scope.** Read the project's `docs/agents/issue-tracker.md`, then complete [task discovery](task-discovery.md). Begin implementation once the first complete snapshot and relationship classification are recorded. Propose missing acceptance criteria and obtain the user's confirmation; continue independent paths.
+2. **Establish the run.** Read [branches and run records](run-record.md), preserve the baseline, and create `run.json` outside the repository. Report its absolute path. Read [run resources](resource-management.md) before creating persistent resources or resuming work; keep resource details in the registry.
+3. **Implement ready tickets.** Follow [implementation, review, and merging](implementation.md). Use TDD at the agreed highest observable seam, targeted tests, and typechecking. Obtain independent read-only OCR review for each ticket; retain the reviewer through its fix loop. The coordinator merges sequentially and advances the ready frontier. Reserve full formal checks for a stable candidate.
+4. **Hand off stages.** Read [collaboration and performance budgets](collaboration.md) before moving from functional implementation to performance work or final acceptance. The original owner closes out active checks. Pass a compact packet to fresh implementation and review contexts; defer handoff while the same issue remains unresolved. Final review covers cross-ticket interactions and gaps.
+5. **Review integration.** Follow [integration review](integration-review.md). Reconcile prior coverage against OCR's full-range inventory, including interactions, conflict resolutions, and gaps. Enter acceptance when all valid findings are resolved and affected checks pass.
+6. **Verify and write back.** Follow [acceptance and handoff](acceptance.md). Complete discovery before delivery and pin the candidate commit. Use established formal checks to fill missing or invalidated evidence, retaining valid original sources. Match current criteria exactly before write-back. The optional [evidence plan](evidence-plan.md) handles mechanical correspondence; an independent reviewer judges semantic requirements.
+7. **Deliver and clean up.** Once every ticket has a nonempty acceptance region, all criteria are earned, and write-back succeeds, follow the acceptance protocol to push and mark the PR ready or close work directly. Process temporary resources individually. Report delivery and cleanup separately; retain resources whose state remains unknown.
 
-## 条件导航
+## Conditional references
 
-- 开始性能优化：先读 [投入预算](collaboration.md#性能阶段)，共享阶段默认 45 分钟、30 分钟检查点。并行/换人不重置。到期或连续两轮可比完整入口改善均 <5% 时停止新实验，呈现收益、差距和理由，请用户选择继续或分期；必要修复、审查及独立工作继续，未达条款开放。
-- 查询失败、压缩续接或外部状态可能变化的恢复：读 [发现恢复](task-discovery.md#恢复与失败)，区分首次完整发现与已有快照；暂停新调度、集成、写回，已有分配的本地开发/测试可继续。
-- 等待 agent 或长检查：用通知/有界等待，完成、阻塞、接口变化时更新统一状态；只有具体失败才读取详细日志，保持宿主要求的进度沟通。
-- 创建/观察/清理会话、服务、正式任务或工作树：读 [资源协议](resource-management.md)，通过原接口结果登记；登记失败恢复登记，不重复创建。短同步命令只留执行记录。
-- 修改本技能维护源或安装副本：读 [维护与评估](maintenance.md)。验证后备份并显式同步，核对实际管理方式、范围和哈希，未证实收益保持试点。
+- **Performance work:** read [performance budgets](collaboration.md#performance-budgets) before starting. Apply the shared budget and low-gain decision gate; ask the user to continue or phase delivery when triggered. Necessary repairs, review, and independent work continue; unmet criteria remain open.
+- **Query failure, context compaction, or external-state resume:** read [failure and recovery](task-discovery.md#failure-and-recovery). Distinguish first discovery from a saved complete snapshot; preserve only the local work that the recovery rules allow.
+- **Waiting for agents or long checks:** use notifications or bounded waits. Update the run record on completion, blockers, or interface changes. Read detailed logs for a concrete failure and maintain host-required progress updates.
+- **Creating, observing, or cleaning up sessions, services, formal jobs, or worktrees:** read [run resources](resource-management.md). Register original interface results; repair failed registration using the saved result. Short synchronous commands need only execution records.
+- **Changing this skill's maintained source or installed copy:** read [maintenance and evaluation](maintenance.md). Verify the source, preserve backups, and check the actual installation mechanism, scope, and hashes before any authorized synchronization. Unproven benefits remain a pilot.
 
-完成条件来自各协议；未验证的可执行要求保持未勾选，范围及费用变化遵守用户授权和宿主审批。
+Use each protocol's completion criteria. Keep unverified executable requirements unchecked. Scope and cost changes remain subject to user authorization and host approval.

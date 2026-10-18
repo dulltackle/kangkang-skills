@@ -1,4 +1,4 @@
-"""通过 CLI 检查共享预算、断网恢复与交接决策。"""
+"""Exercise shared budgets, offline recovery, and handoff decisions through the CLI."""
 import json
 from pathlib import Path
 import subprocess
@@ -38,7 +38,7 @@ class WorkflowTests(unittest.TestCase):
         for minute,value in [(1,100),(2,98),(3,97)]:
             r=self.budget('measure',minute,durationSeconds=value,completeEntry=True,comparisonKey='full/same-env',source=str(source))
         self.assertEqual(r['decision'],'tradeoff')
-        source.write_text('用户明确追加 20 分钟')
+        source.write_text('The user explicitly adds 20 minutes')
         r=self.budget('decide',4,choice='continue',extensionMinutes=20,source=str(source))
         self.assertEqual(r['limitMinutes'],80)
         self.assertTrue(r['newExperimentsAllowed'])

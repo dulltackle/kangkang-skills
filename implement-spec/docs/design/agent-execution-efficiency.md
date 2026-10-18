@@ -1,72 +1,72 @@
-# Agent 执行成本优化设计
+# Agent execution cost design
 
-状态：Q1–Q14 及整体设计已确认；规格已发布为 [ClapGrid #158](https://github.com/dulltackle/ClapGrid/issues/158)，标记 ready-for-agent。已按确认顺序实施技能、工具和项目检查策略；CLI 与行为回归已执行，成本收益保持试点，最终提交验收与实际 CI 状态见 #158 及交付记录。
+Status: Q1-Q14 and the overall design are confirmed. The spec is published as [ClapGrid #158](https://github.com/dulltackle/ClapGrid/issues/158) with `ready-for-agent`. Skill, tool, and project-check changes have been implemented in the confirmed order. CLI and behavioral regressions have run; cost benefits remain a pilot. Consult #158 and the delivery record for final-commit acceptance and actual CI status.
 
-## 目标与范围
+## Scope
 
-根据 ClapGrid #148 的实际运行复盘，减少重复阅读、协调和资源登记消耗，同时约束实际执行时间不明显恶化。分别记录非缓存输入 token、输出 token、模型调用次数及实际执行时长；缓存输入单列。在相同任务和验收覆盖下比较，改善目标待建立基线后确定。
+Use the ClapGrid #148 retrospective to reduce repeated reading, coordination, and resource-bookkeeping costs while limiting deterioration in actual execution time. Record uncached input tokens, output tokens, model calls, and actual execution time separately; list cached input separately. Compare the same task and acceptance coverage. Establish the baseline before fixing improvement targets.
 
-通用技能与工具的真正维护源为用户指定的 `/home/forclaw/文档/implement-spec/`。`/home/forclaw/.skills-manager/skills/implement-spec/` 是安装副本，不能据其 Git 归属判断维护源。ClapGrid 的夹具、CI 和验收说明改动归属 dulltackle/ClapGrid。
+The user-designated maintained source for generic skill and tool changes is defined in [maintenance](../../maintenance.md). `/home/forclaw/.skills-manager/skills/implement-spec/` is the installed copy; its Git ownership does not identify the maintained source. ClapGrid fixture, CI, and verification-document changes belong to `dulltackle/ClapGrid`.
 
-## 已确认的实施顺序
+## Confirmed implementation order
 
-1. S1 性能投入决策、S2 多 agent 阶段交接、T1 执行与资源登记自动化。
-2. P1 正式环境预检、S3 事项发现与恢复、T2 验收证据汇总。
-3. P2 CI 耗时与重复运行、D1 按需加载文档。
+1. S1: performance investment decisions; S2: multi-agent stage handoff; T1: execution and resource-registration automation.
+2. P1: formal-environment preflight; S3: task discovery and recovery; T2: acceptance evidence summaries.
+3. P2: CI duration and duplicate runs; D1: on-demand documentation.
 
-原有性能验收继续在 ClapGrid #148、#150、#151、#156 跟进，不因本次流程优化而改变标准。
+Existing performance acceptance remains tracked in ClapGrid #148, #150, #151, and #156 at its original bar.
 
-## 第一轮确认
+## First confirmation
 
-用户回答“全部按推荐”，确认以下决定。
+The user answered "Use all recommendations" (translated), confirming:
 
-- Q1：优先消除重复模型开销，并约束实际执行时间不明显恶化。计量指标分开呈现，不把累计缓存输入当成实际费用。
-- Q2：性能投入预算到期后停止新增性能实验，提交当前收益、剩余差距和继续投入理由，由用户决定继续攻关或分期交付。继续完成已引入改动的必要修复、审查及独立工作；未完成条款保持未完成。
-- Q3：同一问题的修复循环保留原 reviewer；阶段完成后允许新 agent 接手。交接包含目标、固定提交、接口约定、未解决问题和可核对的审查／执行证据。运行中的检查先由原拥有者收尾，新 agent 独立判断可复用结论。
+- **Q1:** Prioritize eliminating repeated model overhead while limiting deterioration in actual execution time. Present metrics separately; cumulative cached input is not actual cost.
+- **Q2:** When the performance budget expires, stop new experiments and present measured gains, remaining gaps, and the reason for further investment. Let the user choose continued investigation or phased delivery. Continue necessary repairs, review, and independent work introduced so far; keep unmet criteria open.
+- **Q3:** Retain the original reviewer through the same issue's repair loop; allow a fresh agent after a stage completes. Pass the target, pinned commit, interface contracts, unresolved issues, and verifiable review and execution evidence. The original owner closes out active checks first; the incoming agent independently decides what conclusions are reusable.
 
-## 已核实的工具边界
+## Verified tool boundaries
 
-`implement-spec/scripts/resources.py` 已提供原子登记、身份冲突检查、证据哈希、观察与清理记录。它不执行命令、不查询或停止宿主进程，也不验证输入报告所声明的实际终态。
+`implement-spec/scripts/resources.py` provides atomic registration, identity-conflict checks, evidence hashes, observations, and cleanup records. Command execution, host process queries and termination, and verification of declared terminal states remain with their original interfaces and evidence.
 
-本地 Python 可以记录自己启动并等待的子进程返回值，但无法据此证明外层工具会话和全部后台后代均已结束。T1 必须保留原管理接口的身份及实际结果；不可查询的情况继续明确记为未知。
+Local Python can record the return code of a child it starts and waits for. That return code does not establish termination of the outer tool session or every background descendant. T1 retains the original management identity and actual interface result; unqueryable state remains explicitly unknown.
 
-## 第二轮确认
+## Second confirmation
 
-用户回答“全部按推荐”，确认以下决定。
+The user answered "Use all recommendations" (translated), confirming:
 
-- Q4：性能优化阶段默认预算 45 分钟，30 分钟检查一次收益。包含分析、实现和实验验证；并行 agent 共用预算，换 agent 不重置。用户等待及明确外部阻塞不计入。连续两轮可比完整入口测量改善均不足 5% 时提前进入取舍节点；该判断不构成正式性能验收。用户可预先覆盖默认预算。
-- Q5：从功能实现进入性能收敛、再进入最终验收时，实现者／审查者默认使用新上下文。同一问题的修复循环保留原 reviewer，未解决时延后交接。交接包包含简短摘要与证据索引，详细历史按需读取。协调者维护统一状态，最终审查重点覆盖跨事项交互与覆盖缺口。
-- Q6：T1 首轮支持当前 Codex／Linux 的执行会话与普通 Git 工作树，自动保存原接口结果、登记身份、追加观察并生成汇总。项目正式任务沿用既有入口。无法取得终态时记为未知；跨宿主、其他平台和新的进程管理机制不纳入首轮。
+- **Q4:** Default performance budget: 45 minutes, with a gain checkpoint at 30 minutes. Include analysis, implementation, and experiments. Parallel agents share the budget; changing agents preserves it. Exclude user waits and explicit external blocks. Two consecutive comparable complete-entry improvements below 5% trigger an earlier tradeoff decision, separate from formal performance acceptance. The user may override defaults before starting.
+- **Q5:** Use fresh implementation and review contexts when moving from functional implementation to performance work and then final acceptance. Retain the reviewer through the same issue's repair loop; defer handoff until resolution. Pass a compact summary and evidence index, with detailed history available on demand. The coordinator maintains shared state; final review emphasizes cross-ticket interactions and coverage gaps.
+- **Q6:** T1 initially supports current Codex/Linux execution sessions and ordinary Git worktrees: save original interface results, register identities, append observations, and generate summaries. Project formal jobs use established entry points. Preserve unknown terminal states. Cross-host support, other platforms, and a new process-management mechanism are outside the first iteration.
 
-## 第三轮确认
+## Third confirmation
 
-用户回答“全部按推荐”，确认以下决定。
+The user answered "Use all recommendations" (translated), confirming:
 
-- Q7：同步结束的短命令只保留执行记录；活动会话、后台检查、服务、正式任务及工作树作为持续管理资源登记。旧登记表兼容读取，按实际操作需要核对，不批量重建历史证据；既有未知状态继续保留。
-- Q8：P1 在现有预检链路内统一 watch 夹具的可写缓存隔离，优先执行正式环境差异相关测试文件，并计入既有同次累计覆盖。复用已有测试入口和累计机制，不新增重复完整预检。
-- Q9：首次发现尚未完整时停止实现。已有完整快照后遇到查询失败，继续已分配任务的本地开发与测试，暂停新调度、集成和验收写回；恢复查询后核对范围变化并重新评估受影响工作。
-- Q10：T2 首轮通用化已有机械核对，生成证据汇总、缺口及待写回计划。语义判断由 reviewer 完成，远端写回沿用既有授权流程；材料完整不自动等于验收通过，不另建事项客户端。
+- **Q7:** Keep execution records for short synchronous commands. Register active sessions, background checks, services, formal jobs, and worktrees as managed resources. Read legacy registries compatibly and reconcile them as operations require; retain historical evidence and existing unknown states.
+- **Q8:** P1 standardizes writable-cache isolation in watch fixtures within the existing preflight chain. Run formal-environment-sensitive files early and count their original evidence in the existing same-run cumulative coverage. Reuse test entry points and cumulative machinery rather than adding duplicate full preflight runs.
+- **Q9:** Stop implementation until first discovery is complete. After a complete snapshot exists, query failure permits assigned local development and tests while pausing new dispatch, integration, and acceptance write-back. Restore queries, reconcile scope changes, and reassess affected work before advancing.
+- **Q10:** T2 initially generalizes existing mechanical checks into evidence summaries, gaps, and proposed write-back plans. Reviewers make semantic judgments; remote write-back follows established authorization. Material completeness alone does not earn acceptance. Reuse the tracker client.
 
-## 第四轮确认与源目录纠正
+## Fourth confirmation and source correction
 
-用户确认 Q11、Q13 按推荐执行；Q12 指定真正维护源 `/home/forclaw/文档/implement-spec/`，其余范围按推荐执行。
+The user accepted the recommendations for Q11 and Q13. For Q12, the user specified the true maintained source recorded in [maintenance](../../maintenance.md), accepting the remaining scope recommendations.
 
-- Q11：保留 push、PR 和手动触发。push 默认验证分支顶端，PR 默认验证合并结果，不能直接视为重复覆盖删除。首轮处理同工作流、同事件、同引用的自动运行并发替换；手动触发和重跑单独处理，避免旧提交重跑挤掉新提交检查。取消明确记为取消，不算通过。记录耗时并检查作业时限余量。
-- Q12：仅整理维护源中的 implement-spec 主流程及引用文档、ClapGrid 验收说明。主文档保留步骤与条件导航，协议细节按需读取；工具默认返回摘要与原始证据路径。全局 AGENTS.md 保持精简，其他技能文档不纳入。
-- Q13：分两层评估。确定性检查覆盖预算跨 agent 延续、交接证据、登记失败、会话失联、断网恢复、证据缺失及清理保留。另以相同模型和环境对原版／新版运行少量固定场景：正常交付、低收益优化、执行中断；分别比较 token、调用次数和实际时长。旧任务日志只作诊断，不充当公平基线。先建立基线，再固定改善目标；覆盖完整且收益可重复后推广，未证明收益的部分保留试点。
+- **Q11:** Preserve push, PR, and manual triggers. Push defaults to the branch tip; PR defaults to the merge result, so they represent distinct coverage. First handle replacement of automatic runs within the same workflow, event, and ref. Isolate manual triggers and reruns so an old-commit rerun does not displace a newer check. Record cancellation as cancellation, never passing. Measure duration and job-timeout margin.
+- **Q12:** Limit documentation work to the maintained implement-spec entry point and references, plus ClapGrid verification guidance. Keep steps and conditional pointers in the main document and disclose protocol details on demand. Tools return summaries and original-evidence paths by default. Keep global `AGENTS.md` concise; other skills are outside scope.
+- **Q13:** Evaluate at two levels. Deterministic checks cover shared budgets across agents, handoff evidence, registration failure, lost sessions, offline recovery, missing evidence, and retention during cleanup. Under the same model and environment, compare original and candidate versions on a few fixed normal-delivery, low-gain, and interruption scenarios. Report tokens, calls, and actual duration separately. Historical logs are diagnostic evidence rather than a fair baseline. Establish the baseline before fixing targets. Roll out only with complete coverage and repeatable gains; unproven benefits remain a pilot.
 
-维护源无 Git 仓库，也没有发布或同步说明。五个关键文件（主技能、发现、资源、验收文档及资源脚本）与安装副本逐字节一致，但不能据此推断存在自动同步。本轮三份设计文档迁回维护源；原位置已有自动备份提交，保留历史，不初始化或改写 Git。
+At source correction, the maintained directory had no Git repository or publication/synchronization instructions. Five key files (the entry point, discovery, resource and acceptance documents, and resource script) matched the installed copy byte for byte; that did not establish automatic synchronization. The three design documents were moved back to the maintained source. Their former location has an automatic backup commit; preserve that history and the source's non-Git state.
 
-## 最终确认与规格发布
+## Final confirmation and spec publication
 
-用户通过 to-spec 明确确认整体方案（Q14）：在维护源修改和验证，通过评估后再显式同步到安装副本，保存旧版本并校验文件哈希；不反向编辑安装副本作为维护源，不自动初始化 Git。执行同步前核对具体文件和实际安装管理方式。
+Through `to-spec`, the user confirmed the overall design (Q14): edit and verify the maintained source, then explicitly synchronize to the installed copy after evaluation, retaining the old version and checking hashes. The maintained source remains authoritative. Preserve its non-Git state and inspect actual installation management and affected files before synchronization.
 
-整体规格已发布为 [ClapGrid #158](https://github.com/dulltackle/ClapGrid/issues/158)，正文和 ready-for-agent 标签已回读核对。实施已进入验证与交付阶段；验收勾选仍以 #158 的实际证据为准。
+The full spec was published as [ClapGrid #158](https://github.com/dulltackle/ClapGrid/issues/158); its body and `ready-for-agent` label were read back. Implementation entered verification and delivery. Acceptance ticks continue to require actual evidence on #158.
 
-## 证据
+## Evidence
 
-复盘统计与原始会话来源：`/home/forclaw/tmp/clapgrid-148-retro/metrics.json`。
-访谈结构化记录：`/home/forclaw/tmp/agent-efficiency-design/design-state.json`。
-资源约束见 [resource-management.md](../../resource-management.md)，登记工具见 [resources.py](../../scripts/resources.py)。
+- Retrospective metrics and original-session index: `/home/forclaw/tmp/clapgrid-148-retro/metrics.json`.
+- Structured interview record: `/home/forclaw/tmp/agent-efficiency-design/design-state.json`.
+- Resource constraints: [run resources](../../resource-management.md); registration tool: [resources.py](../../scripts/resources.py).
 
-[术语表](../../GLOSSARY.md) · [职责边界 ADR](../adr/0001-execution-evidence-and-acceptance-boundaries.md)
+[Glossary](../../GLOSSARY.md) | [Responsibility-boundary ADR](../adr/0001-execution-evidence-and-acceptance-boundaries.md)

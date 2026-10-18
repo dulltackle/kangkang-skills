@@ -84,12 +84,12 @@ python3 <skill-dir>/evals/test_resources.py -v
 
 Tests use temporary directories and Git repositories, without connecting to actual run resources, hosts, or trackers. Scenarios O–Q in `evals/scenarios.md` evaluate agent decisions separately; tool tests do not replace behavioral evaluation.
 
-## 原接口结果自动登记
+## Capture original interface results
 
-`resources.py ... capture --input <调用信封.json>` 自动保存不可覆盖的原件、SHA256、执行记录及适用的资源身份；默认返回摘要和原件路径。信封含 id（唯一安全文件名）、owner、purpose、location、manager、operation、observedAt、result（未经改写的真实返回对象）。日志先在生产端剔除凭据，不传环境/认证原文。
+`resources.py ... capture --input <envelope.json>` saves an immutable original result, SHA-256, execution record, and applicable resource identity. It returns a summary and the original-result path. The envelope contains `id` (a unique safe filename), `owner`, `purpose`, `location`, `manager`, `operation`, `observedAt`, and `result` (the unmodified actual return object). Remove credentials at the log producer; exclude environment and authentication dumps.
 
-首轮支持 `manager:exec_command, operation:start` 的 Codex/Linux 返回：exit_code 只形成已结束执行记录，session_id 则登记持续 process/handle。后续实际 `write_stdin` 查询用 manager:write_stdin、operation:observe，带 resourceId 和原 handle；退出码只证明该宿主会话结束，全部后代和正式任务仍按原接口各自核对。查询失败或未知接口结果保持 unknown，本地 subprocess.returncode 不建立宿主终态。
+Initial support covers Codex/Linux results from `manager:exec_command, operation:start`: an `exit_code` creates only a completed execution record; a `session_id` registers a managed process and handle. Observe the original session through `manager:write_stdin, operation:observe`, with `resourceId` and the original `handle`. Its exit code establishes only that host session's termination; verify descendants and formal jobs through their own interfaces. Failed queries or unrecognized interface results remain `unknown`. Local `subprocess.returncode` does not establish a host terminal state.
 
-普通 Git worktree 创建后用 manager:git、operation:create，location/repository 保存实际目标路径，result 保留原执行接口的 exit_code/output 等实际返回对象；入口实际查询 Git 登记及 HEAD 后登记身份。应用管理工作树及项目正式任务继续原入口，沿用 register/record 协议，不发明通用进程管理器。
+After creating an ordinary Git worktree, use `manager:git, operation:create` with its actual `location` and `repository`. Preserve the execution interface's original `exit_code`, `output`, and other result fields. The command queries actual Git registration and HEAD before recording the identity. App-managed worktrees and project formal jobs retain their established interfaces and register/record protocol.
 
-capture 不执行资源创建。原始调用成功而登记失败时，保留输入/原结果和句柄，排除登记故障后原输入重试，不能重启命令或新建替代资源。原件写盘之后其他字段失败也保留文件。旧 schemaVersion:1 登记表兼容，只按实际使用核对；inspect 输出旧未知，绝不批量重写历史或据空表断言无资源。
+`capture` records results rather than creating resources. If the original call succeeds but registration fails, preserve the input, original result, and handle; repair the bookkeeping and retry the same input. Keep the saved original even if later field validation fails. Read legacy `schemaVersion:1` registries compatibly and reconcile entries as needed. `inspect` preserves old unknown states; preserve historical records and establish actual resource presence separately from registry contents.

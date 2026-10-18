@@ -1,4 +1,4 @@
-"""验收计划 CLI：材料完整与语义验收分离。"""
+"""Exercise the acceptance-plan CLI with material completeness separate from semantic acceptance."""
 import hashlib,json,subprocess,sys,tempfile,unittest
 from pathlib import Path
 SCRIPT=Path(__file__).resolve().parents[1]/'scripts/acceptance_evidence.py'
@@ -13,8 +13,8 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(r.returncode,0,r.stderr);return json.loads((self.root/'plan.json').read_text())
     def manifest(self):
         raw=self.proof('raw.json',dict(commit='abc',status='passed'))
-        review=self.proof('review.json',dict(reviewer='R',implementer='A',commit='abc',criteria={'one':dict(text='要求一',decision='earned',reason='核对真实结果',locations=['x:1'])}))
-        return dict(ticket='demo#7',commit='abc',criteria=[dict(id='one',text='要求一',proofs=['run'])],
+        review=self.proof('review.json',dict(reviewer='R',implementer='A',commit='abc',criteria={'one':dict(text='Requirement one',decision='earned',reason='Verified the actual result',locations=['x:1'])}))
+        return dict(ticket='demo#7',commit='abc',criteria=[dict(id='one',text='Requirement one',proofs=['run'])],
             proofs=[dict(id='run',**raw,commitPointer='/commit',statusPointer='/status',sources=[raw])],review=review)
     def test_plan_needs_matching_sources_and_independent_semantic_review(self):
         m=self.manifest();r=self.call(m)
@@ -32,7 +32,7 @@ class EvidenceTests(unittest.TestCase):
                 r=self.call(m);self.assertFalse(r['proposedCheckboxes']['one'])
     def test_reused_proof_keeps_original_identity_and_requires_explicit_content_match(self):
         m=self.manifest();m['commit']='def'
-        m['review']=self.proof('new-review.json',dict(reviewer='R',implementer='A',commit='def',criteria={'one':dict(text='要求一',decision='earned',reason='原内容核对',locations=['x:1'])}))
+        m['review']=self.proof('new-review.json',dict(reviewer='R',implementer='A',commit='def',criteria={'one':dict(text='Requirement one',decision='earned',reason='Verified the original content',locations=['x:1'])}))
         m['proofs'][0]['reuse']=dict(originalCommit='abc',targetCommit='def',source=self.proof('reuse.json',dict(originalCommit='abc',targetCommit='def',unchanged=True,scope=['one'])))
         r=self.call(m);self.assertTrue(r['proposedCheckboxes']['one']);self.assertEqual(r['proofs'][0]['originalCommit'],'abc')
         del m['proofs'][0]['reuse'];self.assertFalse(self.call(m)['proposedCheckboxes']['one'])

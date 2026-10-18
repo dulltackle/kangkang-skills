@@ -1,17 +1,17 @@
-# 分支、运行记录与授权
+# Branches, run records, and authorization
 
-核对并记录基线，在一个集成分支交付。已有暂存/无关工作保留，需要隔离时用独立工作树。恢复时先把原记录与实际分支、tracker 和资源对应，再复用已有工作。
+Verify and record the baseline; deliver on one integration branch. Preserve existing staging and unrelated work, using a separate worktree when isolation is needed. On resume, reconcile the record with the actual branch, tracker, and resources before reusing work.
 
-在仓库外建立持久 run.json，报告绝对路径。在审查、合并、用户确认和 tracker 写入后更新：
+Create a persistent `run.json` outside the repository and report its absolute path. Update it after reviews, merges, user confirmations, and tracker writes:
 
-- 基线/集成提交，各事项分支、工作树、状态、阻塞。
-- resourceRegistry 绝对路径和唯一 runId；资源详情只存登记表。
-- reviewer、基线/目标、文件/差异/规则、发现及处置、与集成差异的对应，条款证据及适用提交。
-- 用户确认的准确原文、内容、范围，以及 tracker 已完成/待完成操作。
-- 发现快照的查询范围、来源、分页/权限、纳入/排除/未决关系、依赖图及每事项实现/审查/验收/写回状态。先保存原查询，再并入记录。
+- Baseline and integration commits; each ticket's branch, worktree, status, and blockers.
+- Absolute `resourceRegistry` path and unique `runId`; keep resource details in that registry.
+- Reviewer, baseline and target, files, diffs, rules, findings and dispositions, correspondence to the integration diff, and criterion evidence with its applicable commit.
+- Exact user confirmations, their content and scope, and completed or pending tracker operations.
+- Discovery query scope, sources, pagination and access status, included, excluded, and unresolved relationships, dependency graph, and per-ticket implementation, review, acceptance, and write-back state. Preserve raw queries before adding them to the record.
 
-创建工作树、预览服务或长检查前读 [资源协议](resource-management.md)，成功结果立即保存、登记并读回；恢复复用先通过原宿主接口核对。资源核对不能代替事项发现。
+Read [run resources](resource-management.md) before creating worktrees, preview services, or long checks. Save successful results, register them, and read them back immediately. Before reuse on resume, query the original host interface. Resource reconciliation and task discovery remain separate requirements.
 
-tracker 以 PR 关闭工作或用户要求 PR 时，在首次合并后开 draft，使用其规定的事项引用；其他情况集成分支即交付物。实际 ready/关闭仍服从 [验收](acceptance.md)。
+When the tracker closes work through PRs or the user requests a PR, open a draft after the first merge, using the configured ticket references. Otherwise the integration branch is the deliverable. Readiness and closure follow [acceptance](acceptance.md).
 
-规格范围内必要配置变更已获实施授权：修改前保存可恢复原件/精确差异，记录目标、影响范围及完成证据。恢复核对既有授权与实际状态，内容/影响未实质变化则继续；新增费用、扩大权限、无关配置或丢弃用户内容需用户决定。缺失授权先指出具体证据缺口，独立准备继续。遵守宿主审批；拒绝时保留工作，记录操作和原因，不换路径绕过。
+Necessary configuration changes within the spec are authorized implementation work. Preserve recoverable originals or exact diffs before editing; record the target, affected scope, and completion evidence. On resume, reconcile authorization with actual state and continue when content and impact are materially unchanged. Added costs, broader permissions, unrelated configuration, or discarding user content require a user decision. Identify the specific authorization gap while continuing independent preparation. Respect host approval; preserve work and record a refusal's action and reason rather than changing routes to bypass it.
