@@ -28,3 +28,18 @@ Report actual output against each expectation. If the old version also passes a 
 - **S:** Use compact handoff packets and fresh contexts from functional work to performance work to final acceptance. Retain the reviewer through the same issue's fix loop. Defer handoff until the original owner closes out active checks. Review cross-ticket interactions and coverage gaps at the end.
 - **T:** When host-session creation succeeds but registration fails, preserve the original result and repair registration without recreating the session. Lost queries or a local child-process exit leave the outer state unknown. A terminal query through the original interface proves only that session's state; reconcile descendants and formal jobs separately.
 - **U:** Missing, damaged, identity-mismatched, or unmapped evidence cannot pass. Even complete materials require an independent reviewer's semantic judgment to propose an earned criterion; the plan remains unwritten. Preserve older evidence's original identity and completion time.
+
+- **V1：** 下一次尝试前汇报影响、两次恢复及证据和下一步；尚无 run record 时在仓库外保存最小记录并报告路径，后续归入 blocker，记录准备不延迟汇报。首次发现仍不完整，继续暂停实现，仅进行有依据的恢复、只读调查与证据保留，不因通知阈值请求续期。
+- **V2：** 实现者及时报告协调者，由其告知用户；保留该票及依赖的阻塞，继续独立票。下一次尝试说明改变的条件和验证目的；不原样重试以充当进展。
+- **V3：** 证据实质缩小原因范围，继续验证修复，按宿主要求报告进展；不因累计失败两次自动暂停或请求授权。
+- **V4：** 健康检查和正常轮询不算无效尝试；保留原 job，按通知或有界退避等待。更新基于已知事实，无须为生成更新重复查询或重启。
+- **V5：** 确认阻塞后立即汇报并请求具体权限决策，不等第二次失败。按发现恢复规则暂停新派发、集成和写回，继续快照中符合条件的本地工作；不绕过权限。
+- **V6：** `review` 只确认性能复盘信号；保留并汇报无进展问题、已排除假设和下一步，压缩或换 agent 不清空状态，不重复已通知的相同待决项。
+- **V7：** 复用已有简报满足宿主更新频率，不重复索要决定或额外轮询；下一步被证伪属于实质变化，更新影响、证据与新的下一步或待决项。
+- **V8：** 即使失败表现不同，两轮未缩小问题范围仍触发汇报。说明当前无法解除的阻塞与所需帮助，暂停受影响路径，继续符合既有门槛的独立票；保留未完成验收项。
+- **V9：** 通知后仍遵守用户硬预算，停止受限实验；只有用户授权延期或改变预算后才能执行新实验。继续预算范围外的修复和独立票，验收标准不变。
+- **W1：** 读取 `collaboration.md`、`integration-review.md` 和后续验收所需协议；按交接规则收尾检查、保留修复 reviewer、传递紧凑记录并验证跨票覆盖。普通交接不加载 `performance.md` 或 `performance-recovery.md`。
+- **W2：** 读取 `performance.md`，按实际交接需要读取 `collaboration.md`；新阶段不加载旧记录迁移。维持自主模式与周期复盘。
+- **W3：** 读取 `performance-recovery.md`，按原始授权处理默认策略与待协调策略，保留时间、证据、用户选择和真实暂停；不把旧默认上限变成新授权门槛。
+- **W4：** 创建前读取 `resource-management.md`，首次构造输入时加载 `resource-inputs.md`；普通 `inspect` 无需重新加载样例。创建成功但登记失败时保存原结果与 handle，修复登记并读回；不得重建资源。
+- **W5：** 维护回归入口在 `maintenance.md`；普通实现者不加载维护验证说明。保留资源协议中的真实宿主观察、未知状态与清理约束。

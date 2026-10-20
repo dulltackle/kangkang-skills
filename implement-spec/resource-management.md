@@ -10,27 +10,7 @@ For a worktree, record its creating interface, actual path, owner and ticket, pu
 
 Use `scripts/resources.py` to maintain the registry. It uses the Python 3 standard library and POSIX `fcntl` for locking. Where this environment is unavailable, use an equivalent atomic host facility with the same fields and reconciliation procedure. The tool locks writes, replaces the registry atomically, and preserves creation evidence and subsequent events. Matching registrations can be retried; reconcile identity conflicts before registering a new resource under a new ID.
 
-Replace `<skill-dir>` and `<run-dir>` with actual absolute paths and `<run-id>` with the recorded identity. See `--help` for command arguments; input examples follow.
-
-```sh
-python3 <skill-dir>/scripts/resources.py --registry <run-dir>/resources.json --run-id <run-id> register --input <run-dir>/resource.json --evidence <run-dir>/creation-result.json
-python3 <skill-dir>/scripts/resources.py --registry <run-dir>/resources.json --run-id <run-id> inspect
-```
-
-Registration input:
-
-```json
-{
-  "id": "ticket-43-worktree",
-  "kind": "worktree",
-  "owner": "implementer-A / demo#43",
-  "purpose": "Implement ticket 43",
-  "manager": "git",
-  "identity": "demo-run-42 / git-worktree / /absolute/worktree-43",
-  "location": "/absolute/worktree-43",
-  "repository": "/absolute/repository"
-}
-```
+将 `<skill-dir>`、`<run-dir>` 替换为实际绝对路径，`<run-id>` 使用已记录的身份。参数见 `--help`；首次构造 `register` 或 `record` 输入、或修复输入校验错误时，读取[资源输入样例](resource-inputs.md)。
 
 Processes use `kind: process`, the actual management interface as `manager`, and a `handle` field. Their identity includes the host, job or session identity, and start time. Register a new identity when reusing a path or restarting a service. App-managed worktrees use their management interface and actual identity key rather than being treated as ordinary Git worktrees.
 
@@ -44,25 +24,6 @@ For missing or changed evidence or mismatched records, consult the original inte
 
 Use the same entry point for observations and cleanup results. Pass the saved raw result as `--evidence`; repeat `--recovery` to record recovery files and their actual SHA-256 values.
 
-```sh
-python3 <skill-dir>/scripts/resources.py --registry <run-dir>/resources.json --run-id <run-id> record --input <run-dir>/observation.json --evidence <run-dir>/host-result.json
-```
-
-Event input:
-
-```json
-{
-  "resourceId": "ticket-43-worktree",
-  "identity": "demo-run-42 / git-worktree / /absolute/worktree-43",
-  "type": "observation",
-  "observedAt": "2026-10-13T00:00:00Z",
-  "hostScope": "actual-host",
-  "presence": "present",
-  "activeUse": "active",
-  "reason": "A preview job on the actual host still uses this directory"
-}
-```
-
 The tool validates fields, resource identity, and saved-file hashes. It does not establish the truth of an input report or prove that a backup is recoverable. Preserve the corresponding raw host result and verify backups or recovery commits under the existing acceptance requirements.
 
 ## Clean up individually
@@ -75,14 +36,6 @@ After successful handoff, the coordinator processes each registered resource:
 4. Query the actual host afterward. Record `type: cleanup` and `status: removed`, `stopped`, `retained`, or `failed`, with the reason, raw result, and recovery materials. `removed` and `stopped` require actual-host observation that the resource is absent and inactive; a submitted request alone is insufficient.
 
 Finish when every entry has a current disposition or explicit retention reason. Summarize removed, stopped, retained, and failed resources separately from delivery status. On resume, query previously failed or retained resources before continuing. Reconcile completed operations rather than repeating unchanged cleanup.
-
-## Verify the tool
-
-```sh
-python3 <skill-dir>/evals/test_resources.py -v
-```
-
-Tests use temporary directories and Git repositories, without connecting to actual run resources, hosts, or trackers. Scenarios O–Q in `evals/scenarios.md` evaluate agent decisions separately; tool tests do not replace behavioral evaluation.
 
 ## Capture original interface results
 

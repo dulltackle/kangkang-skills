@@ -65,7 +65,7 @@ The full spec was published as [ClapGrid #158](https://github.com/dulltackle/Cla
 
 ## Autonomy revision
 
-The user subsequently requested autonomous completion, with questions reserved for goal or scope changes, additional authorization, and blockers the agent cannot remove. This supersedes Q2 and Q4's default stop-and-renew policy. [Performance work](../../collaboration.md#performance-work) is authoritative: periodic and low-gain reviews guide the agent's next action; only user-set budgets gate further experiments. Acceptance requirements remain unchanged.
+The user subsequently requested autonomous completion, with questions reserved for goal or scope changes, additional authorization, and blockers the agent cannot remove. This supersedes Q2 and Q4's default stop-and-renew policy. [Performance work](../../performance.md) is authoritative: periodic and low-gain reviews guide the agent's next action; only user-set budgets gate further experiments. Acceptance requirements remain unchanged.
 
 Q13's deterministic coverage now includes recurring review acknowledgment, continuation beyond the former default limit, explicit user budgets, evidence-preserving legacy migration, and preservation of user-selected phase delivery. Behavioral scenarios test these decisions separately from cost-benefit claims. This change establishes the requested execution policy; token, duration, and end-to-end delivery benefits still require measured evidence.
 

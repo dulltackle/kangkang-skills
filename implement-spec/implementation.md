@@ -4,6 +4,8 @@
 
 Give concurrent implementers separate branches and worktrees based on integration. Reuse available implementers for compatible tickets and assign ownership of overlapping edits explicitly. Reconcile existing work before resuming or adding tickets; complete only missing work. Recreate an unused branch with the wrong baseline if needed; preserve existing work and history first.
 
+派发任务时一并传递入口的停滞汇报条件；实现者及时向协调者报告，协调者负责告知用户。
+
 1. Use TDD at the agreed highest observable seam. Find existing interaction tests before changing behavior. Run typechecking, ticket acceptance tests, and affected regressions; record source identity or commit, scope, environment, results, and omissions. Run full project checks on the final stable candidate by default, subject to stricter repository rules.
 2. Give an independent read-only `open-code-review-delegate` reviewer the ticket context and explicit baseline and target. The reviewer must be independent of that content's implementation. Keep the same reviewer through the ticket's fix loop, passing new diffs and findings together. If the reviewer is unavailable or its context is exhausted, hand off compact coverage records and source pointers. Missing or failed review tools block review.
 3. Validate findings, fix valid issues, record false-positive reasoning, and rerun affected checks. Refer user tradeoffs to the coordinator. Verify interactions after synchronizing with integration; review diffs introduced by synchronization or conflict resolution.
