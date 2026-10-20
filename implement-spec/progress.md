@@ -1,25 +1,25 @@
-# 停滞汇报
+# Stalled progress
 
-在入口的停滞或外部阻塞条件触发时读取。本协议覆盖发现、实现、审查修复、性能、验收和清理；各阶段原有门槛继续有效。
+Read when the entry point's stall or external-blocker conditions fire. This protocol covers discovery, implementation, review fixes, performance, acceptance, and cleanup. Each stage's existing gates still apply.
 
-## 识别与汇报
+## Recognize and report
 
-一次尝试包含待验证的假设或改变的条件，以及观察结果；一次工具轮询不是一次尝试。新证据应能排除假设、缩小原因范围或验证修复效果。单纯换措辞、记录一次 `review` 或再次运行相同命令不算进展。正常运行中的长检查按已有等待协议处理；确认失败、失联或外部依赖阻塞时报告实际状态。
+An attempt tests a hypothesis or changed condition and observes the result; a status poll is not an attempt. New evidence rules out a hypothesis, narrows the cause, or verifies a fix. Rewording the plan, recording a `review`, or repeating a command alone does not establish progress. Use the existing waiting protocol for healthy long checks; report confirmed failure, lost contact, or an external dependency block as observed.
 
-触发后，在下一次尝试前向用户简报：
+Before the next attempt, give the user a compact report:
 
-- **问题与影响：** 卡在哪个问题，影响哪些票和后续动作。
-- **已试与证据：** 已排除的假设、关键结果及原始证据路径。
-- **下一步：** 准备改变什么条件、验证什么；若需人类决策，提出具体待决项与建议。
+- **Problem and impact:** what is stuck, which tickets and subsequent actions it affects.
+- **Attempts and evidence:** hypotheses ruled out, key results, and original evidence paths.
+- **Next action:** what will change and what it tests; when a user decision is needed, state the specific choice and recommendation.
 
-有可验证的新方向就继续自主推进。需要改变目标或范围、增加授权，或由人解除阻塞时，暂停受影响路径并请求对应决策；同时推进既有门槛允许的独立工作。两次尝试是汇报阈值，不是停止工作或续期授权的门槛。用户明确设置的硬预算仍适用。
+Continue autonomously when a new direction can be tested. If progress requires a goal or scope change, additional authorization, or human intervention, pause affected paths and request that decision. Continue independent work allowed by existing gates. The two-attempt threshold triggers a report, not a stop or authorization renewal. Honor explicit user budgets.
 
-## 保留与去重
+## Preserve and deduplicate
 
-协调者在现有 run record 的 blocker 中保留问题身份、已排除假设、最近实质进展、已汇报状态，以及下一动作或待决项。实现者将停滞事件及时报告协调者，由协调者向用户汇报。恢复和交接沿用该记录；复盘、换 agent、上下文压缩不清空未解决问题。
+The coordinator keeps the problem identity, ruled-out hypotheses, last substantive progress, reporting status, and next action or pending decision in the run record's blocker entry. Implementers promptly report stalls to the coordinator, who informs the user. Preserve unresolved problems across reviews, agent changes, context compaction, and handoffs.
 
-首次发现期间尚无 run record 时，先在仓库外保存同样的最小记录及证据，报告路径；建立 run record 后归入 blocker，保留原始来源。记录准备不延迟向用户汇报。
+Before a run record exists, save the same minimal record and evidence outside the repository and report its path. Incorporate it into the blocker entry when the run record is created, preserving original sources. Report promptly while preparing the record.
 
-同一阻塞没有实质变化时复用已有摘要，遵守宿主要求的进度频率，不重复索要决定或为汇报额外轮询。有新证据、影响变化、下一步失效、需要新决策或阻塞解除时，更新记录并告知用户。无法提出有依据的下一步时，明确报告当前无法解除的阻塞及所需帮助，保留未完成验收项。
+Reuse the existing summary while a blocker is unchanged. Maintain host-required updates without repeating decision requests or polling merely to generate an update. Update the record and inform the user when new evidence arrives, impact changes, the planned action is ruled out, a new decision is needed, or the blocker clears. If no justified next action remains, state the unresolved blocker and the help needed; keep unmet criteria open.
 
-本轮汇报完成条件：用户已收到影响与下一步，记录可供恢复，受影响路径的继续或暂停状态与阶段规则一致。脚本记录或计数器不能替代技术判断、验收或真实宿主观察。
+A report is complete when the user has received the impact and next action, the record supports recovery, and affected paths follow their stage's continuation or pause rules. Script records and counters do not replace technical judgment, acceptance, or actual-host observations.

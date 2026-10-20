@@ -10,7 +10,7 @@ For a worktree, record its creating interface, actual path, owner and ticket, pu
 
 Use `scripts/resources.py` to maintain the registry. It uses the Python 3 standard library and POSIX `fcntl` for locking. Where this environment is unavailable, use an equivalent atomic host facility with the same fields and reconciliation procedure. The tool locks writes, replaces the registry atomically, and preserves creation evidence and subsequent events. Matching registrations can be retried; reconcile identity conflicts before registering a new resource under a new ID.
 
-将 `<skill-dir>`、`<run-dir>` 替换为实际绝对路径，`<run-id>` 使用已记录的身份。参数见 `--help`；首次构造 `register` 或 `record` 输入、或修复输入校验错误时，读取[资源输入样例](resource-inputs.md)。
+Replace `<skill-dir>` and `<run-dir>` with actual absolute paths and `<run-id>` with the recorded identity. See `--help` for arguments. When first constructing `register` or `record` input, or fixing input validation errors, read [resource input examples](resource-inputs.md).
 
 Processes use `kind: process`, the actual management interface as `manager`, and a `handle` field. Their identity includes the host, job or session identity, and start time. Register a new identity when reusing a path or restarting a service. App-managed worktrees use their management interface and actual identity key rather than being treated as ordinary Git worktrees.
 

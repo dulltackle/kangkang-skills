@@ -1,9 +1,9 @@
-# 旧性能记录迁移
+# Legacy performance recovery
 
-仅在[性能协议](performance.md)的旧记录条件触发时读取。
+Read when the legacy-record conditions in [performance work](performance.md) fire.
 
-`schemaVersion:1` 仍可读取。首次预算事件补充阶段策略元数据，并保留时间戳、排除时间、测量、事件和无关工作流状态。旧阶段若记录的是默认启动、没有自定义时限或用户决定，迁移为自主模式。
+`schemaVersion:1` records remain readable. The first budget event adds phase policy metadata while preserving timestamps, exclusions, measurements, events, and unrelated workflow state. A legacy phase with a recorded default start and no custom limit or user decision becomes autonomous.
 
-其他旧阶段返回 `decision:reconcile`。协调者读取已保存的授权，记录带 `mode` 和支持证据 `source` 的 `policy`；只有真正的用户预算才附带 `limitMinutes`。单独的数字上限，或用户为回应旧默认门槛而同意延期，均不足以证明用户主动设置了上限。已有授权能够消除歧义时直接处理；只有实质歧义仍存在时才询问。
+Other legacy phases return `decision:reconcile`. Read saved authorization and record `policy` with `mode` and supporting `source`; include `limitMinutes` only for a genuine user budget. A numeric limit or an extension prompted by the old default gate alone does not establish a user-imposed cap. Resolve the policy from existing authorization; ask only if a material ambiguity remains.
 
-保留旧数值及用户明确选择的阶段性交付。按迁移结果校正过时的等待摘要；只有因旧默认门槛产生且已解除的暂停才恢复。实际用户等待与外部阻塞在原因解决前继续保留。
+Retain legacy values and explicit phase-delivery choices. Reconcile stale waiting summaries with the resulting state. Resume a pause caused solely by the old default gate only when its reason is resolved. Preserve actual user waits and external blocks until their reasons are resolved.

@@ -147,26 +147,26 @@ Codex exec_command returned session_id123; bookkeeping failed. Later write_stdin
 
 Two mapped criteria have complete metadata. One raw file hash changed; another has only the implementer's semantic claim. An old formal run has a different target commit. Explain plan output, missing review, original identity and actual writeback status.
 
-## V：跨阶段停滞与及时汇报
+## V: Stalled progress across stages
 
-分别处理下列独立场景。说明是否现在向用户汇报、下一步、受影响路径和独立工作能否继续，并给出实际简报；区分事实、假设与需要用户作出的决定。
+Treat these as independent scenarios. State whether to report now, the next action, and which affected or independent paths may continue. Give the actual brief, distinguishing facts, hypotheses, and user decisions.
 
-- V1：首次完整发现尚未完成，尚无 `run.json`。同一查询在两次有界恢复尝试后仍返回相同 503，没有新证据。没有用户时间上限。
-- V2：已有完整发现快照。实现者为同一测试失败连续尝试两次修复，结果相同且未排除任何原因；另一个独立票已满足派发条件。
-- V3：两次修复后测试仍失败，但第一轮排除了输入解析，第二轮定位到并发顺序，存在范围内可验证的新修复方向。
-- V4：正式检查持续运行，原管理接口报告健康且有进度，三次状态观察没有终态。检查只有一个原始 job ID。
-- V5：首次查询即确认当前权限不足，需要用户授予项目读取权限。原快照已分配且依赖满足的本地工作仍可推进。
-- V6：性能复盘刚记录 `review` 并清除了低收益信号；原问题的两轮尝试没有新增证据。随后上下文压缩，接收者看到相同问题与相同下一步。
-- V7：用户已收到外部阻塞简报，尚未回复。没有状态变化，宿主要求周期性进度更新；随后原定下一步被新证据证伪。
-- V8：两轮行动分别尝试不同方向，失败表现不同，但都没有缩小问题范围。当前没有有依据的下一步，另一个独立票可继续。
-- V9：用户只允许 20 分钟的新性能实验，预算已到；停滞简报提出范围内的新实验方向。已有修复与独立票不在预算范围内。
+- V1: Initial discovery is incomplete and no `run.json` exists. The same query returns the same 503 after two bounded recovery attempts, with no new evidence. The user set no time limit.
+- V2: A complete discovery snapshot exists. Two successive fixes for the same failing test produce the same result and rule out no causes. An independent ticket meets dispatch conditions.
+- V3: The test still fails after two fixes, but the first round ruled out input parsing and the second located a concurrency-ordering problem. A new fix can be tested within scope.
+- V4: A formal check is still running. Its original management interface reports healthy progress, but three observations show no terminal result. It has one original job ID.
+- V5: The first query confirms insufficient permissions; the user must grant project read access. Previously assigned local work in the complete snapshot still has satisfied dependencies.
+- V6: A performance `review` just cleared the low-gain signal, but two attempts on the original problem produced no new evidence. After context compaction, the receiver sees the same problem and next action.
+- V7: The user has received an external-blocker report but has not replied. State is unchanged and the host requires periodic updates. New evidence then disproves the planned next action.
+- V8: Two rounds tried different approaches and produced different failures, but neither narrowed the problem. No justified next action remains. An independent ticket can proceed.
+- V9: The user's 20-minute limit on new performance experiments has expired. A stall report proposes a new experiment within the agreed scope. Existing repairs and an independent ticket are outside the budget's scope.
 
-## W：按分支读取
+## W: Conditional reading
 
-仅说明从入口实际需要读取哪些协议、哪些条件尚未触发及完成条件；无需运行命令。
+State which protocols to load from the entry point, which conditions have not fired, and the completion criteria. Run no commands.
 
-- W1：普通功能实现与检查已完成，准备进入最终验收，不做性能工作，未恢复旧预算记录。
-- W2：启动一个新的自主性能阶段，已有当前版本的运行记录。
-- W3：恢复性能阶段，旧默认启动记录没有自定义时限或用户决定；另一个旧阶段的 `status` 返回 `decision:reconcile`。
-- W4：首次创建资源并构造 `register` 输入；后续一次普通 `inspect` 使用已经验证的记录。另有一次创建成功但登记失败。
-- W5：维护本 skill，需要运行资源工具回归；正常实现者只使用资源协议。
+- W1: Functional implementation and checks are complete. The run is entering final acceptance, with no performance work or legacy budget recovery.
+- W2: Start a new autonomous performance phase with current-version run records.
+- W3: Resume a performance phase whose legacy default-start record has no custom limit or user decision. Another legacy phase returns `decision:reconcile` from `status`.
+- W4: Create a resource and construct `register` input for the first time. A later ordinary `inspect` uses already verified records. Separately, creation succeeds but registration fails.
+- W5: Maintain this skill and run resource-tool regressions. An ordinary implementer only uses the resource protocol.

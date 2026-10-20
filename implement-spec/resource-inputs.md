@@ -1,15 +1,15 @@
-# 资源输入样例
+# Resource input examples
 
-仅在首次构造 `register` / `record` 输入或修复校验错误时读取。占位符与行为约束见[资源协议](resource-management.md)。
+Read when first constructing `register` or `record` input, or fixing validation errors. Follow [run resources](resource-management.md) for placeholders and operating rules.
 
-## 注册与读回
+## Register and read back
 
 ```sh
 python3 <skill-dir>/scripts/resources.py --registry <run-dir>/resources.json --run-id <run-id> register --input <run-dir>/resource.json --evidence <run-dir>/creation-result.json
 python3 <skill-dir>/scripts/resources.py --registry <run-dir>/resources.json --run-id <run-id> inspect
 ```
 
-注册输入：
+Registration input:
 
 ```json
 {
@@ -24,13 +24,13 @@ python3 <skill-dir>/scripts/resources.py --registry <run-dir>/resources.json --r
 }
 ```
 
-## 观察与清理事件
+## Observation and cleanup events
 
 ```sh
 python3 <skill-dir>/scripts/resources.py --registry <run-dir>/resources.json --run-id <run-id> record --input <run-dir>/observation.json --evidence <run-dir>/host-result.json
 ```
 
-事件输入：
+Event input:
 
 ```json
 {
