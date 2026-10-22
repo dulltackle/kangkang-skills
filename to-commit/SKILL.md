@@ -229,4 +229,4 @@ Second-pass comment:
 
 A local-markdown tracker varies both templates slightly — see its file.
 
-在选择解释器、定位技能、查询 GitHub 或处理长输出前，读取[工具定位与证据留存](../../tool-economy.md)。
+在选择解释器、定位技能、查询 GitHub 或处理长输出前，以本技能真实文件目录解析并读取[工具定位与日志留存](../../tool-economy.md)；项目具体用法由该指引导航。
