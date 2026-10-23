@@ -1275,7 +1275,7 @@ Both: pill shape (999px radius), 15px `--latin-ui`, weight 500, line-height 1.55
 
 Labels are verb plus object: `Buy {{PRODUCT}}` (no price), `Download for Mac`; a compact nav pill keeps the verb alone. Avoid urgency forms such as "Buy now".
 
-Mobile resting state: the two hero buttons share one row starting at the hero text edge, each as wide as its label plus an equal share of the rest (`flex: 1 1 auto`, 8px gap), and wrap to two full-width rows when a long label does not fit; height unchanged. Never force equal halves (`flex: 1 1 0`): a German "Für Windows herunterladen" overflowed its half at 375px. Do not center a natural-width pair (reads as floating), and never drop button height to relieve a "too full" feel; fullness is a width and spacing problem, not a height one. Verify at 320px and 375px in the longest language with no overflow.
+Mobile resting state: the two hero buttons sit in one row starting at the hero text edge, each as wide as its label with 24px sides (`flex: 0 0 auto`, `padding: 10px 24px`, 8px gap), 44px tall, the touch minimum, and the second wraps to its own row when a long label does not fit. Stretching them to share the row (`flex: 1 1 auto`) left a wide empty band around a short label such as `下载 Mac 版`, and the desktop 51px read tall in a phone hero (maintainer 2026-10-23, after comparing stretched, natural width and a 132px minimum at 375px). Never force equal halves (`flex: 1 1 0`): a German "Für Windows herunterladen" overflowed its half at 375px. Do not center the pair (reads as floating). Verify at 320px and 375px in the longest language with no overflow.
 
 ### Pricing
 
