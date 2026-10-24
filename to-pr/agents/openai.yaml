@@ -1,0 +1,3 @@
+interface:
+  display_name: "To PR"
+  short_description: "Deliver a branch as a PR for its tickets"

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Verify Acceptance"
+  short_description: "Verify a ticket's criteria and tick the earned ones"
