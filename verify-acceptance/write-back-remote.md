@@ -6,7 +6,15 @@ The ticket is the source of truth for state; a commit message records what one c
 
 ## The acceptance-criteria region
 
-The region runs from the `## Acceptance criteria` heading to the next heading of the same level. Nothing else is a region: not another heading, not prose that reads like criteria, not a comment.
+The region runs from an **acceptance heading** to the next heading of the same level. An acceptance heading is a level-2 heading (`##`) whose text, trimmed, is one of:
+
+- `Acceptance criteria`, in any letter case
+- `验收标准`
+- `验收条件`
+
+The list is closed. Nothing else is a region: not another wording (`## 验收`, `## Acceptance criteria:`), not a deeper heading (`### 验收标准`), not prose that reads like criteria, not a comment. The heading is read as it stands; never rename it.
+
+**Two acceptance headings** in one body is a mismatch: there is no telling which one is the ticket's. Stop as soon as you find them, before verifying anything: run no criterion, write nothing back, and report where each sits.
 
 A ticket with no region gets the candidate scan, which reads the comments too:
 
@@ -20,7 +28,7 @@ Re-read, flip, write back, comment:
 
 ```bash
 gh issue view <n> --json body --jq .body > "$TMPDIR/issue-<n>.md"
-# edit that file, inside the `## Acceptance criteria` region only:  - [ ] …  →  - [x] …
+# edit that file, inside the region only:  - [ ] …  →  - [x] …
 gh issue edit <n> --body-file "$TMPDIR/issue-<n>.md"
 gh issue comment <n> --body "<comment-template>"
 ```

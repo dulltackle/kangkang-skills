@@ -7,7 +7,7 @@ description: "Verify a ticket's acceptance criteria against the current commit a
 
 Check each acceptance criterion of a ticket against the current commit, then record the earned ones on the ticket itself.
 
-An `[x]` is a claim that somebody checked, and a wrong one is a lie that sits on the ticket forever. So every tick this skill writes is **earned**: you ran something and watched it pass, or the user gave their word on something you could only read. **When in doubt, don't tick, and say why.**
+An `[x]` is a claim that somebody checked, and a wrong one is a lie that sits on the ticket forever. So every tick this skill writes is **earned**: you ran something and watched it pass, you read evidence you can point to, or the user gave their word on a judgement that is theirs to make. **When in doubt, don't tick, and say why.**
 
 This skill never commits, pushes, opens a PR, or closes or reopens a ticket. It runs against work that is already committed; on a local tracker the caller commits the ticket edits.
 
@@ -30,7 +30,7 @@ Re-read the ticket from the tracker, never from your context: it may have been e
 
 ```
 #42 has no acceptance criteria region, nothing written back
-Candidates outside the region: 6 boxes under "### 验收标准" in comment https://github.com/o/r/issues/42#issuecomment-123
+Candidates outside the region: 6 boxes under "### Done when" in comment https://github.com/o/r/issues/42#issuecomment-123
 ```
 
 Candidates are reported, never verified, ticked, or moved: whether they are the criteria is the user's call, and the fix is putting them into a region. With no box anywhere, say `#42 has no acceptance criteria region and no candidate boxes, nothing written back`.
@@ -42,31 +42,32 @@ The criteria are the ticket's, never yours: writing your own is setting your own
 Walk every criterion, those already `[x]` included. Each is one of these:
 
 - **`ran`**: you executed something on the current commit and watched it pass: a test, the actual behaviour. Earned, so you tick it in step 3.
-- **`read`**: a judgement only reading code or docs can make. Earned by the user's word alone, so it waits for step 4.
-- **Unverified**: executable, but not run, failed, or blocked (a missing entry point, an unreachable host, an unmet precondition, or something that does not exist yet, such as the PR's own CI). It stays `[ ]`. The user's word never replaces an execution, so keep `read` for pure reading judgements.
+- **`read`**: not executable, and every part of it is a fact that reading settles, each backed by a file and section you can point to: `docs/ci.md` explains A, B and C; names match `GLOSSARY.md`. Earned by that evidence, so you tick it in step 3. A part with no evidence leaves it `[ ]`, reported with what is missing.
+- **`judge`**: a judgement that belongs to a person. The criterion asks for someone's approval or review, or turns on a standard reading cannot settle (clear, readable, reasonable), or the user declined it before: a `Declined by the user` line for it in the ticket's comments with no later confirmation. Earned by the user's word alone, so it waits for step 4. Torn between `read` and `judge`, it is `judge`.
+- **Unverified**: executable, but not run, failed, or blocked (a missing entry point, an unreachable host, an unmet precondition, or something that does not exist yet, such as the PR's own CI). It stays `[ ]`. Neither reading nor the user's word replaces an execution.
 
 Before calling a criterion blocked, probe its entry point with the tools you have: the command exists, the host answers, you hold the permission. A tool name or an installed file is not proof the current host can call it. Report a blocker as what is missing and how to restore it, then carry on with the rest.
 
-Every `ran` and `read` carries one line of evidence: which test, what you did, which file you read.
+Every `ran`, `read` and `judge` carries one line of evidence: which test, what you did, which file and section you read.
 
-**Regressions.** A criterion already `[x]` that now fails loses its tick, loudly: `⚠ #42 "POST /items returns 201" passed last run, items.test.ts fails on this run, unticked`. Moving the ticket backwards is right; leaving a tick that stopped being true is not. A closed ticket stays closed: untick, comment, and report it. Reopening is the user's call.
+**Regressions.** A criterion already `[x]` that now fails, or a `read` whose evidence is gone from the files, loses its tick, loudly: `⚠ #42 "POST /items returns 201" passed last run, items.test.ts fails on this run, unticked`. Moving the ticket backwards is right; leaving a tick that stopped being true is not. A closed ticket stays closed: untick, comment, and report it. Reopening is the user's call.
 
-Criteria the user already confirmed keep their tick while the content they judged is unchanged: those are asked once, not every run.
+A `read` is re-read on every run, like a `ran` is re-run. A `judge` the user already confirmed keeps its tick while the content they judged is unchanged: those are asked once, not every run.
 
-### 3. Write back the `ran` ticks
+### 3. Write back the `ran` and `read` ticks
 
 1. **Re-read the ticket body** and align against *that* copy. A stale whole-body overwrite clobbers whoever edited it in between.
-2. **Flip only boxes inside the region.** Tick the `ran` criteria; untick the regressions.
+2. **Flip only boxes inside the region.** Tick the `ran` and `read` criteria; untick the regressions.
 3. **Match by exact text, and a mismatch stops the run.** A criterion you did not verify stays `[ ]` and is reported. Something you verified with no matching criterion: **stop, write nothing back, and tell the user.** Fuzzy-matching fires exactly when a human edited the ticket, the case you least want a model guessing at.
 4. **Append a comment** from the template below. The body is mutable state; the comment log is the only append-only record, and the only place an untick leaves a trace.
 
-**A re-run that changes nothing writes nothing**: no body edit when no box flips, and no comment unless a box flipped or a `read` criterion now awaits confirmation. Callers re-verify on every run, and a comment per run buries the ones that matter.
+**A re-run that changes nothing writes nothing**: no body edit when no box flips, and no comment unless a box flipped or a `judge` criterion now awaits confirmation. Callers re-verify on every run, and a comment per run buries the ones that matter.
 
 **On failure, stop.** These writes fail on permissions, a deleted ticket, or a concurrent edit, and a retry produces the same error later. Every write runs or the run stops: a ticket that got commented but not updated contradicts itself. Your tracker's file gives the wording.
 
-### 4. Ask about the `read` criteria
+### 4. Ask about the `judge` criteria
 
-Only when unconfirmed `read` criteria exist; otherwise skip to step 6. Ask one question from the template, listing each criterion with what you read. Ask about the criteria and nothing else. Blocked executable criteria are reported as blockers, never put to the user for confirmation.
+Only when unconfirmed `judge` criteria exist; otherwise skip to step 6. Ask one question from the template, listing each criterion with what you read. Ask about the criteria and nothing else. Blocked executable criteria are reported as blockers, and `read` criteria are yours to settle: neither is put to the user for confirmation.
 
 ### 5. Write back the confirmations
 
@@ -86,16 +87,17 @@ First comment. Omit any line that does not apply:
 abc1234 (feat/items)
 
 Verified by running: POST /items returns 201 and persists; list page shows a skeleton
+Verified by reading: README documents the install steps (README.md#install)
 Unticked on regression: concurrent writes lose no orders (passed last run, items.test.ts fails on this run)
-Awaiting confirmation: README updated; naming matches the glossary
+Awaiting confirmation: error messages read clearly; the design is approved by the team
 </comment-template>
 
 The question:
 
 <question-template>
-These 2 criteria were only read, not run, and are not ticked yet:
-  · README updated               (read the "Install" section of README.md)
-  · Naming matches the glossary  (uses Item / Batch from GLOSSARY.md)
+These 2 criteria need your judgement and are not ticked yet:
+  · Error messages read clearly          (read the messages in src/errors.ts)
+  · The design is approved by the team   (read docs/design/items.md)
 
 Do you accept them?
 </question-template>
@@ -103,8 +105,8 @@ Do you accept them?
 Confirmation comment:
 
 <confirmation-template>
-Confirmed by the user: README updated
-Declined by the user: naming matches the glossary
+Confirmed by the user: error messages read clearly
+Declined by the user: the design is approved by the team
 </confirmation-template>
 
 Omit either line when it does not apply.

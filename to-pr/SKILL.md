@@ -128,7 +128,7 @@ Closes #42
 - Per ticket, one line: ticks earned, then what is still open and why.
   - every box ticked: `acceptance 4/4 ticked`
   - only merge-gated boxes open: `acceptance 5/6 ticked, the remaining 1 guaranteed by the merge gate`
-  - a criterion the user declined: `Open: README updated (declined by the user)`
-  - no region: `no acceptance region`, plus any candidates verify-acceptance reported: `no acceptance region. Candidates outside it: 6 boxes under "### 验收标准" in comment <link>, not recognised`
+  - a criterion the user declined: `Open: error messages read clearly (declined by the user)`
+  - no region: `no acceptance region`, plus any candidates verify-acceptance reported: `no acceptance region. Candidates outside it: 6 boxes under "### Done when" in comment <link>, not recognised`
   - a parent: `ready: children #11, #12 are ready` or `waiting on children: #21`, plus its own ticks if it has a region
 - Drop the merge-gate line when nothing is merge-gated.
