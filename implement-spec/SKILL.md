@@ -18,7 +18,7 @@ Deliver the spec on one integration branch. Carry authorized work through accept
 4. **Hand off stages.** Follow [stage handoff](collaboration.md) between functional implementation, performance work, and final acceptance for check close-out, reviewer continuity, and compact handoff packets.
 5. **Review integration.** Follow [integration review](integration-review.md). Reconcile prior coverage against OCR's full-range inventory, including interactions, conflict resolutions, and gaps. Enter acceptance when all valid findings are resolved and affected checks pass.
 6. **Verify and write back.** Follow [acceptance and handoff](acceptance.md). Complete discovery before delivery and pin the candidate commit. Use established formal checks to fill missing or invalidated evidence, retaining valid original sources. Match current criteria exactly before write-back. The optional [evidence plan](evidence-plan.md) handles mechanical correspondence; an independent reviewer judges semantic requirements.
-7. **Deliver and clean up.** Once every ticket has a nonempty acceptance region, all criteria are earned, and write-back succeeds, follow the acceptance protocol to push and mark the PR ready or close work directly. Process temporary resources individually. Report delivery and cleanup separately; retain resources whose state remains unknown.
+7. **Deliver and clean up.** Once every ticket has a nonempty acceptance region, all criteria are earned, and write-back succeeds, follow the acceptance protocol to push and mark the PR ready. Process temporary resources individually. Report delivery and cleanup separately; retain resources whose state remains unknown.
 
 ## Conditional references
 

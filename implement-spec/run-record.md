@@ -12,6 +12,6 @@ Create a persistent `run.json` outside the repository and report its absolute pa
 
 Read [run resources](resource-management.md) before creating worktrees, preview services, or long checks. Save successful results, register them, and read them back immediately. Before reuse on resume, query the original host interface. Resource reconciliation and task discovery remain separate requirements.
 
-When the tracker closes work through PRs or the user requests a PR, open a draft after the first merge, using the configured ticket references. Otherwise the integration branch is the deliverable. Readiness and closure follow [acceptance](acceptance.md).
+Open a draft PR after the first merge, marked as closing the spec and tickets with the configured ticket references. Readiness and closure follow [acceptance](acceptance.md).
 
 Necessary configuration changes within the spec are authorized implementation work. Preserve recoverable originals or exact diffs before editing; record the target, affected scope, and completion evidence. On resume, reconcile authorization with actual state and continue when content and impact are materially unchanged. Added costs, broader permissions, unrelated configuration, or discarding user content require a user decision. Identify the specific authorization gap while continuing independent preparation. Respect host approval; preserve work and record a refusal's action and reason rather than changing routes to bypass it.

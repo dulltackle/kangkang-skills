@@ -53,13 +53,11 @@ Preserve the user's staging set. Unrelated staged changes block this close-out c
 
 Start when every ticket is all green, write-back succeeded, and the final work is committed.
 
-Before handoff actions, repeat [task discovery](task-discovery.md) to confirm the ticket set and relationships, and read current acceptance criteria and write-back state. Reconcile changes and repeat affected acceptance. Mark a PR ready, close work directly, or claim full delivery only when every ticket in the latest complete set and the parent spec meet their own acceptance, review, and write-back conditions. Record actual closure state; tickets awaiting PR merge remain open.
+Before handoff actions, repeat [task discovery](task-discovery.md) to confirm the ticket set and relationships, and read current acceptance criteria and write-back state. Reconcile changes and repeat affected acceptance. Mark the PR ready or claim full delivery only when every ticket in the latest complete set and the parent spec meet their own acceptance, review, and write-back conditions. Record actual closure state; tickets awaiting PR merge remain open.
 
-**With a PR:** push the integration branch, then mark the draft ready for review. Report it as awaiting merge. Let the PR workflow close the spec and tickets. A local tracker with a separate closure field records acceptance now and follows its configured PR workflow for closure.
+Push the integration branch, then mark the draft ready for review. Report it as awaiting merge. Let the PR workflow close the spec and tickets. A local tracker with a separate closure field records acceptance now and follows its configured PR workflow for closure.
 
-**Without a PR:** push successfully before closing tickets and the spec through the tracker. Set upstream on the first push as configured. With no remote, state that pushing was skipped and proceed with local closure. A refused push pauses handoff, retaining the branch and open tickets; do not force-push or rewrite history.
-
-**Local closure changes files:** after the acceptance commit is landed and pushed where a remote exists, commit the closure edits separately and push them. If that commit or push fails, report the exact local/remote split, keep recovery materials, and leave handoff incomplete.
+A refused push pauses handoff, retaining the branch, the draft, and open tickets; do not force-push or rewrite history.
 
 A partial failure is not a wholesale rollback. Preserve landed commits and successful remote writes; reverse only this run's uncommitted local ticket edits under the concurrency check above. Before retrying, inspect current state to avoid duplicate comments, duplicate closure, or overwritten edits.
 
