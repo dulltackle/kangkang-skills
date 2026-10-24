@@ -26,7 +26,16 @@ Each file defines the **acceptance-criteria region** for its tracker and how to 
 
 Re-read the ticket from the tracker, never from your context: it may have been edited since. Take the boxes inside the region. Every box outside it (task lists, sub-issue lists, hand-written todos) is out of scope.
 
-**A ticket with no region** (hand-filed issues often have none): tick nothing and say so plainly, `#42 has no acceptance criteria region, nothing written back`. The criteria are the ticket's, never yours: writing your own is setting your own exam, sitting it, and marking it.
+**A ticket with no region** (hand-filed issues often have none): tick nothing, then scan the whole ticket, body and comments, for checkboxes. Those boxes are **candidates**: criteria somebody may have meant, written under a heading or in a place the region rule does not cover. Report each group with where it sits and how many boxes it holds, so the gap shows before anyone relies on the ticket:
+
+```
+#42 has no acceptance criteria region, nothing written back
+Candidates outside the region: 6 boxes under "### 验收标准" in comment https://github.com/o/r/issues/42#issuecomment-123
+```
+
+Candidates are reported, never verified, ticked, or moved: whether they are the criteria is the user's call, and the fix is putting them into a region. With no box anywhere, say `#42 has no acceptance criteria region and no candidate boxes, nothing written back`.
+
+The criteria are the ticket's, never yours: writing your own is setting your own exam, sitting it, and marking it.
 
 ### 2. Verify and classify
 

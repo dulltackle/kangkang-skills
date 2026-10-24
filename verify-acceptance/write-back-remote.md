@@ -6,7 +6,13 @@ The ticket is the source of truth for state; a commit message records what one c
 
 ## The acceptance-criteria region
 
-The region runs from the `## Acceptance criteria` heading to the next heading of the same level. Nothing else is a region: not another heading, not prose that reads like criteria.
+The region runs from the `## Acceptance criteria` heading to the next heading of the same level. Nothing else is a region: not another heading, not prose that reads like criteria, not a comment.
+
+A ticket with no region gets the candidate scan, which reads the comments too:
+
+```bash
+gh issue view <n> --json body,comments
+```
 
 ## GitHub
 

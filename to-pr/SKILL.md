@@ -56,7 +56,7 @@ An unticked criterion is **merge-gated** when its text asks for exactly this: th
 
 Re-read every ticket from the tracker. A ticket is a **parent** when another ticket in the set belongs to it, the way `docs/agents/issue-tracker.md` records that (on GitHub: a sub-issue, or a child naming it in `Part of #<n>` or a `## Parent` section). A spec delivered with its tickets is the usual parent, and it usually has no region of its own.
 
-For every ticket with a region, parents included when they have one, call the Skill tool with "verify-acceptance" and run all of its steps against `HEAD`. Do this on every run, ticked or not: it re-runs every executable criterion, `[x]` ones included, so a box that stopped being true loses its tick before the PR can merge. Merge-gated criteria stay `[ ]` for the gate to settle. On a local tracker, commit its ticket edits as a follow-up `chore:` commit before pushing.
+For every ticket that is not a parent, and every parent with a region, call the Skill tool with "verify-acceptance" and run all of its steps against `HEAD`. A ticket with no region ticks nothing there, but its candidate boxes come back for the ticket section. Do this on every run, ticked or not: it re-runs every executable criterion, `[x]` ones included, so a box that stopped being true loses its tick before the PR can merge. Merge-gated criteria stay `[ ]` for the gate to settle. On a local tracker, commit its ticket edits as a follow-up `chore:` commit before pushing.
 
 When any criterion fails on `HEAD` (a run that failed, or a regression that lost its tick), stop before pushing: failing work stays local. If the branch already has a PR that is ready, mark it back to draft first (`gh pr ready <pr> --undo`) so it cannot merge, then report. Leave the PR body as it is: the ticket and its comment carry the regression.
 
@@ -129,6 +129,6 @@ Closes #42
   - every box ticked: `acceptance 4/4 ticked`
   - only merge-gated boxes open: `acceptance 5/6 ticked, the remaining 1 guaranteed by the merge gate`
   - a criterion the user declined: `Open: README updated (declined by the user)`
-  - no region: `no acceptance region`
+  - no region: `no acceptance region`, plus any candidates verify-acceptance reported: `no acceptance region. Candidates outside it: 6 boxes under "### 验收标准" in comment <link>, not recognised`
   - a parent: `ready: children #11, #12 are ready` or `waiting on children: #21`, plus its own ticks if it has a region
 - Drop the merge-gate line when nothing is merge-gated.
